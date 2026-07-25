@@ -2,18 +2,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Reader progress (bookmark) endpoints for /api/v1.
 
-Reads/writes the SAME ub.Bookmark row the legacy reader uses
-(/ajax/bookmark/<id>/<format>), with the SAME lowercase format key — so reading
-progress is shared between the legacy reader and the SPA reader: open a book in
-one, resume in the other. The bookmark_key is the epub.js CFI string.
+In the standard profile this reads/writes the legacy ``ub.Bookmark`` row.
+In ``mcp-managed-library`` it preserves the same SPA contract while storing the
+CFI and normalized progress in Calibre's native ``last_read_positions`` table
+through the private CalibreMCP REST adapter.
 """
 from flask import jsonify, request
 from sqlalchemy import and_
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import api_v1
-from .. import ub
+from .. import calibre_db, deployment_profile, ub
 from ..cw_login import current_user
+from ..services.calibremcp_client import (
+    CalibreMCPClientError,
+    get_reader_position,
+    set_reader_position,
+)
 from ..usermanagement import login_required_if_no_ano
 from ..reader_settings import merged_reader_settings, resolved_reader_settings
 
@@ -28,12 +33,32 @@ def _require_real_user():
     return None
 
 
+def _require_visible_book(book_id):
+    book = calibre_db.get_filtered_book(
+        book_id, allow_show_archived=True, allow_show_hidden=True
+    )
+    if not book:
+        return _err("not_found", "Book not found", 404)
+    return None
+
+
 def _bookmark_filter(book_id, fmt):
     return and_(
         ub.Bookmark.user_id == int(current_user.id),
         ub.Bookmark.book_id == book_id,
         ub.Bookmark.format == fmt,
     )
+
+
+def _cwng_user_name():
+    return str(getattr(current_user, "name", "") or "").strip()
+
+
+def _latest_native_position(payload):
+    positions = payload.get("positions", []) if isinstance(payload, dict) else []
+    if not positions:
+        return None
+    return max(positions, key=lambda item: float(item.get("epoch") or 0))
 
 
 @api_v1.route("/books/<int:book_id>/bookmark")
@@ -43,7 +68,21 @@ def get_bookmark(book_id):
     guard = _require_real_user()
     if guard:
         return guard
+    visible = _require_visible_book(book_id)
+    if visible:
+        return visible
     fmt = (request.args.get("format") or "epub").lower()
+    if deployment_profile.use_calibre_native_reader_data():
+        try:
+            native = _latest_native_position(
+                get_reader_position(_cwng_user_name(), book_id, fmt)
+            )
+        except CalibreMCPClientError as exc:
+            return _err("reader_backend_error", str(exc), exc.status_code)
+        return jsonify({
+            "bookmark": native.get("cfi") if native else None,
+            "position_fraction": float(native.get("pos_frac") or 0) if native else 0,
+        })
     row = ub.session.query(ub.Bookmark).filter(_bookmark_filter(book_id, fmt)).first()
     return jsonify({"bookmark": row.bookmark_key if row else None})
 
@@ -56,9 +95,26 @@ def save_bookmark(book_id):
     guard = _require_real_user()
     if guard:
         return guard
+    visible = _require_visible_book(book_id)
+    if visible:
+        return visible
     data = request.get_json(silent=True) or {}
     fmt = (data.get("format") or "epub").lower()
     bookmark_key = data.get("bookmark") or ""
+    if deployment_profile.use_calibre_native_reader_data():
+        try:
+            set_reader_position(
+                _cwng_user_name(),
+                book_id,
+                fmt,
+                cfi=bookmark_key or None,
+                position_fraction=float(data.get("position_fraction") or 0),
+                device=str(data.get("device") or "cwng-web"),
+            )
+        except (CalibreMCPClientError, TypeError, ValueError) as exc:
+            status = exc.status_code if isinstance(exc, CalibreMCPClientError) else 400
+            return _err("reader_backend_error", str(exc), status)
+        return "", 204
 
     # Replace-on-write: one bookmark per (user, book, format), like the legacy route.
     ub.session.query(ub.Bookmark).filter(_bookmark_filter(book_id, fmt)).delete()

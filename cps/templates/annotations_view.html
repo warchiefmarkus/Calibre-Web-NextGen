@@ -43,7 +43,9 @@
   {% else %}
     <p>
       {{ _('No annotations on this book yet.') }}
-      <a href="{{ url_for('annotations.annotations_import_form') }}">{{ _('Import from Kobo') }}</a>
+      {% if kobo_import_enabled %}
+        <a href="{{ url_for('kobo_annotations.annotations_import_form') }}">{{ _('Import from Kobo') }}</a>
+      {% endif %}
     </p>
   {% endif %}
 </div>

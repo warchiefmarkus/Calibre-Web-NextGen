@@ -60,6 +60,7 @@ PER_USER_BOOK_MODELS = (
     "BookShelf",             # shelf-scoped, no user_id column
     "KoboSyncedBooks",
     "UserHiddenBook",
+    "FavoriteBook",
     "BookCoverPreview",
 )
 
@@ -238,7 +239,8 @@ def purge_user_book_data(book_id=None, user_id=None, session=None,
         synchronize_session=False)
 
     for model in (ub.Bookmark, ub.ReadBook, ub.ArchivedBook, ub.Downloads,
-                  ub.KoboSyncedBooks, ub.UserHiddenBook, ub.BookCoverPreview):
+                  ub.KoboSyncedBooks, ub.UserHiddenBook, ub.FavoriteBook,
+                  ub.BookCoverPreview):
         _scoped(session.query(model), model).delete(synchronize_session=False)
 
     # BookShelf has no user_id — shelf membership is shelf-scoped, and the

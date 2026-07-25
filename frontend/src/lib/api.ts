@@ -46,6 +46,8 @@ export interface ServerFeatures {
    *  toggle when it can actually do something. Absent on older servers →
    *  treat as off. */
   kobo_sync_magic_shelves?: boolean;
+  /** Managed CalibreMCP full-text/semantic search proxy is available. */
+  rag_search?: boolean;
 }
 
 export interface Me {
@@ -220,6 +222,62 @@ export interface SearchOptions {
   series: EntityRef[];
   languages: EntityRef[];
   formats: string[];
+}
+
+export type RagSearchMode = 'hybrid' | 'semantic' | 'lexical';
+
+export interface RagStatus {
+  enabled: boolean;
+  ready: boolean;
+  indexed_books: number;
+  total_books: number;
+  not_indexed_books: number;
+  total_chunks: number;
+  failed_jobs: number;
+  last_sync_at: string | null;
+  model: string | null;
+  model_runtime: string | null;
+  statuses: Record<string, { books: number; chunks: number }>;
+}
+
+export interface RagSearchRequest {
+  query: string;
+  mode: RagSearchMode;
+  limit: number;
+  formats?: string[];
+  authors?: string[];
+  tags?: string[];
+  include_adjacent?: boolean;
+  max_chunks_per_book?: number;
+}
+
+export interface RagSearchResult {
+  chunk_id: number;
+  book_id: number;
+  title: string | null;
+  authors: string[];
+  format: string | null;
+  chapter: string | null;
+  section: string | null;
+  page_start: number | null;
+  page_end: number | null;
+  text: string | null;
+  context_before: string | null;
+  context_after: string | null;
+  semantic_score: number | null;
+  keyword_score: number | null;
+  combined_score: number | null;
+}
+
+export interface RagSearchResponse {
+  success: boolean;
+  query: string;
+  query_terms: string[];
+  mode: RagSearchMode;
+  count: number;
+  duration_ms: number | null;
+  model: string | null;
+  results: RagSearchResult[];
 }
 
 export interface AdvancedSearchParams {

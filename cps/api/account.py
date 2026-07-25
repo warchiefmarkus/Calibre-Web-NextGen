@@ -15,11 +15,10 @@ from flask_babel import gettext as _
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import api_v1
-from .. import calibre_db, config, logger, ub
+from .. import calibre_db, config, deployment_profile, logger, ub
 from ..cw_login import current_user
 from ..cw_babel import get_available_locale
 from ..helper import valid_password, valid_email, check_email
-from ..kobo_sync_status import needs_shelf_reconciliation, reconcile_shelves_safely
 from ..ui_themes import ALLOWED_THEME_SLUGS, theme_slug, theme_code
 from .serializers import (SIDEBAR_VISIBILITY_BITS, ORDERABLE_SIDEBAR_KEYS,
                           serialize_sidebar_visibility, serialize_sidebar_order)
@@ -77,7 +76,8 @@ def _serialize_account():
         # Classic parity: the message body is a global mail setting, so expose
         # it only to admins even though this form otherwise edits user fields.
         "mail_body_text": (config.mail_body_text or "") if current_user.role_admin() else None,
-        "kobo_only_shelves_sync": bool(current_user.kobo_only_shelves_sync),
+        "kobo_only_shelves_sync": deployment_profile.enable_kobo()
+        and bool(current_user.kobo_only_shelves_sync),
         "opds_only_shelves_sync": bool(current_user.opds_only_shelves_sync),
         "locale": current_user.locale,
         "default_language": current_user.default_language,
@@ -116,6 +116,8 @@ def update_profile():
     if guard:
         return guard
     data = request.get_json(silent=True) or {}
+    if "kobo_only_shelves_sync" in data and not deployment_profile.enable_kobo():
+        return _err("feature_disabled", "Kobo integration is disabled", 404)
     # #866: remembered across the commit so the archive sweep below only fires
     # on a real 0 -> 1 transition (classic /me form parity, cps/web.py).
     kobo_shelves_was_on = bool(getattr(current_user, "kobo_only_shelves_sync", 0))
@@ -182,8 +184,10 @@ def update_profile():
     #
     # Runs after the commit above, which reports its own failure — the setting is
     # what the user asked for and must stick even if the reconciliation trips.
-    if needs_shelf_reconciliation(kobo_shelves_was_on, current_user.kobo_only_shelves_sync):
-        reconcile_shelves_safely(current_user.id)
+    if deployment_profile.enable_kobo():
+        from ..kobo_sync_status import needs_shelf_reconciliation, reconcile_shelves_safely
+        if needs_shelf_reconciliation(kobo_shelves_was_on, current_user.kobo_only_shelves_sync):
+            reconcile_shelves_safely(current_user.id)
 
     return jsonify(_serialize_account())
 

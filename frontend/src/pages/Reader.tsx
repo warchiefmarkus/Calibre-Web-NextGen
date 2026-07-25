@@ -51,6 +51,7 @@ const FONT_MIN = 75;
 const FONT_MAX = 200;
 const LS_THEME = 'cwng.reader.theme';
 const LS_FONT = 'cwng.reader.font';
+const LS_DEVICE = 'cwng.reader.device';
 
 const THEME_TO_READER: Record<ReaderSettings['theme'], ReaderTheme> = {
   lightTheme: 'light', sepiaTheme: 'sepia', darkTheme: 'dark', blackTheme: 'dark',
@@ -72,6 +73,14 @@ function loadTheme(): ReaderTheme {
   if (appTheme === 'light') return 'light';
   if (appTheme === 'sepia') return 'sepia';
   return 'dark';
+}
+function readerDevice(): string {
+  let value = localStorage.getItem(LS_DEVICE);
+  if (!value) {
+    value = `cwng-web-${crypto.randomUUID()}`;
+    localStorage.setItem(LS_DEVICE, value);
+  }
+  return value;
 }
 function loadFont(): number {
   const v = Number(localStorage.getItem(LS_FONT));
@@ -105,6 +114,7 @@ export function Reader({ id }: { id: string }) {
   const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsPendingRef = useRef<Partial<ReaderSettings>>({});
   const lastCfiRef = useRef<string | null>(null);
+  const lastProgressRef = useRef(0);
   // Hold the freshest saved CFI so it survives re-renders without re-running the effect.
   const savedCfiRef = useRef<string | null>(null);
 
@@ -120,8 +130,14 @@ export function Reader({ id }: { id: string }) {
   const [lineHeight, setLineHeight] = useState(150);
   const [settingsHydrated, setSettingsHydrated] = useState(false);
   const [progress, setProgress] = useState(0);
-  // Pending text selection awaiting a highlight-color choice.
-  const [pendingSel, setPendingSel] = useState<{ cfiRange: string; text: string } | null>(null);
+  // Pending text selection awaiting a highlight-color choice. Keep both the
+  // epub.js CFI and Calibre spine identity so one row renders in both readers.
+  const [pendingSel, setPendingSel] = useState<{
+    cfiRange: string;
+    text: string;
+    spineIndex: number;
+    spineName: string;
+  } | null>(null);
   // Existing highlight the user tapped — drives the edit/remove popover (#782).
   const [activeHl, setActiveHl] = useState<{ cfiRange: string; id: string; color: string } | null>(null);
 
@@ -166,7 +182,12 @@ export function Reader({ id }: { id: string }) {
     setPendingSel(null);
     try {
       const created = await apiPost<{ annotation_id?: string }>(`/annotations/${id}`, {
-        cfi_range: sel.cfiRange, highlighted_text: sel.text, highlight_color: color,
+        cfi_range: sel.cfiRange,
+        highlighted_text: sel.text,
+        highlight_color: color,
+        spine_index: sel.spineIndex,
+        spine_name: sel.spineName,
+        chapter_progress: lastProgressRef.current,
       });
       paintHighlight(sel.cfiRange, color, created?.annotation_id ?? '');
     } catch { /* surfaced as no-op; user can retry */ }
@@ -206,6 +227,12 @@ export function Reader({ id }: { id: string }) {
 
   useEffect(() => {
     savedCfiRef.current = savedBookmark?.bookmark ?? savedCfiRef.current;
+    const fraction = savedBookmark?.position_fraction;
+    if (typeof fraction === 'number' && Number.isFinite(fraction)) {
+      const normalized = Math.min(1, Math.max(0, fraction));
+      lastProgressRef.current = normalized;
+      setProgress(Math.round(normalized * 100));
+    }
   }, [savedBookmark]);
 
   useEffect(() => {
@@ -236,12 +263,16 @@ export function Reader({ id }: { id: string }) {
   }, [saveSettings, announce, t]);
 
   const persistCfi = useCallback(
-    (cfi: string) => {
+    (cfi: string, positionFraction: number) => {
+      const normalized = Math.min(1, Math.max(0, positionFraction));
       lastCfiRef.current = cfi;
+      lastProgressRef.current = normalized;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         saveTimer.current = null;
-        saveBookmark.mutate({ format: 'epub', bookmark: cfi });
+        saveBookmark.mutate({
+          format: 'epub', bookmark: cfi, position_fraction: normalized, device: readerDevice(),
+        });
       }, 800);
     },
     [saveBookmark],
@@ -349,7 +380,9 @@ export function Reader({ id }: { id: string }) {
             if (cancelled) return;
             const loc = rendition.currentLocation() as any;
             if (loc?.start?.cfi && epubBook.locations.length()) {
-              setProgress(Math.round(epubBook.locations.percentageFromCfi(loc.start.cfi) * 100));
+              const fraction = epubBook.locations.percentageFromCfi(loc.start.cfi);
+              lastProgressRef.current = fraction;
+              setProgress(Math.round(fraction * 100));
             }
           })
           .catch(() => {/* locations are best-effort */});
@@ -357,10 +390,11 @@ export function Reader({ id }: { id: string }) {
         rendition.on('relocated', (location: any) => {
           const cfi = location?.start?.cfi;
           if (!cfi) return;
-          persistCfi(cfi);
-          if (epubBook.locations.length()) {
-            setProgress(Math.round(epubBook.locations.percentageFromCfi(cfi) * 100));
-          }
+          const fraction = epubBook.locations.length()
+            ? epubBook.locations.percentageFromCfi(cfi)
+            : lastProgressRef.current;
+          persistCfi(cfi, fraction);
+          setProgress(Math.round(fraction * 100));
         });
 
         // Render existing highlights (the CFI-anchored ones we can place). Each
@@ -381,10 +415,17 @@ export function Reader({ id }: { id: string }) {
         // Capture a text selection → offer a highlight-color popover.
         rendition.on('selected', (cfiRange: string, contents: any) => {
           let text = '';
-          try { text = (contents?.window?.getSelection?.().toString() || '').trim(); } catch { /* noop */ }
+          let spineIndex = 0;
+          let spineName = '';
+          try {
+            text = (contents?.window?.getSelection?.().toString() || '').trim();
+            const section = epubBook.spine?.get?.(cfiRange);
+            if (typeof section?.index === 'number') spineIndex = section.index;
+            spineName = section?.href || section?.url || section?.canonical || section?.idref || '';
+          } catch { /* selection metadata is best-effort */ }
           if (cfiRange) {
             setActiveHl(null);
-            setPendingSel({ cfiRange, text });
+            setPendingSel({ cfiRange, text, spineIndex, spineName });
           }
         });
       } catch (e) {
@@ -399,7 +440,9 @@ export function Reader({ id }: { id: string }) {
         saveTimer.current = null;
         const cfi = lastCfiRef.current;
         if (cfi) {
-          void apiPost(`/api/v1/books/${id}/bookmark`, { format: 'epub', bookmark: cfi }, { keepalive: true });
+          void apiPost(`/api/v1/books/${id}/bookmark`, {
+            format: 'epub', bookmark: cfi, position_fraction: lastProgressRef.current, device: readerDevice(),
+          }, { keepalive: true });
         }
       }
       try { renditionRef.current?.destroy(); } catch { /* noop */ }

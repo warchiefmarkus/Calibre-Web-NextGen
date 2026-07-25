@@ -1,0 +1,41 @@
+[Unit]
+Description=Calibre-Web NextGen MCP-managed
+After=network-online.target calibre-server.service calibremcp.service
+Wants=network-online.target calibre-server.service calibremcp.service
+
+[Service]
+Type=simple
+User=calibreweb
+Group=calibreweb
+SupplementaryGroups=calibremutate
+WorkingDirectory=/root/calibre/CalibreWeb/current
+EnvironmentFile=/root/calibre/CalibreWeb/var/config/cwng.env
+ExecStart=/root/calibre/CalibreWeb/current/.venv/bin/python /root/calibre/CalibreWeb/current/cps.py -p /root/calibre/CalibreWeb/var/config/app.db -i 127.0.0.1 -o /root/calibre/CalibreWeb/var/logs/calibre-web.log
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectHostname=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/root/calibre/Library /root/calibre/CalibreWeb/source /opt/calibre
+ReadWritePaths=/root/calibre/CalibreWeb/var
+
+[Install]
+WantedBy=multi-user.target

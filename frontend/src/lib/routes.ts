@@ -32,6 +32,7 @@ export const SPA_ROUTES = {
   favorites: '/favorites',
   archived: '/archived',
   search: '/search',
+  aiSearch: '/ai-search',
   account: '/account',
   upload: '/upload',
   admin: '/admin',

@@ -10,7 +10,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import api_v1
 from .serializers import serialize_user
-from .. import ub, config, constants, limiter
+from .. import ub, config, constants, deployment_profile, limiter
 from ..cw_login import current_user, login_user
 from ..logout import cleanup_local_logout
 from ..ui_themes import config_theme_code
@@ -121,13 +121,15 @@ def _server_features():
         "mail_configured": mail_ok,
         "public_registration": bool(getattr(config, "config_public_reg", False)),
         "anon_browse": bool(getattr(config, "config_anonbrowse", False)),
-        "kobo_sync": bool(getattr(config, "config_kobo_sync", False)),
+        "kobo_sync": deployment_profile.enable_kobo()
+        and bool(getattr(config, "config_kobo_sync", False)),
         # Smart shelves only reach a Kobo when the admin has turned the
         # magic-shelf half of Kobo sync on (cps/kobo.py gates the whole
         # collection materialisation on it). Surfaced so the SPA can hide a
         # per-shelf toggle that would otherwise store inert intent (#870).
-        "kobo_sync_magic_shelves": bool(
-            getattr(config, "config_kobo_sync_magic_shelves", False)),
+        "kobo_sync_magic_shelves": deployment_profile.enable_kobo()
+        and bool(getattr(config, "config_kobo_sync_magic_shelves", False)),
+        "rag_search": deployment_profile.enable_rag_ui(),
     }
 
 

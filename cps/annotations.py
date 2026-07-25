@@ -46,22 +46,33 @@ from typing import Optional
 from flask import Blueprint, Response, abort, flash, jsonify, redirect, request, url_for
 from flask_babel import gettext as _
 
-from . import calibre_db, logger, ub
+from . import calibre_db, deployment_profile, logger, ub
 from .cw_login import current_user
 from .render_template import render_title_template
-from .services.kobo_import import looks_like_sqlite, parse_kobo_bookmarks
+from .services import calibre_annotations
+from .services.calibremcp_client import CalibreMCPClientError
 from .usermanagement import user_login_required
 
 log = logger.create()
 
 annotations_bp = Blueprint("annotations", __name__)
+kobo_annotations_bp = Blueprint("kobo_annotations", __name__)
+
+
+@annotations_bp.errorhandler(CalibreMCPClientError)
+def _calibremcp_annotation_error(exc):
+    return jsonify({
+        "error": "reader_backend_error",
+        "message": str(exc),
+    }), exc.status_code
+
 
 # Defense-in-depth file-size cap. Typical real-device KoboReader.sqlite
 # files are 30-50 MB; reject anything over 100 MB.
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
-@annotations_bp.route("/annotations/import", methods=["GET"])
+@kobo_annotations_bp.route("/annotations/import", methods=["GET"])
 @user_login_required
 def annotations_import_form():
     """Render the upload form."""
@@ -72,7 +83,7 @@ def annotations_import_form():
     )
 
 
-@annotations_bp.route("/annotations/import", methods=["POST"])
+@kobo_annotations_bp.route("/annotations/import", methods=["POST"])
 @user_login_required
 def annotations_import_submit():
     """Accept an uploaded ``KoboReader.sqlite``, parse the Bookmark
@@ -120,6 +131,7 @@ def annotations_import_submit():
                     }), 413
                 tmp.write(chunk)
 
+        from .services.kobo_import import looks_like_sqlite
         if not looks_like_sqlite(tmp_path):
             return jsonify({
                 "error": "not_sqlite",
@@ -173,6 +185,8 @@ def ingest_bookmarks(sqlite_path, user_id, session, book_lookup, commit) -> dict
     # Cache: VolumeID -> CW book_id (or None for not-in-library).
     # Same VolumeID often appears across many bookmarks; resolve once.
     uuid_cache: dict[str, Optional[int]] = {}
+
+    from .services.kobo_import import parse_kobo_bookmarks
 
     for bm in parse_kobo_bookmarks(sqlite_path):
         total_seen += 1
@@ -266,11 +280,14 @@ _EXPORT_FIELDS = (
 )
 
 
+def _cwng_user_name() -> str:
+    return str(getattr(current_user, "name", "") or "").strip()
+
+
 def _load_user_annotations(user_id: int, book_id: int) -> list:
-    """Per-user-per-book read of ``kobo_annotation_sync``. Filters out
-    soft-deleted rows so the view shows the live set. Stable order by
-    chapter_progress so the export round-trips a sensible reading
-    order even for books with hundreds of highlights."""
+    """Load the live per-user annotation set from the active storage backend."""
+    if deployment_profile.use_calibre_native_reader_data():
+        return calibre_annotations.list_annotations(_cwng_user_name(), book_id)
     return (
         ub.session.query(ub.Annotation)
         .filter(
@@ -374,7 +391,9 @@ def _safe_filename_part(s: str, default: str = "book") -> str:
 
 def _resolve_book_or_404(book_id: int):
     """Load the Book row + enforce visibility. Returns the Book."""
-    book = calibre_db.get_filtered_book(book_id, allow_show_archived=True)
+    book = calibre_db.get_filtered_book(
+        book_id, allow_show_archived=True, allow_show_hidden=True
+    )
     if not book:
         abort(404)
     return book
@@ -451,17 +470,19 @@ def _ensure_cfi_range(row, book) -> Optional[str]:
     return cfi
 
 
+def _extract_kobospan_id(container_path: str | None) -> str | None:
+    """Extract a legacy KoboSpan id without importing the Kobo converter."""
+    if not container_path:
+        return None
+    match = re.search(r"#([\w.\\-]+)$", container_path)
+    return match.group(1).replace("\\", "") if match else None
+
+
 def _data_json_row(r, cfi, pdf_quad) -> dict:
     """Project one annotation row to the web-reader's data.json shape.
 
-    Emits the canonical KoboSpan anchor (``start_kobospan`` /
-    ``end_kobospan`` + offsets + ``content_id``) — the reader regenerates
-    a wrapper-aware CFI client-side from these, because a server-authored
-    CFI can't account for epub.js's render-time wrapper divs. ``cfi_range``
-    is the portable source CFI, kept for the sidebar "jump" fallback and
-    export parity. Pure + dependency-free so the payload contract is
-    unit-testable without a Flask request context."""
-    from .services.kobo_position import _extract_kobospan_id
+    Emits legacy KoboSpan fields when present plus the generic CFI used by the
+    current reader. The generic managed path does not import Kobo modules."""
     return {
         "annotation_id": r.annotation_id,
         "cfi_range": cfi,
@@ -525,6 +546,7 @@ def annotations_view(book_id):
         page="annotations_view",
         book=book,
         annotations=rows,
+        kobo_import_enabled=deployment_profile.enable_kobo(),
         export_md_url=url_for("annotations.annotations_export_markdown", book_id=book_id),
         export_csv_url=url_for("annotations.annotations_export_csv", book_id=book_id),
         export_json_url=url_for("annotations.annotations_export_json", book_id=book_id),
@@ -758,6 +780,17 @@ def annotations_create(book_id):
     """Create a highlight from a web-reader selection (source='webreader')."""
     book = _resolve_book_or_404(book_id)
     payload = request.get_json(silent=True) or {}
+    if deployment_profile.use_calibre_native_reader_data():
+        try:
+            row = calibre_annotations.create_annotation(
+                _cwng_user_name(), book_id, payload
+            )
+        except ValueError as e:
+            return jsonify({"error": "bad_anchor", "message": str(e)}), 400
+        except CalibreMCPClientError as e:
+            return jsonify({"error": "reader_backend_error", "message": str(e)}), e.status_code
+        return jsonify(_data_json_row(row, row.cfi_range, None)), 201
+
     try:
         row = create_annotation(
             payload, user_id=current_user.id, book=book,
@@ -775,6 +808,17 @@ def annotations_edit(book_id, annotation_id):
     """Edit a highlight's color and/or note (position immutable)."""
     book = _resolve_book_or_404(book_id)
     data = request.get_json(silent=True) or {}
+    if deployment_profile.use_calibre_native_reader_data():
+        try:
+            row = calibre_annotations.update_annotation(
+                _cwng_user_name(), book_id, annotation_id, data
+            )
+        except ValueError as e:
+            return jsonify({"error": "bad_color", "message": str(e)}), 400
+        except CalibreMCPClientError as e:
+            return jsonify({"error": "reader_backend_error", "message": str(e)}), e.status_code
+        return jsonify(_data_json_row(row, row.cfi_range, None)), 200
+
     kwargs = {}
     if "highlight_color" in data:
         kwargs["color"] = data.get("highlight_color")
@@ -798,6 +842,15 @@ def annotations_edit(book_id, annotation_id):
 def annotations_delete(book_id, annotation_id):
     """Soft-delete a highlight + tombstone any remote sync targets."""
     _resolve_book_or_404(book_id)
+    if deployment_profile.use_calibre_native_reader_data():
+        try:
+            calibre_annotations.delete_annotation(
+                _cwng_user_name(), book_id, annotation_id
+            )
+        except CalibreMCPClientError as e:
+            return jsonify({"error": "reader_backend_error", "message": str(e)}), e.status_code
+        return jsonify({"status": "deleted", "annotation_id": annotation_id}), 200
+
     row = delete_annotation(
         annotation_id, user_id=current_user.id, book_id=book_id,
         session=ub.session, commit=ub.session_commit,

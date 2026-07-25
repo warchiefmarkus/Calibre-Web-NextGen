@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
-  Library, BookCopy,
+  Library, BookCopy, Sparkles,
   Info, ListChecks, Table2, Wand2, Files, SlidersHorizontal, Check, RotateCcw, X,
 } from 'lucide-react';
 import { useShelves, useMe, useMagicShelves, useUpdateSidebar } from '../lib/queries';
@@ -74,6 +74,7 @@ export function Sidebar({ open, onClose, onNavigate }: SidebarProps) {
   const canUpload = !!me?.role?.upload;
   const isAdmin = !!me?.role?.admin;
   const isAuthed = !!me?.id;
+  const showAiSearch = !!me?.features?.rag_search && !me?.role?.anonymous;
 
   const sidebarVis = me?.sidebar;
   const isVisible = (v?: string) => !v || sidebarVis?.[v] !== false;
@@ -249,6 +250,19 @@ export function Sidebar({ open, onClose, onNavigate }: SidebarProps) {
                   <span>{t('Library')}</span>
                 </Link>
               </li>
+              {showAiSearch && (
+                <li>
+                  <Link
+                    href="/ai-search"
+                    className={isActive(location, '/ai-search', true) ? styles.itemActive : styles.item}
+                    aria-current={isActive(location, '/ai-search', true) ? 'page' : undefined}
+                    onClick={onNavigate}
+                  >
+                    <Sparkles size={18} className={styles.icon} aria-hidden="true" focusable={false} />
+                    <span>{t('AI search')}</span>
+                  </Link>
+                </li>
+              )}
             </ul>
 
             {/* Customizable region (browse-by + discovery + Shelves), in saved order. */}

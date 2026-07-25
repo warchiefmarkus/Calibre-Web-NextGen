@@ -17,7 +17,7 @@ from sqlalchemy.exc import InvalidRequestError, OperationalError
 from . import api_v1
 from .serializers import serialize_shelf
 from .books import _row_to_item
-from .. import calibre_db, config, db, ub
+from .. import calibre_db, config, db, deployment_profile, ub
 from ..cw_login import current_user
 from ..usermanagement import login_required_if_no_ano
 from ..shelf import (
@@ -134,6 +134,9 @@ def create_shelf_api():
     if not name:
         return _err("invalid_request", "Shelf name is required", 400)
 
+    if "kobo_sync" in data and not deployment_profile.enable_kobo():
+        return _err("feature_disabled", "Kobo integration is disabled", 404)
+
     is_public = 1 if data.get("is_public") else 0
     if is_public and not current_user.role_edit_shelfs():
         return _err("forbidden", "You are not allowed to create a public shelf", 403)
@@ -141,7 +144,7 @@ def create_shelf_api():
         return _err("conflict", "A shelf with that name already exists", 409)
 
     shelf = ub.Shelf(name=name, is_public=is_public, user_id=int(current_user.id))
-    if data.get("kobo_sync") and config.config_kobo_sync:
+    if data.get("kobo_sync") and deployment_profile.enable_kobo() and config.config_kobo_sync:
         shelf.kobo_sync = True
     try:
         ub.session.add(shelf)
@@ -165,6 +168,8 @@ def update_shelf_api(shelf_id):
         return _err("forbidden", "You are not allowed to edit this shelf", 403)
 
     data = request.get_json(silent=True) or {}
+    if "kobo_sync" in data and not deployment_profile.enable_kobo():
+        return _err("feature_disabled", "Kobo integration is disabled", 404)
 
     # Resolve the target visibility first so a same-call rename is checked for
     # uniqueness against the *new* public/private scope.
@@ -185,7 +190,7 @@ def update_shelf_api(shelf_id):
     if "is_public" in data:
         shelf.is_public = target_public
 
-    if "kobo_sync" in data and config.config_kobo_sync:
+    if "kobo_sync" in data and deployment_profile.enable_kobo() and config.config_kobo_sync:
         shelf.kobo_sync = bool(data["kobo_sync"])
         if shelf.kobo_sync:
             # Clear any pending tombstone so a re-enabled shelf re-syncs to Kobo.

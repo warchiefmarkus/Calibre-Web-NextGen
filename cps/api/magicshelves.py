@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from . import api_v1
 from .books import _row_to_item
-from .. import ub, config, db, calibre_db, logger, magic_shelf
+from .. import ub, config, db, calibre_db, deployment_profile, logger, magic_shelf
 from ..cw_login import current_user
 from ..usermanagement import login_required_if_no_ano, user_login_required
 
@@ -45,7 +45,8 @@ def _shelf_item(shelf, uid):
         "is_public": bool(shelf.is_public),
         "is_owner": shelf.user_id == uid,
         "is_system": bool(getattr(shelf, "is_system", False)),
-        "kobo_sync": bool(getattr(shelf, "kobo_sync", False)),
+        "kobo_sync": deployment_profile.enable_kobo()
+        and bool(getattr(shelf, "kobo_sync", False)),
     }
 
 
@@ -102,7 +103,8 @@ def magic_shelf_books(shelf_id):
         return jsonify({"id": shelf.id, "name": display_name, "icon": shelf.icon or "🪄",
                         "is_system": bool(getattr(shelf, "is_system", False)),
                         "is_owner": (shelf.user_id == uid),
-                        "kobo_sync": bool(getattr(shelf, "kobo_sync", False)),
+                        "kobo_sync": deployment_profile.enable_kobo()
+        and bool(getattr(shelf, "kobo_sync", False)),
                         "items": [], "page": 1, "per_page": per_page, "total": 0})
 
     series_join = (db.books_series_link, db.Books.id == db.books_series_link.c.book, db.Series)
@@ -113,7 +115,8 @@ def magic_shelf_books(shelf_id):
         "id": shelf.id, "name": display_name, "icon": shelf.icon or "🪄",
         "is_system": bool(getattr(shelf, "is_system", False)),
         "is_owner": (shelf.user_id == uid),
-        "kobo_sync": bool(getattr(shelf, "kobo_sync", False)),
+        "kobo_sync": deployment_profile.enable_kobo()
+        and bool(getattr(shelf, "kobo_sync", False)),
         # rules included so the builder can load this shelf for editing
         "rules": shelf.rules or {"condition": "AND", "rules": []},
         "items": [_row_to_item(e) for e in entries],
@@ -138,6 +141,8 @@ def set_magic_shelf_kobo_sync(shelf_id):
     payloads carry it as the change timestamp — without it a device that
     already synced would ignore the change.
     """
+    if not deployment_profile.enable_kobo():
+        return _err("feature_disabled", "Kobo integration is disabled", 404)
     shelf = ub.session.query(ub.MagicShelf).get(shelf_id)
     if shelf is None:
         return _err("not_found", "Smart shelf not found", 404)

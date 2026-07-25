@@ -18,6 +18,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import logger
 from . import constants
+from . import deployment_profile
 from .cli import CliParameter
 from .reverseproxy import ReverseProxied
 from .server import WebServer
@@ -151,6 +152,7 @@ def _log_magic_shelf_counts(user_id, total_shelves, visible_shelves,
 
 
 def create_app():
+    app.config["MCP_MANAGED_LIBRARY"] = deployment_profile.is_mcp_managed_library()
     if csrf:
         csrf.init_app(app)
 
@@ -202,7 +204,10 @@ def create_app():
     if cli_param.dry_run:
         updater_thread.dry_run()
         sys.exit(0)
-    updater_thread.start()
+    if not deployment_profile.is_mcp_managed_library():
+        updater_thread.start()
+    else:
+        log.info("Internal updater disabled by mcp-managed-library profile")
     requirements = dependency_check()
     for res in requirements:
         if res['found'] == "not installed":
@@ -269,6 +274,35 @@ def create_app():
         limiter.init_app(app)
 
     # Register scheduled tasks
+    @app.before_request
+    def _mcp_managed_library_write_guard():
+        """Fail closed for upstream routes that mutate the Calibre library."""
+        if not deployment_profile.is_mcp_managed_library():
+            return None
+        from flask import jsonify, request
+
+        if request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        # The SPA /api/v1 mutation surface now delegates to CalibreMCP. Keep
+        # blocking only legacy/classic blueprints whose implementations still
+        # write the library directly or start CWA background mutation jobs.
+        blocked_blueprints = {"editbook", "cover_picker", "library_refresh",
+                              "convert_library", "epub_fixer", "cwa_internal", "duplicates"}
+        if request.blueprint in blocked_blueprints:
+            return jsonify({
+                "error": {
+                    "code": "library_managed_by_mcp",
+                    "message": "This library is managed through CalibreMCP.",
+                }
+            }), 409
+        return None
+
+    # CSRFProtect is initialized earlier and also uses before_request. Move the
+    # managed-library guard to index 0 so blocked mutations always fail with
+    # the explicit 409 contract before CSRF/auth handlers can intercept them.
+    app.before_request_funcs[None].remove(_mcp_managed_library_write_guard)
+    app.before_request_funcs[None].insert(0, _mcp_managed_library_write_guard)
+
     # Ensure a valid calibre_db session exists before handling each request
     @app.before_request
     def _cwa_ensure_db_session():
@@ -481,8 +515,15 @@ def create_app():
         if calibre_db.session_factory:
             calibre_db.session_factory.remove()
 
-    from .schedule import register_scheduled_tasks, register_startup_tasks
-    register_scheduled_tasks(config.schedule_reconnect)
-    register_startup_tasks()
+    if deployment_profile.enable_library_automation():
+        from .schedule import register_scheduled_tasks, register_startup_tasks
+        register_scheduled_tasks(config.schedule_reconnect)
+        register_startup_tasks()
+    else:
+        log.info("Library scheduler and startup automation disabled by deployment profile")
+
+    @app.get("/healthz")
+    def _healthz():
+        return {"status": "ok", "profile": deployment_profile.profile_name()}
 
     return app

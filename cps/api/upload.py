@@ -11,14 +11,21 @@ queued filenames and any per-file errors (the legacy route only flashed those).
 """
 import os
 import json
+import hashlib
 
 from flask import jsonify, request
 from flask_babel import lazy_gettext as N_
 from markupsafe import escape
 
 from . import api_v1, log
-from .. import config, calibre_db
+from .. import config, calibre_db, deployment_profile, ub
 from ..cw_login import current_user
+from ..services.calibremcp_client import (
+    CalibreMCPClientError,
+    add_book_format as mcp_add_book_format,
+    import_book as mcp_import_book,
+)
+from ..services.managed_format import ManagedFormatError, stage_uploaded_format
 from ..usermanagement import login_required_if_no_ano
 from ..services.worker import WorkerThread
 from ..tasks.upload import TaskUpload
@@ -30,8 +37,41 @@ from ..editbooks import (
 )
 
 
+def _file_idempotency_key(path, user_name, original_filename):
+    digest = hashlib.sha256()
+    digest.update(str(user_name).encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(str(original_filename).encode("utf-8"))
+    digest.update(b"\0")
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "cwng-import-" + digest.hexdigest()
+
+
 def _err(code, message, status):
     return jsonify({"error": {"code": code, "message": message}}), status
+
+
+def _record_original_filename(book_id, original_filename):
+    """Insert the import filename once; idempotent replays are a no-op."""
+    original = ub.session.get(ub.BookOriginalFilename, book_id)
+    if original is None:
+        ub.session.add(ub.BookOriginalFilename(
+            book_id=book_id,
+            filename=original_filename,
+        ))
+        ub.session.commit()
+        return "created"
+    if original.filename != original_filename:
+        log.warning(
+            "Book %s already has original filename %r; keeping it instead of %r",
+            book_id,
+            original.filename,
+            original_filename,
+        )
+        return "kept_existing"
+    return "unchanged"
 
 
 @api_v1.route("/upload", methods=["POST"])
@@ -45,6 +85,63 @@ def upload_books():
     files = [f for f in request.files.getlist("file") if f and f.filename]
     if not files:
         return _err("invalid_request", "No files were uploaded", 400)
+
+    if deployment_profile.is_mcp_managed_library():
+        queued, errors, imported = [], [], []
+        for uploaded in files:
+            if not _validate_uploaded_file(uploaded):
+                errors.append({
+                    "filename": uploaded.filename,
+                    "error": "File type not allowed (allowed: {})".format(
+                        config.config_upload_formats
+                    ),
+                })
+                continue
+            staged = None
+            try:
+                uploaded.stream.seek(0)
+                staged = stage_uploaded_format(uploaded)
+                original_filename = os.path.basename(
+                    uploaded.filename.replace("\\", "/")
+                )
+                result = mcp_import_book(
+                    current_user.name, str(staged), original_filename,
+                    idempotency_key=_file_idempotency_key(
+                        staged, current_user.name, original_filename
+                    ),
+                )
+                book_id = int(result["book_id"])
+                queued.append(uploaded.filename)
+                imported.append({
+                    "filename": uploaded.filename,
+                    "book_id": book_id,
+                })
+                try:
+                    _record_original_filename(book_id, original_filename)
+                except Exception:
+                    ub.session.rollback()
+                    log.error(
+                        "Book %s imported, but original filename could not be saved",
+                        book_id,
+                        exc_info=True,
+                    )
+                    errors.append({
+                        "filename": uploaded.filename,
+                        "error": "Book imported, but original filename was not recorded",
+                    })
+            except (ManagedFormatError, CalibreMCPClientError) as exc:
+                errors.append({"filename": uploaded.filename, "error": str(exc)})
+            finally:
+                if staged is not None:
+                    staged.unlink(missing_ok=True)
+        calibre_db.session.rollback()
+        calibre_db.session.expire_all()
+        return jsonify({
+            "queued": queued,
+            "errors": errors,
+            "imported": imported,
+            "completed": True,
+        })
 
     try:
         _ensure_ingest_dir_writable(allow_create=True, check_write=False)
@@ -93,7 +190,9 @@ def add_format(book_id):
         return _err("unauthorized", "You must be signed in", 401)
     if not current_user.role_upload():
         return _err("forbidden", "You are not allowed to upload books", 403)
-    if not calibre_db.get_book(book_id):
+    if not calibre_db.get_filtered_book(
+        book_id, allow_show_archived=True, allow_show_hidden=True
+    ):
         return _err("not_found", "Book not found", 404)
 
     uploaded = request.files.get("file")
@@ -102,6 +201,27 @@ def add_format(book_id):
     if not _validate_uploaded_file(uploaded):
         return _err("invalid_request",
                     "File type not allowed (allowed: {})".format(config.config_upload_formats), 400)
+
+    if deployment_profile.is_mcp_managed_library():
+        staged = None
+        try:
+            staged = stage_uploaded_format(uploaded)
+            result = mcp_add_book_format(current_user.name, book_id, str(staged))
+        except ManagedFormatError as exc:
+            return _err("invalid_format", str(exc), 400)
+        except CalibreMCPClientError as exc:
+            return _err("format_add_failed", str(exc), exc.status_code)
+        finally:
+            if staged is not None:
+                staged.unlink(missing_ok=True)
+
+        calibre_db.session.rollback()
+        calibre_db.session.expire_all()
+        return jsonify({
+            "queued": uploaded.filename,
+            "completed": True,
+            "formats": [item.get("format") for item in result.get("formats", [])],
+        })
 
     try:
         _ensure_ingest_dir_writable(allow_create=True, check_write=False)

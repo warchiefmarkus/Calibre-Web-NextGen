@@ -10,9 +10,12 @@ import os
 import sys
 
 
-# Add local path to sys.path, so we can import cps
+# Add local source and helper-script paths before importing any cps module.
 path = os.path.dirname(os.path.abspath(__file__))
+scripts_path = os.path.join(path, "scripts")
 sys.path.insert(0, path)
+if scripts_path not in sys.path:
+    sys.path.insert(1, scripts_path)
 
 from cps.main import main
 

@@ -262,7 +262,8 @@ class ConfigSQL(object):
 
         # Fallback auto-detect: if calibre library not configured but default metadata.db exists, set it
         if (not self.config_calibre_dir or not os.path.isfile(os.path.join(self.config_calibre_dir, 'metadata.db'))):
-            fallback_db = '/calibre-library/metadata.db'
+            fallback_root = os.environ.get('CWNG_LIBRARY_PATH', '/calibre-library')
+            fallback_db = os.path.join(fallback_root, 'metadata.db')
             if os.path.isfile(fallback_db):
                 detected_dir = os.path.dirname(fallback_db)
                 if not self.config_calibre_dir:

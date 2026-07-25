@@ -2,7 +2,7 @@ import { Link } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, Download, Upload as UploadIcon, Highlighter } from 'lucide-react';
 import { apiGet, apiUrl } from '../lib/api';
-import { useBook } from '../lib/queries';
+import { useBook, useMe } from '../lib/queries';
 import { SpinnerCentered } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { useT } from '../lib/i18n';
@@ -27,6 +27,7 @@ const COLOR_HEX: Record<string, string> = {
 export function Annotations({ id }: { id: string }) {
   const t = useT();
   const book = useBook(id).data;
+  const koboImportEnabled = !!useMe().data?.features?.kobo_sync;
   // SC 1.4.1: name the highlight color; the colored bar alone is not enough.
   const colorName = (c: string | null) =>
     ({ yellow: t('Yellow'), red: t('Red'), green: t('Green'), blue: t('Blue') })[c || 'yellow'] || t('Yellow');
@@ -55,13 +56,19 @@ export function Annotations({ id }: { id: string }) {
         <a className={styles.toolBtn} href={apiUrl(`/annotations/${id}/export.md`)} download target="_blank" rel="noopener"><Download size={14} aria-hidden="true" focusable={false} /> Markdown</a>
         <a className={styles.toolBtn} href={apiUrl(`/annotations/${id}/export.csv`)} download target="_blank" rel="noopener"><Download size={14} aria-hidden="true" focusable={false} /> CSV</a>
         <a className={styles.toolBtn} href={apiUrl(`/annotations/${id}/export.json`)} download target="_blank" rel="noopener"><Download size={14} aria-hidden="true" focusable={false} /> JSON</a>
-        <a className={styles.toolBtn} href={apiUrl('/annotations/import')}><UploadIcon size={14} aria-hidden="true" focusable={false} /> {t('Import from Kobo')}</a>
+        {koboImportEnabled && (
+          <a className={styles.toolBtn} href={apiUrl('/annotations/import')}>
+            <UploadIcon size={14} aria-hidden="true" focusable={false} /> {t('Import from Kobo')}
+          </a>
+        )}
       </div>
 
       {error ? (
         <EmptyState message={error instanceof Error ? error.message : t('Could not load highlights.')} />
       ) : annotations.length === 0 ? (
-        <EmptyState message={t('No highlights yet. Highlight while reading, or import from a Kobo device.')} />
+        <EmptyState message={t(koboImportEnabled
+          ? 'No highlights yet. Highlight while reading, or import from a Kobo device.'
+          : 'No highlights yet. Highlight text while reading to add one.')} />
       ) : (
         <ul className={styles.list}>
           {annotations.map((a) => (

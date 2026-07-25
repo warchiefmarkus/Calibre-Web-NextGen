@@ -33,7 +33,9 @@ from werkzeug.utils import secure_filename
 from .web import cwa_get_num_books_in_library
 
 import sys
-sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+_SCRIPT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, 'scripts'))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(1, _SCRIPT_DIR)
 from cwa_db import CWA_DB, INTEGER_SETTINGS, FLOAT_SETTINGS, JSON_SETTINGS
 from .services.background_scheduler import BackgroundScheduler, DateTrigger
 from .services.worker import WorkerThread, STAT_FINISH_SUCCESS, STAT_FAIL, STAT_ENDED, STAT_CANCELLED
@@ -67,8 +69,9 @@ def _mirror_hardcover_sync_for_rollback(cwa_db):
 ##——————————————————————————————GLOBAL VARIABLES——————————————————————————————##
 
 # Folder where the log files are stored
-LOG_ARCHIVE = "/config/log_archive"
-DIRS_JSON = "/app/calibre-web-automated/dirs.json"
+_CONFIG_ROOT = os.environ.get("CALIBRE_DBPATH", "/config")
+LOG_ARCHIVE = os.path.join(_CONFIG_ROOT, "log_archive")
+DIRS_JSON = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "dirs.json"))
 
 # Debounced duplicate scan timer (web process)
 _duplicate_scan_timer = None

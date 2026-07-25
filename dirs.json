@@ -1,5 +1,5 @@
 {
-    "ingest_folder":"/cwa-book-ingest",
-    "calibre_library_dir":"/calibre-library",
-    "tmp_conversion_dir":"/config/.cwa_conversion_tmp"
+    "ingest_folder": "/root/calibre/CalibreWeb/var/staging/uploads",
+    "calibre_library_dir": "/root/calibre/Library",
+    "tmp_conversion_dir": "/root/calibre/CalibreWeb/var/tmp/conversion"
 }

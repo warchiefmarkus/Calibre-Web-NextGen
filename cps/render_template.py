@@ -13,7 +13,7 @@ from werkzeug.local import LocalProxy
 from .cw_login import current_user
 from sqlalchemy.sql.expression import or_
 
-from . import config, constants, logger, ub
+from . import config, constants, deployment_profile, logger, ub
 from .ub import User
 from .duplicate_notice import duplicate_setup_notice_dismissed
 
@@ -34,6 +34,8 @@ def _duplicate_setup_notice_dismissed():
 
 
 def duplicate_index_setup_notification(settings, cwa_db=None):
+    if deployment_profile.is_mcp_managed_library():
+        return False
     if duplicate_setup_notice_dismissed(getattr(current_user, 'id', 'unknown')):
         return False
 
@@ -136,7 +138,8 @@ def get_sidebar_config(kwargs=None):
             {"glyph": "glyphicon-th-list", "text": _('Books List'), "link": 'web.books_table', "id": "list",
              "visibility": constants.SIDEBAR_LIST, 'public': (not current_user.is_anonymous), "page": "list",
              "show_text": _('Show Books List'), "config_show": content})
-    if current_user.role_admin() or current_user.role_edit():
+    if ((current_user.role_admin() or current_user.role_edit())
+            and not deployment_profile.is_mcp_managed_library()):
         sidebar.append(
             {"glyph": "glyphicon-copy", "text": _('Duplicates'), "link": 'duplicates.show_duplicates', "id": "duplicates",
              "visibility": constants.SIDEBAR_DUPLICATES, 'public': (not current_user.is_anonymous), "page": "duplicates",
@@ -371,7 +374,7 @@ def render_title_template(*args, **kwargs):
         }
     except Exception:
         magic_shelf_routes = {"render": False, "create": False}
-    if current_user.role_admin():
+    if current_user.role_admin() and not deployment_profile.is_mcp_managed_library():
         try:
             cwa_update_notification()
         except Exception as e:
@@ -381,11 +384,12 @@ def render_title_template(*args, **kwargs):
         theme_migration_notification()
     except Exception as e:
         print(f"[theme-migration-notification] Error showing theme migration notification: {e}", flush=True)
-    # Notify any user if translations are missing for their language
-    try:
-        translations_missing_notification()
-    except Exception as e:
-        print(f"[translation-notification-service] The following error occurred when checking for missing translations:\n{e}", flush=True)
+    # Managed bare-metal builds do not use the container-only /app notice files.
+    if not deployment_profile.is_mcp_managed_library():
+        try:
+            translations_missing_notification()
+        except Exception as e:
+            print(f"[translation-notification-service] The following error occurred when checking for missing translations:\n{e}", flush=True)
     duplicate_notification = {
         "enabled": False,
         "count": 0,
@@ -394,7 +398,9 @@ def render_title_template(*args, **kwargs):
         "stale": False,
     }
     try:
-        if current_user.is_authenticated and (current_user.role_admin() or current_user.role_edit()):
+        if (not deployment_profile.is_mcp_managed_library()
+                and current_user.is_authenticated
+                and (current_user.role_admin() or current_user.role_edit())):
             cwa_db = CWA_DB()
             detection_enabled = cwa_db.cwa_settings.get('duplicate_detection_enabled', 1)
             notifications_enabled = bool(cwa_db.cwa_settings.get('duplicate_notifications_enabled', 1))

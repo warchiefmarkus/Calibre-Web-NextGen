@@ -9,7 +9,7 @@
     {{ _('The file is parsed in-memory and deleted after the import completes. It is never stored on the server.') }}
   </p>
 
-  <form id="annotations-import-form" enctype="multipart/form-data" method="POST" action="{{ url_for('annotations.annotations_import_submit') }}">
+  <form id="annotations-import-form" enctype="multipart/form-data" method="POST" action="{{ url_for('kobo_annotations.annotations_import_submit') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label for="annotations-import-file">{{ _('KoboReader.sqlite') }}</label>

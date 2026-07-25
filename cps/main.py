@@ -8,6 +8,7 @@
 import sys
 
 from . import create_app, limiter
+from . import deployment_profile
 from .jinjia import jinjia
 from flask import request, g
 
@@ -27,7 +28,7 @@ def main():
     from .editbooks import editbook
     from .cover_picker import cover_picker
     from .cover_preview_blueprint import cover_preview_bp
-    from .annotations import annotations_bp
+    from .annotations import annotations_bp, kobo_annotations_bp
     from .about import about
     from .search import search
     from .search_metadata import meta
@@ -35,11 +36,17 @@ def main():
     from .tasks_status import tasks
     from .error_handler import init_errorhandler
     from .remotelogin import remotelogin
-    from .progress_syncing.protocols.kosync import kosync
-    from .duplicates import duplicates
+    kosync = None
+    duplicates = None
+    if deployment_profile.enable_koreader():
+        from .progress_syncing.protocols.kosync import kosync
+    if deployment_profile.enable_library_automation():
+        from .duplicates import duplicates
     from .api import api_v1
     from .spa import spa
     try:
+        if not deployment_profile.enable_kobo():
+            raise ImportError("Kobo disabled by deployment profile")
         from .kobo import kobo, get_kobo_activated
         from .kobo_auth import kobo_auth
         from .readingservices import readingservices_api_v3, readingservices_userstorage
@@ -62,15 +69,16 @@ def main():
 
     # CWA Blueprints
     app.register_blueprint(switch_theme)
-    app.register_blueprint(library_refresh)
-    app.register_blueprint(convert_library)
-    app.register_blueprint(epub_fixer)
     app.register_blueprint(cwa_stats)
     app.register_blueprint(cwa_check_status)
     app.register_blueprint(cwa_settings)
     app.register_blueprint(cwa_logs)
     app.register_blueprint(profile_pictures)
-    app.register_blueprint(cwa_internal)
+    if deployment_profile.enable_library_automation():
+        app.register_blueprint(library_refresh)
+        app.register_blueprint(convert_library)
+        app.register_blueprint(epub_fixer)
+        app.register_blueprint(cwa_internal)
 
     # Stock CW
     app.register_blueprint(search)
@@ -89,8 +97,12 @@ def main():
     app.register_blueprint(cover_picker)
     app.register_blueprint(cover_preview_bp)
     app.register_blueprint(annotations_bp)
-    app.register_blueprint(kosync)
-    app.register_blueprint(duplicates)
+    if deployment_profile.enable_kobo():
+        app.register_blueprint(kobo_annotations_bp)
+    if kosync is not None:
+        app.register_blueprint(kosync)
+    if duplicates is not None:
+        app.register_blueprint(duplicates)
     app.register_blueprint(api_v1)
     app.register_blueprint(spa)
     if kobo_available:
@@ -105,8 +117,9 @@ def main():
     # Annotation sync-target pushes are blocking HTTPS calls; on the request
     # greenlet they freeze the whole (unpatched-gevent) app, so hand them to
     # the WorkerThread instead (#920).
-    from .services import annotation_sync
-    annotation_sync.enable_background_dispatch()
+    if not deployment_profile.is_mcp_managed_library():
+        from .services import annotation_sync
+        annotation_sync.enable_background_dispatch()
 
     success = web_server.start()
     sys.exit(0 if success else 1)

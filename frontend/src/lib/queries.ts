@@ -10,6 +10,7 @@ import type {
   Me, BooksPage, BookDetail, EntityList, Shelf, ShelfDetail,
   SearchOptions, AdvancedSearchParams, AdvSearchResult, Account, ProfileUpdate,
   BookMetadata, MetadataUpdate, UploadResult, AdminUser, AboutInfo, TaskItem, AuthConfig,
+  RagSearchRequest, RagSearchResponse, RagStatus,
 } from './api';
 
 /** Entity kinds the catalog can be filtered by. Singular here; the browse-list
@@ -807,9 +808,9 @@ export function useSaveReaderSettings() {
 }
 
 export function useBookmark(bookId: string | number, format = 'epub') {
-  return useQuery<{ bookmark: string | null }>({
+  return useQuery<{ bookmark: string | null; position_fraction?: number }>({
     queryKey: ['bookmark', String(bookId), format],
-    queryFn: () => apiGet<{ bookmark: string | null }>(
+    queryFn: () => apiGet<{ bookmark: string | null; position_fraction?: number }>(
       `/api/v1/books/${bookId}/bookmark?format=${encodeURIComponent(format)}`),
     staleTime: 0,
   });
@@ -817,7 +818,7 @@ export function useBookmark(bookId: string | number, format = 'epub') {
 
 export function useSaveBookmark(bookId: string | number) {
   return useMutation({
-    mutationFn: (vars: { format: string; bookmark: string }) =>
+    mutationFn: (vars: { format: string; bookmark: string; position_fraction?: number; device?: string }) =>
       apiPost(`/api/v1/books/${bookId}/bookmark`, vars),
   });
 }
@@ -871,6 +872,25 @@ export function useRevokeAppPassword() {
   return useMutation({
     mutationFn: (id: number) => apiPost(`/api/v1/account/app-passwords/${id}/delete`),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['account'] }),
+  });
+}
+
+// ── AI / RAG search ─────────────────────────────────────────────────────────
+
+export function useRagStatus(enabled = true) {
+  return useQuery<RagStatus>({
+    queryKey: ['rag-status'],
+    queryFn: () => apiGet<RagStatus>('/api/v1/rag/status'),
+    enabled,
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
+
+export function useRagSearch() {
+  return useMutation({
+    mutationFn: (vars: RagSearchRequest) =>
+      apiPost<RagSearchResponse>('/api/v1/rag/search', vars),
   });
 }
 

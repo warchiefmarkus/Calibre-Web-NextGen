@@ -1215,8 +1215,11 @@ class CalibreDB:
                 db_writable
                 and not nsm
                 and not desktop_compat
+                and not os.getenv("CWNG_PROFILE", "").strip().lower() == "mcp-managed-library"
             ):
                 ensure_calibre_db_tables(conn)
+            elif os.getenv("CWNG_PROFILE", "").strip().lower() == "mcp-managed-library":
+                log.info("Skipping Calibre checksum schema migration in mcp-managed-library profile")
 
             # With NullPool (DESKTOP_COMPAT_MODE) the setup connection is not the
             # shared persistent connection — close it so the file lock is released

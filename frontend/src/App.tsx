@@ -14,6 +14,7 @@ import { NotFound } from './pages/NotFound';
 import { Shelves } from './pages/Shelves';
 import { Shelf } from './pages/Shelf';
 import { AdvancedSearch } from './pages/AdvancedSearch';
+import { AiSearch } from './pages/AiSearch';
 import { Account } from './pages/Account';
 import { EditBook } from './pages/EditBook';
 import { CoverPicker } from './pages/CoverPicker';
@@ -221,8 +222,9 @@ export function App() {
           <Route path={SPA_ROUTES.favorites}>{() => <Catalog view="favorites" />}</Route>
           <Route path={SPA_ROUTES.archived}>{() => <Catalog view="archived" />}</Route>
 
-          {/* Advanced search */}
+          {/* Search */}
           <Route path={SPA_ROUTES.search}>{() => <AdvancedSearch />}</Route>
+          <Route path={SPA_ROUTES.aiSearch}>{() => <AiSearch />}</Route>
 
           {/* Account / settings */}
           <Route path={SPA_ROUTES.account}>{() => <Account />}</Route>
