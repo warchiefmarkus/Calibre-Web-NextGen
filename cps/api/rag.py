@@ -100,6 +100,8 @@ def _result_item(item: dict[str, Any]) -> dict[str, Any]:
         "proximity_score": item.get("proximity_score"),
         "lexical_rank": item.get("lexical_rank"),
         "matched_terms": [str(v)[:100] for v in (item.get("matched_terms") or [])[:24]],
+        "reranker_score": item.get("reranker_score"),
+        "reranker_rank": item.get("reranker_rank"),
         "combined_score": item.get("combined_score"),
     }
 
@@ -117,7 +119,12 @@ def rag_status():
     vector = raw.get("vector_store") if isinstance(raw.get("vector_store"), dict) else {}
     return jsonify({
         "enabled": bool(raw.get("enabled")),
-        "ready": bool(raw.get("enabled") and raw.get("model_ready") and vector.get("current")),
+        "ready": bool(
+            raw.get("enabled")
+            and raw.get("model_ready")
+            and vector.get("current")
+            and (not raw.get("reranker_enabled") or raw.get("reranker_ready"))
+        ),
         "indexed_books": int(raw.get("indexed_books") or 0),
         "total_books": int(raw.get("total_books") or 0),
         "not_indexed_books": int(raw.get("not_indexed_books") or 0),
@@ -126,6 +133,8 @@ def rag_status():
         "last_sync_at": raw.get("last_sync_at"),
         "model": raw.get("model"),
         "model_runtime": raw.get("model_runtime"),
+        "reranker_ready": bool(raw.get("reranker_ready")),
+        "reranker_model": raw.get("reranker_model"),
         "statuses": {
             key: {
                 "books": int((value or {}).get("books") or 0),
@@ -218,6 +227,8 @@ def rag_search():
         "count": len(results),
         "duration_ms": raw.get("duration_ms"),
         "model": raw.get("model"),
+        "reranker_backend": raw.get("reranker_backend"),
+        "reranker_model": raw.get("reranker_model"),
         "results": [
             _result_item(item) for item in results if isinstance(item, dict)
         ],

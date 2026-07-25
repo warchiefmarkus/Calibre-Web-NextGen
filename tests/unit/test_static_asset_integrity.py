@@ -306,3 +306,23 @@ def test_epub_reader_uses_shared_reliable_position_saver():
     assert "useReadingPositionSaver(id, 'epub')" in source
     assert "schedulePosition(cfi, normalized)" in source
     assert "useSaveBookmark" not in source
+
+
+@pytest.mark.unit
+def test_rag_proxy_preserves_neural_reranker_provenance():
+    """The SPA must receive the cross-encoder rank instead of silently dropping it."""
+    api_path = os.path.join(CPS_DIR, "api", "rag.py")
+    client_types = os.path.join(FRONTEND_DIR, "src", "lib", "api.ts")
+    page_path = os.path.join(FRONTEND_DIR, "src", "pages", "AiSearch.tsx")
+    with open(api_path, encoding="utf-8") as handle:
+        api_source = handle.read()
+    with open(client_types, encoding="utf-8") as handle:
+        types_source = handle.read()
+    with open(page_path, encoding="utf-8") as handle:
+        page_source = handle.read()
+    assert '"reranker_score": item.get("reranker_score")' in api_source
+    assert '"reranker_rank": item.get("reranker_rank")' in api_source
+    assert '"reranker_backend": raw.get("reranker_backend")' in api_source
+    assert "reranker_score: number | null" in types_source
+    assert "reranker_rank: number | null" in types_source
+    assert "neural #" in page_source

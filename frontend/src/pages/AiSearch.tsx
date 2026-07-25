@@ -30,7 +30,10 @@ function resultLocation(result: RagSearchResult): string | null {
 
 function scoreLabel(result: RagSearchResult): string | null {
   if (typeof result.evidence_score === 'number' && result.evidence_score > 0) {
-    return `${Math.round(result.evidence_score * 100)}% match`;
+    const evidence = `${Math.round(result.evidence_score * 100)}% match`;
+    return typeof result.reranker_rank === 'number'
+      ? `${evidence} · neural #${result.reranker_rank}`
+      : evidence;
   }
   if (typeof result.semantic_score === 'number') {
     return `${Math.round(result.semantic_score * 100)}% semantic`;

@@ -237,6 +237,8 @@ export interface RagStatus {
   last_sync_at: string | null;
   model: string | null;
   model_runtime: string | null;
+  reranker_ready: boolean;
+  reranker_model: string | null;
   statuses: Record<string, { books: number; chunks: number }>;
 }
 
@@ -271,6 +273,8 @@ export interface RagSearchResult {
   proximity_score: number | null;
   lexical_rank: number | null;
   matched_terms: string[];
+  reranker_score: number | null;
+  reranker_rank: number | null;
   combined_score: number | null;
 }
 
@@ -283,6 +287,8 @@ export interface RagSearchResponse {
   count: number;
   duration_ms: number | null;
   model: string | null;
+  reranker_backend?: string | null;
+  reranker_model?: string | null;
   results: RagSearchResult[];
 }
 
