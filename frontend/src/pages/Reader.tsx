@@ -341,7 +341,8 @@ export function Reader({ id }: { id: string }) {
       try {
         // Fetch the .epub ourselves (same-origin cookie auth) and hand epub.js
         // an ArrayBuffer — reliable archive open regardless of the URL extension.
-        const res = await fetch(resourceUrl(epubFormat.download_url), { credentials: 'include' });
+        const rawBookUrl = resourceUrl(`/show/${id}/${epubFormat.format.toLowerCase()}`);
+        const res = await fetch(rawBookUrl, { credentials: 'include' });
         if (!res.ok) throw new Error(t('Could not load the book file ({status})', { status: res.status }));
         const buf = await res.arrayBuffer();
         if (cancelled) return;

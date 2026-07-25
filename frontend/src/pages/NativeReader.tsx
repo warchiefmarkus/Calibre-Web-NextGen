@@ -6,6 +6,7 @@ import { SpinnerCentered } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { VisuallyHidden } from '../components/VisuallyHidden';
 import { useT } from '../lib/i18n';
+import { parseFb2, type Fb2Document } from '../lib/fb2';
 import styles from './NativeReader.module.css';
 
 const AUDIO = new Set(['mp3', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav', 'aac']);
@@ -21,6 +22,8 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
   const src = apiUrl(`/show/${id}/${fmt}`);
   const [text, setText] = useState<string | null>(null);
   const [textErr, setTextErr] = useState(false);
+  const [fb2, setFb2] = useState<Fb2Document | null>(null);
+  const [fb2Err, setFb2Err] = useState(false);
 
   useEffect(() => {
     if (fmt !== 'txt') return;
@@ -29,6 +32,19 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((tx) => { if (alive) setText(tx); })
       .catch(() => { if (alive) setTextErr(true); });
+    return () => { alive = false; };
+  }, [src, fmt]);
+
+
+  useEffect(() => {
+    if (fmt !== 'fb2') return;
+    let alive = true;
+    setFb2(null);
+    setFb2Err(false);
+    fetch(src, { credentials: 'include' })
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((xml) => { if (alive) setFb2(parseFb2(xml)); })
+      .catch(() => { if (alive) setFb2Err(true); });
     return () => { alive = false; };
   }, [src, fmt]);
 
@@ -61,9 +77,31 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
               : <pre className={styles.text}>{text}</pre>
         )}
 
+        {fmt === 'fb2' && (
+          fb2Err ? <EmptyState message={t('Could not load this FB2 book.')} />
+            : fb2 === null ? <SpinnerCentered size={36} />
+              : <article className={styles.fb2}>
+                <header className={styles.fb2Header}>
+                  <h1 className={styles.fb2Title}>{fb2.title}</h1>
+                  {fb2.authors.length > 0 && <p className={styles.fb2Authors}>{fb2.authors.join(', ')}</p>}
+                </header>
+                {fb2.blocks.map((block, index) => {
+                  if (block.kind === 'heading') {
+                    const Heading = (`h${Math.max(2, Math.min(6, block.level))}`) as keyof JSX.IntrinsicElements;
+                    return <Heading className={styles.fb2Heading} key={index}>{block.text}</Heading>;
+                  }
+                  if (block.kind === 'paragraph') return <p className={styles.fb2Paragraph} key={index}>{block.text}</p>;
+                  if (block.kind === 'subtitle') return <p className={styles.fb2Subtitle} key={index}>{block.text}</p>;
+                  if (block.kind === 'quote') return <blockquote className={styles.fb2Quote} key={index}>{block.text}</blockquote>;
+                  if (block.kind === 'image') return <img className={styles.fb2Image} key={index} src={block.src} alt={block.alt} />;
+                  return <div className={styles.fb2Break} key={index} aria-hidden="true" />;
+                })}
+              </article>
+        )}
+
         {COMIC.has(fmt) && <ComicViewer id={id} />}
 
-        {!['pdf', 'txt'].includes(fmt) && !AUDIO.has(fmt) && !COMIC.has(fmt) && (
+        {!['pdf', 'txt', 'fb2'].includes(fmt) && !AUDIO.has(fmt) && !COMIC.has(fmt) && (
           // djvu / other — server reader handles rendering
           <div className={styles.fallback}>
             <p>{t('This format opens in the full-screen reader.')}</p>

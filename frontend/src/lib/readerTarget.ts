@@ -1,6 +1,6 @@
 const SPA_READABLE = new Set(['epub', 'kepub']);
 const SERVER_READABLE = new Set([
-  'pdf', 'txt', 'djvu', 'cbz', 'cbr', 'cbt', 'cb7',
+  'pdf', 'txt', 'fb2', 'djvu', 'cbz', 'cbr', 'cbt', 'cb7',
   'mp3', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav',
 ]);
 

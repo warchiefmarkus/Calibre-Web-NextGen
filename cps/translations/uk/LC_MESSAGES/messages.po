@@ -7034,9 +7034,9 @@ msgid "Chapter progress: %(pct)d%%"
 msgstr ""
 
 #: cps/templates/annotations_view.html:34
-#, fuzzy, python-format
+#, python-format
 msgid "Source: %(s)s"
-msgstr "Серії: %(serie)s"
+msgstr "Джерело: %(s)s"
 
 #: cps/templates/annotations_view.html:45 cps/templates/read.html:192
 msgid "No annotations on this book yet."

@@ -394,6 +394,7 @@ export interface OAuthProvider {
 
 export interface AuthConfig {
   instance_name?: string;
+  default_locale: string;
   public_registration: boolean;
   register_email: boolean;
   mail_configured: boolean;

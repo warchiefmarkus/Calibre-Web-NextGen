@@ -237,8 +237,12 @@ def auth_config():
         remote_login_url = url_for("remotelogin.remote_login") if remote_login else ""
     except Exception:
         remote_login_url = ""
+    default_locale = getattr(config, "config_default_locale", "en")
+    if not isinstance(default_locale, str) or not default_locale.strip():
+        default_locale = "en"
     return jsonify({
         "instance_name": _instance_name(),
+        "default_locale": default_locale.strip(),
         "public_registration": bool(getattr(config, "config_public_reg", False)),
         "register_email": bool(getattr(config, "config_register_email", False)),
         "mail_configured": mail_ok,

@@ -4,7 +4,7 @@ import { RouteA11y } from './lib/a11y/useRouteA11y';
 import { BASE_PREFIX, type AdvancedSearchParams } from './lib/api';
 import { bodyFontStack, displayFontStack } from './lib/fonts';
 import { resolveTheme } from './lib/themes';
-import { useMe, useLogout } from './lib/queries';
+import { useMe, useLogout, useAuthConfig } from './lib/queries';
 import { Login } from './pages/Login';
 import { MagicLink } from './pages/MagicLink';
 import { Catalog } from './pages/Catalog';
@@ -75,6 +75,7 @@ function AuthenticatedAuthLanding() {
 
 export function App() {
   const { data: me, isLoading } = useMe();
+  const { data: authConfig } = useAuthConfig();
   const logout = useLogout();
   // Anonymous browsing (#1023): /me answers with the Guest identity rather than
   // 401ing, so `me != null` means "we know who you are", not "you signed in".
@@ -124,15 +125,17 @@ export function App() {
     // Login can navigate to it via wouter. On success the me-cache flips and the
     // authenticated tree below mounts.
     return (
-      <Router base={ROUTER_BASE}>
-        <RouteA11y />
-        <RouteBoundary>
-          <Switch>
-            <Route path={AUTH_ROUTES.magicLink}>{() => <MagicLink />}</Route>
-            <Route>{() => <Login />}</Route>
-          </Switch>
-        </RouteBoundary>
-      </Router>
+      <I18nProvider locale={authConfig?.default_locale || 'en'}>
+        <Router base={ROUTER_BASE}>
+          <RouteA11y />
+          <RouteBoundary>
+            <Switch>
+              <Route path={AUTH_ROUTES.magicLink}>{() => <MagicLink />}</Route>
+              <Route>{() => <Login />}</Route>
+            </Switch>
+          </RouteBoundary>
+        </Router>
+      </I18nProvider>
     );
   }
 

@@ -45,7 +45,7 @@ except ImportError as e:
 from . import calibre_db, cli_param
 from .string_helper import strip_whitespaces
 from .tasks.convert import TaskConvert
-from . import logger, config, db, ub, fs
+from . import logger, config, db, ub, fs, deployment_profile
 from . import gdriveutils as gd
 from .constants import (STATIC_DIR as _STATIC_DIR, CACHE_TYPE_THUMBNAILS, THUMBNAIL_TYPE_COVER, THUMBNAIL_TYPE_SERIES,
                         SUPPORTED_CALIBRE_BINARIES, EXTENSIONS_CONVERT_FROM, EXTENSIONS_CONVERT_TO)
@@ -1772,13 +1772,14 @@ def do_download_file(book, book_format, client, data, headers):
     book_name = data.name
     download_name = filename = None
     metadata_was_embedded = False  # Track if we embedded metadata
+    embed_metadata = bool(config.config_embed_metadata) and not deployment_profile.is_mcp_managed_library()
 
     if config.config_use_google_drive:
         # startTime = time.time()
         df = gd.getFileFromEbooksFolder(book.path, data.name + "." + book_format)
         # log.debug('%s', time.time() - startTime)
         if df:
-            if config.config_embed_metadata and (
+            if embed_metadata and (
                  (book_format == "kepub" and config.config_kepubifypath) or
                  (book_format != "kepub" and config.config_binariesdir)):
                 output_path = os.path.join(config.config_calibre_dir, book.path)
@@ -1797,7 +1798,8 @@ def do_download_file(book, book_format, client, data, headers):
                 elif book_format != "kepub" and config.config_binariesdir:
                     filename, download_name = do_calibre_export(book.id, book_format)
                     metadata_was_embedded = True
-                    if not filename or not download_name:
+                    if (not filename or not download_name or not os.path.isfile(
+                            os.path.join(filename, download_name + "." + book_format))):
                         # Embed failed or timed out — serve the staged original instead of a 500
                         filename = os.path.dirname(output)
                         download_name = os.path.splitext(os.path.basename(output))[0]
@@ -1815,7 +1817,7 @@ def do_download_file(book, book_format, client, data, headers):
         if client == "kobo" and book_format == "kepub":
             headers["Content-Disposition"] = headers["Content-Disposition"].replace(".kepub", ".kepub.epub")
 
-        if book_format == "kepub" and config.config_kepubifypath and config.config_embed_metadata:
+        if book_format == "kepub" and config.config_kepubifypath and embed_metadata:
             try:
                 filename, download_name = do_kepubify_metadata_replace(book, os.path.join(filename,
                                                                                           book_name + "." + book_format))
@@ -1824,10 +1826,11 @@ def do_download_file(book, book_format, client, data, headers):
                 log.error_or_exception(f"Failed to kepubify metadata for book {book.id}: {e}")
                 filename = os.path.join(config.get_book_path(), book.path)
                 download_name = book_name
-        elif book_format != "kepub" and config.config_binariesdir and config.config_embed_metadata:
+        elif book_format != "kepub" and config.config_binariesdir and embed_metadata:
             filename, download_name = do_calibre_export(book.id, book_format)
             metadata_was_embedded = True
-            if not filename or not download_name:
+            if (not filename or not download_name or not os.path.isfile(
+                    os.path.join(filename, download_name + "." + book_format))):
                 # Embed failed or timed out — serve the original library file instead of a 500
                 filename = os.path.join(config.get_book_path(), book.path)
                 download_name = book_name

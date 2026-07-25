@@ -190,6 +190,7 @@ def test_auth_config_is_public_and_shaped():
         cfg.get_mail_server_configured.return_value = True
         cfg.config_disable_standard_login = False
         cfg.config_calibre_web_title = "Calibre-Web NextGen"
+        cfg.config_default_locale = "uk"
         resp = app.test_client().get("/api/v1/auth/config")
     assert resp.status_code == 200
     d = resp.get_json()
@@ -197,6 +198,7 @@ def test_auth_config_is_public_and_shaped():
     assert d["mail_configured"] is True
     assert d["oauth_providers"] == []
     assert d["instance_name"] == "Calibre-Web NextGen"
+    assert d["default_locale"] == "uk"
 
 
 @pytest.mark.unit
