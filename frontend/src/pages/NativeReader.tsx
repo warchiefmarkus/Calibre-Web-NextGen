@@ -1,7 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'wouter';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiGet, apiUrl } from '../lib/api';
+import { useBookmark } from '../lib/queries';
+import {
+  fb2ScrollBookmark,
+  parseFb2ScrollBookmark,
+  useReadingPositionSaver,
+} from '../lib/readerProgress';
 import { SpinnerCentered } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { VisuallyHidden } from '../components/VisuallyHidden';
@@ -12,14 +18,13 @@ import styles from './NativeReader.module.css';
 const AUDIO = new Set(['mp3', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav', 'aac']);
 const COMIC = new Set(['cbz', 'cbr', 'cbt']);
 
-/** Native in-browser reader for non-EPUB formats. PDF renders in the browser's
- *  built-in viewer (iframe), audiobooks in an <audio> player, plain text inline
- *  — all dependency-free. EPUB/KEPUB use the dedicated epub.js reader; comics
- *  and DjVu fall back to the server reader (image extraction needs server help). */
+/** Native in-browser reader for non-EPUB formats. EPUB/KEPUB use epub.js;
+ * FB2 is rendered as structured HTML and persists normalized scroll progress. */
 export function NativeReader({ id, format }: { id: string; format: string }) {
   const t = useT();
   const fmt = format.toLowerCase();
   const src = apiUrl(`/show/${id}/${fmt}`);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState<string | null>(null);
   const [textErr, setTextErr] = useState(false);
   const [fb2, setFb2] = useState<Fb2Document | null>(null);
@@ -34,7 +39,6 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
       .catch(() => { if (alive) setTextErr(true); });
     return () => { alive = false; };
   }, [src, fmt]);
-
 
   useEffect(() => {
     if (fmt !== 'fb2') return;
@@ -58,10 +62,8 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
         <span className={styles.fmt}>{fmt.toUpperCase()}</span>
       </div>
 
-      <div className={styles.body}>
-        {fmt === 'pdf' && (
-          <iframe className={styles.pdf} src={src} title={t('PDF reader')} />
-        )}
+      <div ref={bodyRef} className={styles.body}>
+        {fmt === 'pdf' && <iframe className={styles.pdf} src={src} title={t('PDF reader')} />}
 
         {AUDIO.has(fmt) && (
           <div className={styles.audioWrap}>
@@ -80,29 +82,12 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
         {fmt === 'fb2' && (
           fb2Err ? <EmptyState message={t('Could not load this FB2 book.')} />
             : fb2 === null ? <SpinnerCentered size={36} />
-              : <article className={styles.fb2}>
-                <header className={styles.fb2Header}>
-                  <h1 className={styles.fb2Title}>{fb2.title}</h1>
-                  {fb2.authors.length > 0 && <p className={styles.fb2Authors}>{fb2.authors.join(', ')}</p>}
-                </header>
-                {fb2.blocks.map((block, index) => {
-                  if (block.kind === 'heading') {
-                    const Heading = (`h${Math.max(2, Math.min(6, block.level))}`) as keyof JSX.IntrinsicElements;
-                    return <Heading className={styles.fb2Heading} key={index}>{block.text}</Heading>;
-                  }
-                  if (block.kind === 'paragraph') return <p className={styles.fb2Paragraph} key={index}>{block.text}</p>;
-                  if (block.kind === 'subtitle') return <p className={styles.fb2Subtitle} key={index}>{block.text}</p>;
-                  if (block.kind === 'quote') return <blockquote className={styles.fb2Quote} key={index}>{block.text}</blockquote>;
-                  if (block.kind === 'image') return <img className={styles.fb2Image} key={index} src={block.src} alt={block.alt} />;
-                  return <div className={styles.fb2Break} key={index} aria-hidden="true" />;
-                })}
-              </article>
+              : <Fb2Reader id={id} document={fb2} scrollElementRef={bodyRef} />
         )}
 
         {COMIC.has(fmt) && <ComicViewer id={id} />}
 
         {!['pdf', 'txt', 'fb2'].includes(fmt) && !AUDIO.has(fmt) && !COMIC.has(fmt) && (
-          // djvu / other — server reader handles rendering
           <div className={styles.fallback}>
             <p>{t('This format opens in the full-screen reader.')}</p>
             <a className={styles.fallbackBtn} href={apiUrl(`/read/${id}/${fmt}`)}>{t('Open reader')}</a>
@@ -113,8 +98,98 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
   );
 }
 
-/** Native comic viewer: server extracts pages; we show one <img> at a time with
- *  prev/next + arrow-key nav. No client archive lib needed. */
+function Fb2Reader({
+  id,
+  document,
+  scrollElementRef,
+}: {
+  id: string;
+  document: Fb2Document;
+  scrollElementRef: React.RefObject<HTMLDivElement>;
+}) {
+  const t = useT();
+  const { data: saved, isFetched } = useBookmark(id, 'fb2');
+  const { schedule, saveError } = useReadingPositionSaver(id, 'fb2');
+  const restoredRef = useRef(false);
+  const lastFractionRef = useRef(0);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (!isFetched || restoredRef.current) return;
+    let cancelled = false;
+    let attempts = 0;
+    const fraction = Math.min(1, Math.max(0,
+      saved?.position_fraction ?? parseFb2ScrollBookmark(saved?.bookmark) ?? 0,
+    ));
+    const restore = () => {
+      if (cancelled) return;
+      const element = scrollElementRef.current;
+      if (!element) return;
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+      if (maximum === 0 && fraction > 0 && attempts++ < 8) {
+        requestAnimationFrame(restore);
+        return;
+      }
+      element.scrollTop = fraction * maximum;
+      lastFractionRef.current = fraction;
+      setProgress(Math.round(fraction * 100));
+      restoredRef.current = true;
+    };
+    requestAnimationFrame(() => requestAnimationFrame(restore));
+    return () => { cancelled = true; };
+  }, [isFetched, saved?.bookmark, saved?.position_fraction, scrollElementRef, document]);
+
+  useEffect(() => {
+    const element = scrollElementRef.current;
+    if (!element) return;
+    const onScroll = () => {
+      if (!restoredRef.current) return;
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+      const fraction = maximum > 0 ? element.scrollTop / maximum : 0;
+      if (Math.abs(fraction - lastFractionRef.current) < 0.0001) return;
+      lastFractionRef.current = fraction;
+      setProgress(Math.round(fraction * 100));
+      schedule(fb2ScrollBookmark(fraction), fraction);
+    };
+    element.addEventListener('scroll', onScroll, { passive: true });
+    return () => element.removeEventListener('scroll', onScroll);
+  }, [schedule, scrollElementRef]);
+
+  return (
+    <>
+      <article className={styles.fb2}>
+        <header className={styles.fb2Header}>
+          <h1 className={styles.fb2Title}>{document.title}</h1>
+          {document.authors.length > 0 && <p className={styles.fb2Authors}>{document.authors.join(', ')}</p>}
+        </header>
+        {document.blocks.map((block, index) => {
+          if (block.kind === 'heading') {
+            const Heading = (`h${Math.max(2, Math.min(6, block.level))}`) as keyof JSX.IntrinsicElements;
+            return <Heading className={styles.fb2Heading} key={index}>{block.text}</Heading>;
+          }
+          if (block.kind === 'paragraph') return <p className={styles.fb2Paragraph} key={index}>{block.text}</p>;
+          if (block.kind === 'subtitle') return <p className={styles.fb2Subtitle} key={index}>{block.text}</p>;
+          if (block.kind === 'quote') return <blockquote className={styles.fb2Quote} key={index}>{block.text}</blockquote>;
+          if (block.kind === 'image') return <img className={styles.fb2Image} key={index} src={block.src} alt={block.alt} />;
+          return <div className={styles.fb2Break} key={index} aria-hidden="true" />;
+        })}
+      </article>
+      {saveError && (
+        <div className={styles.positionSaveError} role="alert">
+          {t('Could not save reading position. It will be retried automatically.')}
+        </div>
+      )}
+      <div className={styles.progressBar} role="progressbar"
+        aria-label={t('Reading progress')} aria-valuenow={progress}
+        aria-valuemin={0} aria-valuemax={100}
+        aria-valuetext={t('{pct}% read', { pct: progress })}>
+        <div className={styles.progressFill} style={{ width: `${progress}%` }} />
+      </div>
+    </>
+  );
+}
+
+/** Native comic viewer: server extracts pages; we show one image at a time. */
 function ComicViewer({ id }: { id: string }) {
   const t = useT();
   const [pages, setPages] = useState<number | null>(null);

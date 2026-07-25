@@ -351,3 +351,17 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .hiliteRemove:hover { background: var(--danger-soft); color: var(--danger); }
+
+.positionSaveError {
+  position: fixed;
+  right: var(--sp-3);
+  bottom: calc(var(--sp-3) + 3px);
+  z-index: 60;
+  max-width: min(420px, calc(100vw - 2 * var(--sp-3)));
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--danger, #b42318);
+  border-radius: var(--r-md);
+  background: var(--reader-chrome);
+  color: var(--danger, #b42318);
+  font-size: var(--fs-sm);
+}

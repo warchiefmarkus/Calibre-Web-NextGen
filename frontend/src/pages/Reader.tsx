@@ -6,10 +6,10 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import {
-  type ReaderSettings, useBook, useBookmark, useReaderSettings,
-  useSaveBookmark, useSaveReaderSettings,
+  type ReaderSettings, useBook, useBookmark, useReaderSettings, useSaveReaderSettings,
 } from '../lib/queries';
 import { apiPost, apiDelete, apiPatch, apiUrl, resourceUrl } from '../lib/api';
+import { useReadingPositionSaver } from '../lib/readerProgress';
 import { EmptyState } from '../components/EmptyState';
 import { VisuallyHidden } from '../components/VisuallyHidden';
 import { useFocusTrap } from '../lib/a11y/useFocusTrap';
@@ -51,7 +51,6 @@ const FONT_MIN = 75;
 const FONT_MAX = 200;
 const LS_THEME = 'cwng.reader.theme';
 const LS_FONT = 'cwng.reader.font';
-const LS_DEVICE = 'cwng.reader.device';
 
 const THEME_TO_READER: Record<ReaderSettings['theme'], ReaderTheme> = {
   lightTheme: 'light', sepiaTheme: 'sepia', darkTheme: 'dark', blackTheme: 'dark',
@@ -74,14 +73,6 @@ function loadTheme(): ReaderTheme {
   if (appTheme === 'sepia') return 'sepia';
   return 'dark';
 }
-function readerDevice(): string {
-  let value = localStorage.getItem(LS_DEVICE);
-  if (!value) {
-    value = `cwng-web-${crypto.randomUUID()}`;
-    localStorage.setItem(LS_DEVICE, value);
-  }
-  return value;
-}
 function loadFont(): number {
   const v = Number(localStorage.getItem(LS_FONT));
   return v >= FONT_MIN && v <= FONT_MAX ? v : 100;
@@ -93,7 +84,7 @@ export function Reader({ id }: { id: string }) {
   const { data: book, isLoading, error } = useBook(id);
   const { data: savedBookmark, isFetched: isBookmarkFetched } = useBookmark(id, 'epub');
   const { data: settingsData, isFetched: isSettingsFetched } = useReaderSettings();
-  const saveBookmark = useSaveBookmark(id);
+  const { schedule: schedulePosition, saveError: positionSaveError } = useReadingPositionSaver(id, 'epub');
   const saveSettings = useSaveReaderSettings();
 
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -110,7 +101,6 @@ export function Reader({ id }: { id: string }) {
   // Localized color names for highlight swatches + accessible labels.
   const colorLabel = (c: HiliteColor) =>
     ({ yellow: t('Yellow'), green: t('Green'), blue: t('Blue'), red: t('Red') })[c];
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsPendingRef = useRef<Partial<ReaderSettings>>({});
   const lastCfiRef = useRef<string | null>(null);
@@ -275,15 +265,9 @@ export function Reader({ id }: { id: string }) {
       const normalized = Math.min(1, Math.max(0, positionFraction));
       lastCfiRef.current = cfi;
       lastProgressRef.current = normalized;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        saveTimer.current = null;
-        saveBookmark.mutate({
-          format: 'epub', bookmark: cfi, position_fraction: normalized, device: readerDevice(),
-        });
-      }, 800);
+      schedulePosition(cfi, normalized);
     },
-    [saveBookmark],
+    [schedulePosition],
   );
 
   const applyTheme = useCallback((t: ReaderTheme) => {
@@ -390,7 +374,7 @@ export function Reader({ id }: { id: string }) {
             const loc = rendition.currentLocation() as any;
             if (loc?.start?.cfi && epubBook.locations.length()) {
               const fraction = epubBook.locations.percentageFromCfi(loc.start.cfi);
-              lastProgressRef.current = fraction;
+              persistCfi(loc.start.cfi, fraction);
               setProgress(Math.round(fraction * 100));
             }
           })
@@ -444,16 +428,6 @@ export function Reader({ id }: { id: string }) {
 
     return () => {
       cancelled = true;
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current);
-        saveTimer.current = null;
-        const cfi = lastCfiRef.current;
-        if (cfi) {
-          void apiPost(`/api/v1/books/${id}/bookmark`, {
-            format: 'epub', bookmark: cfi, position_fraction: lastProgressRef.current, device: readerDevice(),
-          }, { keepalive: true });
-        }
-      }
       try { renditionRef.current?.destroy(); } catch { /* noop */ }
       try { bookRef.current?.destroy(); } catch { /* noop */ }
       renditionRef.current = null;
@@ -695,6 +669,12 @@ export function Reader({ id }: { id: string }) {
           <button className={styles.hiliteCancel} onClick={() => setActiveHl(null)} aria-label={t('Cancel')}>
             <X size={16} aria-hidden="true" focusable={false} />
           </button>
+        </div>
+      )}
+
+      {positionSaveError && (
+        <div className={styles.positionSaveError} role="alert">
+          {t('Could not save reading position. It will be retried automatically.')}
         </div>
       )}
 

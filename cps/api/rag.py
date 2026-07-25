@@ -83,6 +83,7 @@ def _result_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "chunk_id": item.get("chunk_id"),
         "book_id": item.get("book_id"),
+        "ordinal": item.get("ordinal"),
         "title": _clip(item.get("title"), 300),
         "authors": [str(v)[:200] for v in (item.get("authors") or [])[:20]],
         "format": _clip(item.get("format"), 20),
@@ -95,6 +96,10 @@ def _result_item(item: dict[str, Any]) -> dict[str, Any]:
         "context_after": _clip(item.get("context_after"), 900),
         "semantic_score": item.get("semantic_score"),
         "keyword_score": item.get("keyword_score"),
+        "evidence_score": item.get("evidence_score"),
+        "proximity_score": item.get("proximity_score"),
+        "lexical_rank": item.get("lexical_rank"),
+        "matched_terms": [str(v)[:100] for v in (item.get("matched_terms") or [])[:24]],
         "combined_score": item.get("combined_score"),
     }
 
@@ -208,6 +213,7 @@ def rag_search():
         "success": True,
         "query": raw.get("query") or query,
         "query_terms": raw.get("query_terms") or [],
+        "query_expansions": raw.get("query_expansions") or {},
         "mode": raw.get("mode") or mode,
         "count": len(results),
         "duration_ms": raw.get("duration_ms"),

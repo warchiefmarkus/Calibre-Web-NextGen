@@ -254,6 +254,7 @@ export interface RagSearchRequest {
 export interface RagSearchResult {
   chunk_id: number;
   book_id: number;
+  ordinal: number | null;
   title: string | null;
   authors: string[];
   format: string | null;
@@ -266,6 +267,10 @@ export interface RagSearchResult {
   context_after: string | null;
   semantic_score: number | null;
   keyword_score: number | null;
+  evidence_score: number | null;
+  proximity_score: number | null;
+  lexical_rank: number | null;
+  matched_terms: string[];
   combined_score: number | null;
 }
 
@@ -273,6 +278,7 @@ export interface RagSearchResponse {
   success: boolean;
   query: string;
   query_terms: string[];
+  query_expansions: Record<string, string[]>;
   mode: RagSearchMode;
   count: number;
   duration_ms: number | null;

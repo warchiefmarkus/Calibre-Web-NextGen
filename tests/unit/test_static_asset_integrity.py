@@ -272,3 +272,37 @@ def test_spa_recovers_once_from_a_missing_lazy_chunk():
     assert "event.preventDefault()" in source
     assert "sessionStorage.getItem(PRELOAD_RELOAD_KEY)" in source
     assert "window.location.reload()" in source
+
+@pytest.mark.unit
+def test_reader_position_saver_flushes_on_lifecycle_boundaries():
+    """Pending reader progress survives SPA navigation, tab hiding and unload."""
+    path = os.path.join(FRONTEND_DIR, "src", "lib", "readerProgress.ts")
+    with open(path, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "pagehide" in source
+    assert "visibilitychange" in source
+    assert "keepalive" in source
+    assert "pendingRef" in source
+
+
+@pytest.mark.unit
+def test_fb2_reader_persists_and_restores_normalized_scroll_progress():
+    """FB2 is no longer a stateless long HTML page."""
+    path = os.path.join(FRONTEND_DIR, "src", "pages", "NativeReader.tsx")
+    with open(path, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "useBookmark(id, 'fb2')" in source
+    assert "useReadingPositionSaver(id, 'fb2')" in source
+    assert "fb2ScrollBookmark" in source
+    assert "saved?.position_fraction" in source
+    assert 'role="progressbar"' in source
+
+
+@pytest.mark.unit
+def test_epub_reader_uses_shared_reliable_position_saver():
+    path = os.path.join(FRONTEND_DIR, "src", "pages", "Reader.tsx")
+    with open(path, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "useReadingPositionSaver(id, 'epub')" in source
+    assert "schedulePosition(cfi, normalized)" in source
+    assert "useSaveBookmark" not in source

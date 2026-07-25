@@ -29,11 +29,11 @@ function resultLocation(result: RagSearchResult): string | null {
 }
 
 function scoreLabel(result: RagSearchResult): string | null {
+  if (typeof result.evidence_score === 'number' && result.evidence_score > 0) {
+    return `${Math.round(result.evidence_score * 100)}% match`;
+  }
   if (typeof result.semantic_score === 'number') {
     return `${Math.round(result.semantic_score * 100)}% semantic`;
-  }
-  if (typeof result.keyword_score === 'number' && result.keyword_score > 0) {
-    return `${Math.round(result.keyword_score * 100)}% lexical`;
   }
   return null;
 }
@@ -265,6 +265,11 @@ export function AiSearch() {
                     </div>
 
                     <p className={styles.excerpt}>{result.text || t('No excerpt available.')}</p>
+                    {result.matched_terms.length > 0 && (
+                      <p className={styles.sourceMeta}>
+                        <span>{t('Matched')}: {result.matched_terms.join(', ')}</span>
+                      </p>
+                    )}
 
                     {(result.context_before || result.context_after) && (
                       <details className={styles.context}>

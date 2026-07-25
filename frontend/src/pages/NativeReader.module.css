@@ -50,3 +50,31 @@
   background: rgba(0,0,0,0.6); color: #fff; font-size: var(--fs-sm);
   padding: var(--sp-1) var(--sp-3); border-radius: var(--r-full);
 }
+
+.progressBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 105;
+  height: 3px;
+  background: var(--border);
+}
+.progressFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur-base) var(--ease);
+}
+.positionSaveError {
+  position: fixed;
+  right: var(--sp-3);
+  bottom: calc(var(--sp-3) + 3px);
+  z-index: 106;
+  max-width: min(420px, calc(100vw - 2 * var(--sp-3)));
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--danger, #b42318);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  color: var(--danger, #b42318);
+  font-size: var(--fs-sm);
+}
