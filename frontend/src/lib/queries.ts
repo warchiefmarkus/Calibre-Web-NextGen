@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   apiGet, apiPost, apiUpload, apiPostForm, ApiError,
-  navigateToLogout,
+  navigateToLogout, noteSessionIdentity,
   getMetadataProviders, setMetadataProviderActive,
 } from './api';
 import { removeBookFromCache } from './scrollCache';
@@ -54,7 +54,11 @@ export function useMe() {
     queryKey: ['me'],
     queryFn: async () => {
       try {
-        return await apiGet<Me>('/api/v1/auth/me', { auth: 'public' });
+        const me = await apiGet<Me>('/api/v1/auth/me', { auth: 'public' });
+        // App bootstrap runs this first, so by the time any protected call can
+        // fail we know whether a real session exists to lose (#1074).
+        noteSessionIdentity(!!me.role?.anonymous);
+        return me;
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) return null;
         throw err;
@@ -88,6 +92,13 @@ export function useLogin() {
     mutationFn: (vars: { username: string; password: string; remember?: boolean }) =>
       apiPost<Me>('/api/v1/auth/login', vars, { auth: 'public' }),
     onSuccess: (data) => {
+      // Seeding the me-cache flips the app to the authenticated tree straight
+      // away, so protected calls can fire before the invalidation below has
+      // refetched /auth/me. Note the identity from the payload we are seeding
+      // with, or a session that dies inside that window looks to the classifier
+      // like a guest who was never signed in and escapes the expiry path
+      // (#824/#1067) that #1074 narrowed.
+      noteSessionIdentity(!!data.role?.anonymous);
       queryClient.setQueryData(['me'], data);
       void queryClient.invalidateQueries({ queryKey: ['me'] });
     },
@@ -124,6 +135,9 @@ export function useMagicLinkPoll() {
       apiPost<MagicLinkPoll>('/api/v1/auth/magic-link/poll', { token }, { auth: 'public' }),
     onSuccess: (data) => {
       if (data.status === 'success') {
+        // Same seeding window as useLogin above — record the identity we are
+        // seeding with so an expiry during it is still classified as a loss.
+        noteSessionIdentity(!!data.user.role?.anonymous);
         queryClient.setQueryData(['me'], data.user);
         void queryClient.invalidateQueries({ queryKey: ['me'] });
       }
@@ -792,11 +806,19 @@ export interface ReaderSettings {
   reflow: boolean;
 }
 
+/** A 401 is a definitive answer, not a flaky one. A guest has no bookmark and no
+ *  saved reader settings — both endpoints say so by design — and the reader waits
+ *  for these two queries to settle before it starts epub.js, so retrying a
+ *  settled "no" just spends the guest's whole boot on re-asking (#1074). */
+const retryUnlessUnauthorized = (failureCount: number, error: unknown) =>
+  !(error instanceof ApiError && error.status === 401) && failureCount < 3;
+
 export function useReaderSettings() {
   return useQuery<{ reader: ReaderSettings }>({
     queryKey: ['reader-settings'],
     queryFn: () => apiGet<{ reader: ReaderSettings }>('/api/v1/reader/settings'),
     staleTime: 60_000,
+    retry: retryUnlessUnauthorized,
   });
 }
 
@@ -813,6 +835,7 @@ export function useBookmark(bookId: string | number, format = 'epub') {
     queryFn: () => apiGet<{ bookmark: string | null; position_fraction?: number }>(
       `/api/v1/books/${bookId}/bookmark?format=${encodeURIComponent(format)}`),
     staleTime: 0,
+    retry: retryUnlessUnauthorized,
   });
 }
 

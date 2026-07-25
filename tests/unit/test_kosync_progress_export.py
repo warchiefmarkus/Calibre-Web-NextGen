@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 from flask import Flask
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -119,9 +119,10 @@ def _seed_progress(session, *, user_id=1, document=CHECKSUM, percentage=45.67,
     return row
 
 
-def _seed_book(session, *, title, authors):
-    # ``authors`` items are names, or ``(name, sort)`` to pin Authors.sort
-    from cps.db import Books, Authors
+def _seed_book(session, *, title, authors, identifiers=None):
+    # ``authors`` items are names, or ``(name, sort)`` to pin Authors.sort;
+    # ``identifiers`` is a {type: value} dict landing in the identifiers table
+    from cps.db import Books, Authors, Identifiers
 
     pairs = [(a, a) if isinstance(a, str) else a for a in authors]
     now = datetime.now(timezone.utc)
@@ -129,6 +130,10 @@ def _seed_book(session, *, title, authors):
     book.authors = [Authors(name, sort) for name, sort in pairs]
     session.add(book)
     session.commit()
+    for id_type, id_val in (identifiers or {}).items():
+        session.add(Identifiers(id_val, id_type, book.id))
+    if identifiers:
+        session.commit()
     return book
 
 
@@ -168,7 +173,8 @@ def test_no_progress_returns_empty_json_array(env):
 
 def test_export_returns_the_users_progress(env):
     book = _seed_book(env.calibre_session, title="The Dispossessed",
-                      authors=["Ursula K. Le Guin"])
+                      authors=["Ursula K. Le Guin"],
+                      identifiers={"isbn": "9780061054884"})
     _seed_progress(env.app_session, document=str(book.id), percentage=45.67)
 
     resp = env.client.get("/kosync/export")
@@ -181,6 +187,7 @@ def test_export_returns_the_users_progress(env):
     assert row["percentage"] == pytest.approx(45.67)
     assert row["title"] == "The Dispossessed"
     assert row["authors"] == ["Ursula K. Le Guin"]
+    assert row["identifiers"] == {"isbn": "9780061054884"}
 
 
 def test_export_includes_started_and_modified_timestamps(env):
@@ -254,6 +261,66 @@ def test_resolvable_and_checksum_rows_coexist(env):
     assert body[0]["title"] == "Snow Crash"
 
 
+def test_identifiers_exported(env):
+    # Every identifier type is exported as a {type: value} map: values verbatim,
+    # type keys lowercased; a book without identifiers exports {}.
+    tagged = _seed_book(env.calibre_session, title="Tagged", authors=["A"],
+                        identifiers={"ISBN": "0-441-56956-0", "Goodreads": "40651883"})
+    bare = _seed_book(env.calibre_session, title="Bare", authors=["B"])
+    _seed_progress(env.app_session, document=str(tagged.id))
+    _seed_progress(env.app_session, document=str(bare.id))
+
+    rows = {r["title"]: r for r in env.client.get("/kosync/export").get_json()}
+    assert rows["Tagged"]["identifiers"] == {
+        "isbn": "0-441-56956-0", "goodreads": "40651883"}
+    assert rows["Bare"]["identifiers"] == {}
+
+
+def test_identifier_types_differing_only_beyond_ascii_case_both_survive(env):
+    # The identifiers table is UNIQUE(book, type) under SQLite's NOCASE
+    # collation, which folds ASCII A-Z and nothing else, so one book may hold
+    # U+212A KELVIN SIGN and ASCII "k" as two distinct types. Python's
+    # str.lower() folds the Kelvin sign onto ASCII "k" as well, which would
+    # collapse the two onto one JSON key and silently drop a value, with no
+    # ORDER BY deciding the survivor. Keys are ASCII-lowercased instead, so the
+    # map keeps whatever the database kept distinct. The literal below is the
+    # Kelvin sign, not an ASCII K -- the assert on the next line pins that.
+    kelvin = "K"
+    assert kelvin.lower() == "k"           # the fold this test exists to prevent
+    book = _seed_book(env.calibre_session, title="Kelvin", authors=["A"],
+                      identifiers={kelvin: "kelvin-id", "k": "ascii-k-id"})
+    _seed_progress(env.app_session, document=str(book.id))
+
+    identifiers = env.client.get("/kosync/export").get_json()[0]["identifiers"]
+    assert identifiers == {kelvin: "kelvin-id", "k": "ascii-k-id"}
+
+
+def test_author_name_comma_is_unescaped(env):
+    # Calibre escapes a comma inside a single author name as "|", so
+    # "William H. Keith, Jr." is stored as "William H. Keith| Jr.". #730/#732
+    # fixed this fork-wide; the export must hand out the display form too, or an
+    # ingesting service matches against a name no catalogue has.
+    book = _seed_book(env.calibre_session, title="Fade Out",
+                      authors=["William H. Keith| Jr."])
+    _seed_progress(env.app_session, document=str(book.id))
+
+    assert env.client.get("/kosync/export").get_json()[0]["authors"] == [
+        "William H. Keith, Jr."]
+
+
+def test_two_authors_that_share_a_display_form_both_survive(env):
+    # Un-escaping happens on the way out, not before the dedup check, so two
+    # author rows the library keeps apart stay apart. Calibre's own write path
+    # escapes commas, so this needs externally edited metadata to occur — but
+    # the endpoint used to return both names and must not start dropping one.
+    book = _seed_book(env.calibre_session, title="Two",
+                      authors=[("A|B", "sort-1"), ("A,B", "sort-2")])
+    _seed_progress(env.app_session, document=str(book.id))
+
+    assert env.client.get("/kosync/export").get_json()[0]["authors"] == [
+        "A,B", "A,B"]
+
+
 def test_export_is_scoped_to_authenticated_user(env):
     mine = _seed_book(env.calibre_session, title="Mine", authors=["A"])
     theirs = _seed_book(env.calibre_session, title="Theirs", authors=["B"])
@@ -280,8 +347,10 @@ def test_export_excludes_books_hidden_from_this_user(env):
     # restricted account can seed ids 1..N and enumerate the title + authors of
     # books it isn't allowed to see. The env fixture already wires cps.duplicates
     # to the in-memory app DB and seeds the real user; here we just hide one book.
-    visible = _seed_book(env.calibre_session, title="Visible", authors=["A"])
-    hidden = _seed_book(env.calibre_session, title="Hidden", authors=["B"])
+    visible = _seed_book(env.calibre_session, title="Visible", authors=["A"],
+                         identifiers={"isbn": "9780000000002"})
+    hidden = _seed_book(env.calibre_session, title="Hidden", authors=["B"],
+                        identifiers={"isbn": "9780000000001"})
     _seed_progress(env.app_session, document=str(visible.id), percentage=10.0)
     _seed_progress(env.app_session, document=str(hidden.id), percentage=20.0)
     _seed_hidden_book(env.app_session, user_id=1, book_id=hidden.id)
@@ -292,6 +361,12 @@ def test_export_excludes_books_hidden_from_this_user(env):
     assert titles == {"Visible"}          # the hidden book must not leak
     assert hidden.id not in ids
     assert visible.id in ids               # own visible progress still exported
+    # identifiers are scoped to visibility-matched ids only: the visible book
+    # keeps its own, and the hidden book's identifier must surface on no row.
+    visible_row = next(r for r in body if r["calibre_book_id"] == visible.id)
+    assert visible_row["identifiers"] == {"isbn": "9780000000002"}
+    all_ident_values = {v for r in body for v in r["identifiers"].values()}
+    assert "9780000000001" not in all_ident_values
 
 
 def test_visibility_filter_fails_closed_not_open(env, monkeypatch):
@@ -335,17 +410,36 @@ def test_export_chunks_large_id_set_without_bind_overflow(env):
     # than the SQLite bound-parameter limit must still export — the endpoint
     # chunks the IN() lookup. Seed >500 books (one chunk) + a few more so the
     # loop crosses a chunk boundary.
+    # The identifiers lookup added in #1092 has to chunk for the same reason.
+    # Two independent ways it can regress, so both are pinned: running that
+    # query once after the loop strands every earlier chunk's identifiers
+    # (caught by the first/last assertions), while accumulating its id set
+    # across chunks keeps the output correct and silently grows the IN() until
+    # it overflows on a real library (caught by the bind-count listener).
     n = 550
-    books = [_seed_book(env.calibre_session, title=f"B{i}", authors=[f"Author {i}"])
+    books = [_seed_book(env.calibre_session, title=f"B{i}", authors=[f"Author {i}"],
+                        identifiers=({"isbn": f"id-{i}"} if i in (0, n - 1) else None))
              for i in range(n)]
     for b in books:
         _seed_progress(env.app_session, document=str(b.id), percentage=1.0)
+
+    identifier_binds = []
+
+    @event.listens_for(env.calibre_session.get_bind(), "before_cursor_execute")
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        if "identifiers" in statement.lower():
+            identifier_binds.append(len(parameters or ()))
 
     resp = env.client.get("/kosync/export")
     assert resp.status_code == 200
     body = resp.get_json()
     assert len(body) == n                 # every book exported across chunks
     assert len({r["calibre_book_id"] for r in body}) == n
+    rows = {r["calibre_book_id"]: r for r in body}
+    assert rows[books[0].id]["identifiers"] == {"isbn": "id-0"}          # chunk 1
+    assert rows[books[-1].id]["identifiers"] == {"isbn": f"id-{n - 1}"}  # chunk 2
+    assert identifier_binds, "the identifiers lookup never ran"
+    assert max(identifier_binds) <= 500   # bounded per chunk, never accumulated
 
 
 def test_non_ascii_digit_document_is_not_aliased(env):
