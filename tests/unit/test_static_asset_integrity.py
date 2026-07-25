@@ -39,6 +39,8 @@ import cps
 CPS_DIR = os.path.dirname(cps.__file__)
 STATIC_DIR = os.path.join(CPS_DIR, "static")
 TEMPLATE_DIR = os.path.join(CPS_DIR, "templates")
+REPO_DIR = os.path.dirname(CPS_DIR)
+FRONTEND_DIR = os.path.join(REPO_DIR, "frontend")
 
 # ``url_for('static', filename=...)`` targets that are deliberately absent from
 # a source checkout. Keep this list at exactly one entry — a new "missing but
@@ -187,7 +189,9 @@ def test_spa_shell_serves_the_png_in_a_real_response():
             app = flask.Flask(__name__)
             app.register_blueprint(spa_mod.spa)
             client = app.test_client()
-            body = client.get("/app").get_data(as_text=True)
+            response = client.get("/app")
+            body = response.get_data(as_text=True)
+            assert response.headers["Cache-Control"] == "no-store"
             assert ('<link rel="apple-touch-icon" sizes="180x180" '
                     'href="/static/img/apple-touch-icon.png">') in body, body
 
@@ -246,3 +250,25 @@ def test_build_time_exemption_list_stays_minimal():
     """Every entry here is an asset the tests cannot verify. Adding one hides
     a real 404, so the list is pinned rather than merely documented."""
     assert BUILD_TIME_GENERATED == {"koplugin.zip"}
+
+
+@pytest.mark.unit
+def test_vite_keeps_previous_hashed_chunks_for_open_tabs():
+    """A deploy must not delete lazy chunks still referenced by an open tab."""
+    config_path = os.path.join(FRONTEND_DIR, "vite.config.ts")
+    with open(config_path, encoding="utf-8") as handle:
+        config = handle.read()
+    assert "emptyOutDir: false" in config
+    assert "emptyOutDir: true" not in config
+
+
+@pytest.mark.unit
+def test_spa_recovers_once_from_a_missing_lazy_chunk():
+    """When an already-missing old chunk is requested, refresh to current HTML."""
+    main_path = os.path.join(FRONTEND_DIR, "src", "main.tsx")
+    with open(main_path, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "vite:preloadError" in source
+    assert "event.preventDefault()" in source
+    assert "sessionStorage.getItem(PRELOAD_RELOAD_KEY)" in source
+    assert "window.location.reload()" in source

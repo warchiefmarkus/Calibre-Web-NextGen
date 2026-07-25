@@ -8,6 +8,21 @@ import { AnnouncerProvider } from './lib/a11y/announcer';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthTransitionError, navigateToLogout, BASE_PREFIX } from './lib/api';
 
+
+// Vite emits this event when a cached entry bundle asks for a lazy chunk that
+// no longer exists after a deploy. Reload once per entry-bundle URL so the
+// browser receives the current index without creating a reload loop if an
+// unrelated network/proxy problem persists.
+const PRELOAD_RELOAD_KEY = 'cwng:failed-preload-entry';
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault();
+  const entryUrl = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src
+    ?? window.location.href;
+  if (sessionStorage.getItem(PRELOAD_RELOAD_KEY) === entryUrl) return;
+  sessionStorage.setItem(PRELOAD_RELOAD_KEY, entryUrl);
+  window.location.reload();
+});
+
 // Protected wrappers normalize every auth-loss shape and start the canonical
 // top-level logout navigation. Keep the cache transition here so no stale
 // authenticated data remains visible while that navigation is pending.

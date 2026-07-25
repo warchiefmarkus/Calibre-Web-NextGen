@@ -198,6 +198,10 @@ def spa_shell(path=""):
                     "or set CWNG_SPA=0 to suppress this warning", index_path)
         abort(404)
     resp = _render_shell(index_path, _mount_prefix())
+    # The shell contains the current hashed entry bundle. Revalidate it on every
+    # navigation/reload so a browser or intermediary cannot pin an obsolete entry
+    # across a deploy and later request chunks that no longer exist.
+    resp.headers["Cache-Control"] = "no-store"
     # #739: loading the SPA is the act of choosing it — persist the preference so
     # a later visit to a classic URL lands back on the new UI instead of reverting.
     stamp_prefer_spa_cookie(resp)

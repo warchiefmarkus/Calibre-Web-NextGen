@@ -4,7 +4,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: '/static/app/',
   plugins: [react()],
-  build: { outDir: '../cps/static/app', emptyOutDir: true },
+  // Keep hashed assets from earlier releases. A browser tab can retain the old
+  // entry bundle across a deploy and request its lazy Reader/NativeReader chunk
+  // later; deleting that chunk turns opening a book into a dynamic-import 404.
+  // index.html is still overwritten on every build, while old immutable chunks
+  // remain compatible with already-open tabs.
+  build: { outDir: '../cps/static/app', emptyOutDir: false },
   // Reverse-proxy prefix support (#571 follow-up). base:'/static/app/' is absolute
   // and gets baked into the runtime chunk loader, so lazily-imported JS/CSS (the
   // EPUB + native readers) were requested WITHOUT the proxy mount prefix and 404'd
