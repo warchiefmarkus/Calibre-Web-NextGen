@@ -22,6 +22,26 @@ test.describe('reader phase 1', () => {
     test.skip(!readerReady, 'no loadable EPUB reader available in this library');
   });
 
+  test('saves reading position when randomUUID is unavailable on LAN HTTP', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.removeItem('cwng.reader.device');
+      Object.defineProperty(globalThis.crypto, 'randomUUID', {
+        configurable: true,
+        value: undefined,
+      });
+    });
+    const saved = page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && response.url().includes('/api/v1/books/')
+      && response.url().endsWith('/bookmark'),
+    );
+    await page.getByRole('button', { name: 'Next page' }).click();
+    expect((await saved).status()).toBe(204);
+    await expect(page.getByRole('alert')).not.toContainText('Could not save reading position');
+    const device = await page.evaluate(() => localStorage.getItem('cwng.reader.device'));
+    expect(device).toMatch(/^cwng-web-[0-9a-f-]{36}$/);
+  });
+
   test('persists every appearance setting and keeps the mobile drawer in bounds', async ({ page }) => {
     await page.getByRole('button', { name: 'Reading appearance' }).click();
     const dialog = page.getByRole('dialog', { name: 'Reading appearance' });
