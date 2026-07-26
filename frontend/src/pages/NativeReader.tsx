@@ -12,7 +12,7 @@ import { SpinnerCentered } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { VisuallyHidden } from '../components/VisuallyHidden';
 import { useT } from '../lib/i18n';
-import { parseFb2, type Fb2Document } from '../lib/fb2';
+import { decodeFb2, parseFb2, type Fb2Document } from '../lib/fb2';
 import styles from './NativeReader.module.css';
 
 const AUDIO = new Set(['mp3', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav', 'aac']);
@@ -46,8 +46,8 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
     setFb2(null);
     setFb2Err(false);
     fetch(src, { credentials: 'include' })
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
-      .then((xml) => { if (alive) setFb2(parseFb2(xml)); })
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+      .then((data) => { if (alive) setFb2(parseFb2(decodeFb2(data))); })
       .catch(() => { if (alive) setFb2Err(true); });
     return () => { alive = false; };
   }, [src, fmt]);

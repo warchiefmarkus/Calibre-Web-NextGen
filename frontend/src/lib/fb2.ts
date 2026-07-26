@@ -10,6 +10,49 @@ export interface Fb2Document {
   blocks: Fb2Block[];
 }
 
+function normalizeXmlEncoding(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/_/g, '-');
+  const aliases: Record<string, string> = {
+    'utf8': 'utf-8',
+    'cp1251': 'windows-1251',
+    'win-1251': 'windows-1251',
+    'windows1251': 'windows-1251',
+    'cp1252': 'windows-1252',
+    'windows1252': 'windows-1252',
+    'utf16': 'utf-16le',
+    'utf-16': 'utf-16le',
+  };
+  return aliases[normalized] ?? normalized;
+}
+
+function xmlEncoding(bytes: Uint8Array): string {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return 'utf-8';
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return 'utf-16le';
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return 'utf-16be';
+  // XML may be UTF-16 without a BOM; the opening '<' still exposes byte order.
+  if (bytes[0] === 0x3c && bytes[1] === 0x00) return 'utf-16le';
+  if (bytes[0] === 0x00 && bytes[1] === 0x3c) return 'utf-16be';
+  const probe = Array.from(bytes.subarray(0, 512), (byte) => String.fromCharCode(byte)).join('');
+  const declared = probe.match(/<\?xml[^>]*encoding\s*=\s*["']\s*([^"']+)/i)?.[1];
+  return normalizeXmlEncoding(declared ?? 'utf-8');
+}
+
+export function decodeFb2(data: ArrayBuffer): string {
+  const bytes = new Uint8Array(data);
+  const encoding = xmlEncoding(bytes);
+  try {
+    return new TextDecoder(encoding, { fatal: true }).decode(bytes);
+  } catch {
+    // XML defaults to UTF-8. Some legacy FB2 files omit their real CP1251
+    // declaration, so use it only after strict UTF-8 decoding has failed.
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      return new TextDecoder('windows-1251').decode(bytes);
+    }
+  }
+}
+
 function normalizedText(node: Element | null): string {
   return (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
 }

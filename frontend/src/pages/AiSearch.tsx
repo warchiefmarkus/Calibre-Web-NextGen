@@ -137,7 +137,12 @@ export function AiSearch() {
             <span className={styles.statLabel}>{t('Failed jobs')}</span>
           </div>
           <div className={styles.statusMeta}>
-            <span>{ragStatus.model || t('Unknown model')}</span>
+            <span>
+              {t('Embedding model')}: {ragStatus.model || t('Unknown model')}
+            </span>
+            <span>
+              {t('Reranker model')}: {ragStatus.reranker_model || t('Not enabled')}
+            </span>
             {ragStatus.last_sync_at && (
               <span>
                 <Clock3 size={14} aria-hidden="true" focusable={false} />
@@ -239,11 +244,19 @@ export function AiSearch() {
           <>
             <div className={styles.resultsHeader}>
               <h2>{t('Sources')}</h2>
-              <span>
-                {search.data?.count} {t('results')}
-                {typeof search.data?.duration_ms === 'number'
-                  ? ` · ${(search.data.duration_ms / 1000).toFixed(2)} s` : ''}
-              </span>
+              <div className={styles.resultsSummary}>
+                <span>
+                  {search.data?.count} {t('results')}
+                  {typeof search.data?.duration_ms === 'number'
+                    ? ` · ${(search.data.duration_ms / 1000).toFixed(2)} s` : ''}
+                </span>
+                <span>
+                  {t('Embedding')}: {search.data?.model || t('Unknown model')}
+                  {search.data?.reranker_model
+                    ? ` · ${t('Reranker')}: ${search.data.reranker_model}`
+                    : ''}
+                </span>
+              </div>
             </div>
             <div className={styles.resultList}>
               {results.map((result) => {
