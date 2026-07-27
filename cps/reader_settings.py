@@ -19,6 +19,7 @@ READER_DEFAULTS = {
     "maxColumnCount": 2,
     "maxInlineSize": 720,
     "animated": True,
+    "tapToTurn": True,
 }
 
 
@@ -55,7 +56,7 @@ def sanitize_reader_settings(payload):
         value = reader_setting_int(payload.get(key), lo, hi)
         if value is not None:
             out[key] = value
-    for key in ("reflow", "animated"):
+    for key in ("reflow", "animated", "tapToTurn"):
         value = payload.get(key)
         if isinstance(value, bool):
             out[key] = value

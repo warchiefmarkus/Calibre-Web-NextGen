@@ -309,6 +309,21 @@ def test_unified_reader_has_navigation_search_and_synced_bookmarks():
 
 
 @pytest.mark.unit
+def test_unified_reader_has_optional_tap_zones_and_dismisses_selection_on_navigation():
+    reader = (Path(FRONTEND_DIR) / "src/pages/Reader.tsx").read_text()
+    css = (Path(FRONTEND_DIR) / "src/pages/Reader.module.css").read_text()
+    assert "settings?.tapToTurn" in reader
+    assert "navigate('left')" in reader
+    assert "navigate('right')" in reader
+    assert "dismissSelection();" in reader
+    assert ".tapZone" in css
+    assert "padding-inline-end: 38px" in css
+    assert "`${next.margin}px`" in reader
+    assert "`${next.maxInlineSize}px`" in reader
+    assert "`${pageGapPercent}%`" in reader
+
+
+@pytest.mark.unit
 def test_rag_proxy_preserves_neural_reranker_provenance():
     """The SPA must receive the cross-encoder rank instead of silently dropping it."""
     api_path = os.path.join(CPS_DIR, "api", "rag.py")

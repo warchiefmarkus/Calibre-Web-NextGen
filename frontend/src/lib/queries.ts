@@ -819,6 +819,7 @@ export interface ReaderSettings {
   maxColumnCount: 1 | 2;
   maxInlineSize: number;
   animated: boolean;
+  tapToTurn: boolean;
 }
 
 export interface ReaderBookmark {

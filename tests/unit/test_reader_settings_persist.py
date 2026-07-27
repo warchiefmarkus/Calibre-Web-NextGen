@@ -1,6 +1,6 @@
 """Per-user web-reader display settings (task #31).
 
-Reader settings (theme/font/fontSize/spread/flow/reflow/margin/lineHeight/column width) are persisted under
+Reader settings (theme/font/fontSize/spread/flow/reflow/margin/lineHeight/column width/tap zones) are persisted under
 view_settings['reader'] so they follow a user across devices. sanitize_reader_settings()
 is the gate that keeps a crafted POST from storing junk on the user row — pin
 its whitelist + clamping. RED on main (the function doesn't exist there); GREEN
@@ -17,12 +17,14 @@ def test_keeps_each_valid_field():
     out = sanitize_reader_settings({
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
-        "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840, "animated": False,
+        "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
+        "animated": False, "tapToTurn": False,
     })
     assert out == {
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
-        "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840, "animated": False,
+        "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
+        "animated": False, "tapToTurn": False,
     }
 
 
@@ -64,6 +66,8 @@ def test_flow_and_boolean_coercion():
     assert sanitize_reader_settings({"reflow": "false"})["reflow"] is False
     assert "reflow" not in sanitize_reader_settings({"reflow": 5})
     assert sanitize_reader_settings({"animated": "false"})["animated"] is False
+    assert sanitize_reader_settings({"tapToTurn": True})["tapToTurn"] is True
+    assert sanitize_reader_settings({"tapToTurn": "false"})["tapToTurn"] is False
 
 
 def test_non_dict_payload_is_empty():

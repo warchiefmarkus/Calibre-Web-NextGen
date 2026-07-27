@@ -18,6 +18,9 @@ def test_foliate_snapshot_is_pinned_and_licensed():
         source = (vendor / name).read_text()
         assert "sandbox', 'allow-same-origin'" in source
         assert "allow-same-origin allow-scripts" not in source
+    paginator = (vendor / 'paginator.js').read_text()
+    assert "minmax(0, 1fr)" in paginator
+    assert "minmax(var(--_margin), 1fr)" not in paginator
 
 
 def test_epubjs_and_custom_fb2_parser_are_removed():

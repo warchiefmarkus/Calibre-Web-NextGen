@@ -201,9 +201,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     const renderer = view?.renderer;
     if (!renderer) return;
     renderer.setAttribute('flow', next.flow);
-    renderer.setAttribute('margin', String(next.margin));
-    renderer.setAttribute('gap', String(Math.max(12, next.margin)));
-    renderer.setAttribute('max-inline-size', String(next.maxInlineSize));
+    renderer.setAttribute('margin', `${next.margin}px`);
+    const pageGapPercent = Math.max(3, Math.min(12, 3 + next.margin / 4));
+    renderer.setAttribute('gap', `${pageGapPercent}%`);
+    renderer.setAttribute('max-inline-size', `${next.maxInlineSize}px`);
     renderer.setAttribute('max-column-count', String(next.spread === 'nonespread' ? 1 : next.maxColumnCount));
     renderer.toggleAttribute('animated', next.animated && next.flow === 'paginated');
     renderer.setAttribute('background', THEME[next.theme].background);
@@ -219,6 +220,22 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       return next;
     });
   }, [applySettings, saveSettings]);
+
+
+  const dismissSelection = useCallback(() => {
+    setPendingSelection(null);
+    viewRef.current?.deselect();
+  }, []);
+
+  const navigate = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
+    dismissSelection();
+    const view = viewRef.current;
+    if (!view) return;
+    if (action === 'prev') void view.prev();
+    else if (action === 'next') void view.next();
+    else if (action === 'left') void view.goLeft();
+    else void view.goRight();
+  }, [dismissSelection]);
   useEffect(() => {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
     let cancelled = false;
@@ -233,6 +250,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setSettings(initialSettings);
 
     const onRelocate = (event: Event) => {
+      dismissSelection();
       const detail = (event as CustomEvent<FoliateLocation>).detail;
       currentRef.current = detail;
       setLocation(detail);
@@ -242,7 +260,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     const attachSelection = (doc: Document, index: number) => {
       const readSelection = () => {
         const selection = doc.getSelection();
-        if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+        if (!selection || selection.isCollapsed || !selection.rangeCount) {
+          dismissSelection();
+          return;
+        }
         const range = selection.getRangeAt(0).cloneRange();
         const text = selection.toString().replace(/\s+/g, ' ').trim();
         if (!text) return;
@@ -340,19 +361,18 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     };
   }, [applySettings, bookQuery.data?.title, fmt, id, positionQuery.data?.bookmark,
     positionQuery.data?.position_fraction, positionQuery.isFetched, selectedFormat,
-    settingsQuery.data, schedulePosition, t]);
+    settingsQuery.data, schedulePosition, dismissSelection, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      void viewRef.current?.goLeft();
+      navigate('left');
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      void viewRef.current?.goRight();
+      navigate('right');
     } else if (event.key === 'Escape') {
       setPanel(null);
-      setPendingSelection(null);
-      viewRef.current?.deselect();
+      dismissSelection();
     }
   }
 
@@ -536,7 +556,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           <button onClick={() => void createHighlight(true)}>
             <StickyNote size={17} aria-hidden="true" /> {t('Add note')}
           </button>
-          <button onClick={() => { setPendingSelection(null); viewRef.current?.deselect(); }}>
+          <button onClick={dismissSelection}>
             <X size={17} aria-hidden="true" /> {t('Cancel')}
           </button>
         </div>
@@ -545,7 +565,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       <div className={styles.workspace}>
         {panel && <ReaderSidePanel
           panel={panel} onClose={() => setPanel(null)} toc={toc}
-          onNavigate={(target) => { void viewRef.current?.goTo(target); setPanel(null); }}
+          onNavigate={(target) => { dismissSelection(); void viewRef.current?.goTo(target); setPanel(null); }}
           searchText={searchText} setSearchText={setSearchText} runSearch={() => void runSearch()}
           searching={searching} searchProgress={searchProgress} searchResults={searchResults}
           bookmarks={bookmarks} openBookmark={openReaderBookmark}
@@ -560,10 +580,24 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
           {error && <EmptyState message={error} />}
           <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
+          {settings?.tapToTurn && settings.flow === 'paginated' && ready && !error && (
+            <>
+              <button className={`${styles.tapZone} ${styles.tapZoneLeft}`}
+                onClick={() => navigate('left')} title={t('Previous page')}
+                aria-label={t('Previous page')}>
+                <ChevronLeft size={30} aria-hidden="true" />
+              </button>
+              <button className={`${styles.tapZone} ${styles.tapZoneRight}`}
+                onClick={() => navigate('right')} title={t('Next page')}
+                aria-label={t('Next page')}>
+                <ChevronRight size={30} aria-hidden="true" />
+              </button>
+            </>
+          )}
         </section>
       </div>
       <footer className={styles.bottomBar}>
-        <button className={styles.pageButton} onClick={() => void viewRef.current?.prev()} title={t('Previous page')}>
+        <button className={styles.pageButton} onClick={() => navigate('prev')} title={t('Previous page')}>
           <ChevronLeft size={22} aria-hidden="true" />
         </button>
         <div className={styles.progressArea}>
@@ -581,6 +615,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             aria-label={t('Reading progress')}
             onChange={(event) => {
               const fraction = Number(event.target.value) / 1000;
+              dismissSelection();
               setLocation((current) => ({ ...current, fraction }));
               void viewRef.current?.goToFraction(fraction);
             }} />
@@ -588,7 +623,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             {sectionFractions.map((fraction) => <option key={fraction} value={Math.round(fraction * 1000)} />)}
           </datalist>
         </div>
-        <button className={styles.pageButton} onClick={() => void viewRef.current?.next()} title={t('Next page')}>
+        <button className={styles.pageButton} onClick={() => navigate('next')} title={t('Next page')}>
           <ChevronRight size={22} aria-hidden="true" />
         </button>
       </footer>
@@ -769,6 +804,11 @@ function ReaderSettingsPanel({ settings, update }: {
         <input type="checkbox" checked={settings.animated}
           onChange={(event) => update({ animated: event.target.checked })} />
         {t('Animated page turns')}
+      </label>
+      <label className={styles.checkboxLabel}>
+        <input type="checkbox" checked={settings.tapToTurn}
+          onChange={(event) => update({ tapToTurn: event.target.checked })} />
+        {t('Turn pages by clicking the left or right side')}
       </label>
       <div className={styles.settingsHint}>
         <AlignJustify size={18} aria-hidden="true" />

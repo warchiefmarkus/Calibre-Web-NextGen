@@ -481,10 +481,14 @@ export class Paginator extends HTMLElement {
                 minmax(0, calc(var(--_max-width) - var(--_gap)))
                 var(--_half-gap)
                 minmax(var(--_half-gap), 1fr);
+            /* Managed fork: the upstream flexible outer rows vertically
+               centre short sections and create huge blank bands. Keep the
+               configured margins fixed and let the reading viewport fill the
+               remaining block size. */
             grid-template-rows:
-                minmax(var(--_margin), 1fr)
-                minmax(0, var(--_max-height))
-                minmax(var(--_margin), 1fr);
+                var(--_margin)
+                minmax(0, 1fr)
+                var(--_margin);
             &.vertical {
                 --_max-column-count-spread: var(--_max-column-count-portrait);
                 --_max-width: var(--_max-block-size);
