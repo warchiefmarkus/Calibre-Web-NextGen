@@ -56,6 +56,112 @@ export interface WhatsNewRelease {
 /** Newest release first. The `whats-new-populate` skill prepends here. */
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
+    version: 'v4.1.22',
+    date: '2026-07-27',
+    items: [
+      {
+        title: 'A book that cannot be converted still lands in your library',
+        body: 'If an incoming book could not be converted to your chosen format — a large PDF that ran out of time, a file Calibre chokes on, a format needing a plugin you do not have — it was dropped altogether: no entry in the library and the file gone from the ingest folder, while the log still reported success. The original file is now imported whenever a conversion fails, and a conversion that runs long ends as an ordinary failure instead of killing the import outright. Raising Ingest Timeout in CWA Settings raises the conversion limit along with it.',
+        category: 'Library',
+      },
+      {
+        title: 'The "read" mark on a cover now says Read',
+        body: 'A finished book was marked with a small unlabelled tick in the corner of its cover, which was easy to miss at a glance — particularly in the light theme. It is now a green "Read" label at the bottom-left, the same place and wording the classic view uses, and it stays large enough to see on a phone or tablet. The label follows the language you read the interface in.',
+        category: 'Library',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Books recorded as "ger", "fre" or "dut" show their real language',
+        body: 'A language can be written two ways in book metadata, and only the form Calibre normally writes was recognised — so a book carrying the other form, common in library-catalogue records and some EPUB files, showed "Unknown" as its language, and importing one could be refused outright. Both forms are now accepted for all twenty languages where they differ. Whether a language counts as valid also no longer depends on the language you happen to read the interface in.',
+        category: 'Library',
+        link: { to: '/languages', label: 'Browse languages' },
+      },
+      {
+        title: 'Pages no longer fail at random when the server is busy',
+        body: 'The server kept one working copy of your library and shared it across everything it was doing at once, so a page being built could lose its data the moment another page finished — or the moment a background job such as a duplicate scan, thumbnail run or metadata backup completed. It surfaced as a different-looking error every time, and grew likelier the busier the server was, which hit big libraries and shared instances hardest. Every page load and every background job now works from its own copy.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Your library keeps working when its extra fields cannot be read',
+        body: 'Book pages, the table view and both search screens ask your library for the extra fields you can add to a book in Calibre. If that lookup failed — the library mid-write, its folder moved, the definitions not there yet — those pages returned an error rather than simply leaving the extra fields out, even though the rest of the library was perfectly readable. They now load without them and note the reason in the log.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Opening your library runs one search instead of two',
+        body: 'Every visit asked the server for the first page of books, then immediately asked again at a different size and threw the first answer away. Nothing looked wrong, but on a large library that first page is the slowest query there is, and it was running twice on every load for every reader. The grid now waits until it knows how many columns it has before asking.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Book pages stop scrolling sideways on a phone',
+        body: 'Libraries catalogued with Library-of-Congress subject headings — "France -- History -- Revolution, 1789-1799 -- Fiction" and the like — carry tags wider than a phone screen, and the tag row would not break one onto a second line, so the whole book page could be dragged sideways. It hit anyone reading without an editor account, guests included, because the editing view already wrapped its tags. Long tags now wrap.',
+        category: 'Library',
+      },
+      {
+        title: 'The series line under a cover is easier to read',
+        body: 'The small series text on a book cover was given the muted grey the rest of the interface uses and then faded a second time on top of that, which took it below the contrast small text needs to stay legible. The extra fade is gone, so the line is the muted grey it was meant to be.',
+        category: 'Under the hood',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.21',
+    date: '2026-07-25',
+    items: [
+      {
+        title: 'Guests can open and read books again',
+        body: 'On a server with anonymous browsing turned on, a visitor who clicked "Read" got an error page in the classic view and was bounced back to the home page in the new one — no book, no explanation. Guests can now open a book and read it with the default appearance, while signed-in readers keep their saved theme, font and position.',
+        category: 'Reading',
+      },
+      {
+        title: 'Books you email to your e-reader now keep your place',
+        body: 'If you send books with "Send to Reader" rather than downloading them, KOReader had no way to tell that the copy on your device was the one in your library, so your reading position never synced back. Emailed books are now registered the same way downloaded ones are, and progress syncs from the first page you read.',
+        category: 'Sync',
+      },
+      {
+        title: 'The quick tag box on a book page suggests tags you already use',
+        body: 'Adding a tag from a book page offered no suggestions, so it was easy to type "sci-fi" onto one book and "Sci-Fi" onto the next and end up with two tags where you meant one. The field now completes against the tags already in your library as you type.',
+        category: 'Library',
+      },
+      {
+        title: 'On a phone, the Edit button no longer covers "Read now"',
+        body: 'On a narrow screen the pencil sat on top of the button beneath it, clipping the label to "Read no…" and making it awkward to hit the one you wanted. The controls on a book cover now lay out so both stay readable and tappable.',
+        category: 'Library',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Your reading-progress export now identifies books properly',
+        body: 'The export that external trackers read gave out only title and author, which is ambiguous for reissues, translations and common titles, and it wrote names like "William H. Keith| Jr." with a stray bar where a comma belongs. Each exported book now carries whatever identifiers Calibre holds for it — ISBN, Goodreads, Amazon and any custom types — and author names come out as they are written.',
+        category: 'Sync',
+      },
+      {
+        title: 'Search engines are told to stay out of your library',
+        body: 'The address crawlers check for a crawling policy pointed at a file that had never existed, so every install answered "not found" and a public instance was free to be indexed, book pages included. Every install now serves a real policy asking well-behaved crawlers to keep out.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Firefox no longer draws permanent scrollbars down the page',
+        body: 'Firefox 153 changed how it treats one of the scrollbar rules the app was using, and the effect landed the day people updated: bars that used to fade away became fixed, always on, and squeezed the content beside them. Both interfaces now describe scrollbars the standard way, so Firefox goes back to its own fading bars.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'The home-screen icon on iPhone and iPad is the app icon again',
+        body: 'Adding the library to an iOS home screen gave you a thumbnail of whichever page you happened to be on, because every page offered iOS an icon file it cannot use there. The correctly sized icon had been sitting unused in the app the whole time; it is now what iOS picks up, on the new interface and behind a reverse proxy on a sub-path alike.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'When highlight sync fails, the server now says why',
+        body: 'KOReader tells you "Server push failed" and nothing more, and the server was writing nothing at all — a rejected push, a book it could not match and a highlight it declined to store all left the log empty, and two of those even answered "success". Every highlight sync now leaves a line naming the book and what happened to it, so the answer is in your container logs.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Russian is now completely translated',
+        body: 'One link added to the user menu in the last release was the only English text left in an otherwise fully Russian interface. Russian is now the one language in the app with every string translated and nothing falling back to English.',
+        category: 'Under the hood',
+        link: { to: '/account', label: 'Open account settings' },
+      },
+    ],
+  },
+  {
     version: 'v4.1.20',
     date: '2026-07-24',
     items: [

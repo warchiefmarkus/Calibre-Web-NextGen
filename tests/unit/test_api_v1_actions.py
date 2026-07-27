@@ -26,7 +26,7 @@ def _user(anon=False, download=True, kindle="k@x.com"):
     return SimpleNamespace(
         is_authenticated=True, is_anonymous=anon, id=1,
         role_download=lambda: download, kindle_mail=kindle, kindle_mail_subject=None,
-        name="maggie",
+        name="alice",
     )
 
 
@@ -77,8 +77,9 @@ def test_archived_uses_core_and_resyncs():
     from cps.api import actions as mod
     with _ctx("/api/v1/books/5/archived"):
         with patch.object(mod, "current_user", _user()), \
-             patch.object(mod, "change_archived_books", return_value=True) as core, \
-             patch.object(mod, "remove_synced_book") as resync:
+             patch.object(mod, "_toggle_archived_book", return_value=True) as core, \
+             patch.object(mod.deployment_profile, "enable_kobo", return_value=True), \
+             patch("cps.kobo_sync_status.remove_synced_book") as resync:
             resp = inspect.unwrap(mod.toggle_book_archived)(5)
     assert _body(resp)["archived"] is True
     core.assert_called_once()

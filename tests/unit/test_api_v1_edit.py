@@ -25,6 +25,14 @@ def _editor(role_edit=True, anon=False, role_delete=True):
                            role_edit=lambda: role_edit, role_delete_books=lambda: role_delete, id=1)
 
 
+def _fake_calibre_db(book):
+    return SimpleNamespace(
+        get_filtered_book=lambda *args, **kwargs: book,
+        get_book=lambda _id: book,
+        session=MagicMock(),
+    )
+
+
 # ── result parsing ───────────────────────────────────────────────────────────
 
 @pytest.mark.unit
@@ -87,7 +95,7 @@ def test_update_metadata_calls_core_per_field():
     success = flask.Response(json.dumps({"success": True}), mimetype="application/json")
     with _ctx("/api/v1/books/5/metadata", body={"title": "New Title", "tags": "a, b"}):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod, "calibre_db", SimpleNamespace(get_book=lambda _id: fake_book)), \
+             patch.object(mod, "calibre_db", _fake_calibre_db(fake_book)), \
              patch.object(mod, "edit_book_param", return_value=success) as core, \
              patch.object(mod, "get_locale", return_value="en"):
             resp = inspect.unwrap(mod.update_metadata)(5)
@@ -170,7 +178,7 @@ def test_update_metadata_collects_field_errors():
                           mimetype="application/json")
     with _ctx("/api/v1/books/5/metadata", body={"languages": "zz"}):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod, "calibre_db", SimpleNamespace(get_book=lambda _id: fake_book)), \
+             patch.object(mod, "calibre_db", _fake_calibre_db(fake_book)), \
              patch.object(mod, "edit_book_param", return_value=fail), \
              patch.object(mod, "get_locale", return_value="en"):
             resp = inspect.unwrap(mod.update_metadata)(5)
@@ -194,7 +202,7 @@ def test_convert_same_format_400():
     from cps.api import edit as mod
     with _ctx("/api/v1/books/5/convert", body={"from": "epub", "to": "epub"}):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod.calibre_db, "get_book", return_value=SimpleNamespace(id=5)):
+             patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=5)):
             resp = inspect.unwrap(mod.convert_format)(5)
     assert resp[1] == 400
 
@@ -204,7 +212,7 @@ def test_convert_success_calls_core():
     from cps.api import edit as mod
     with _ctx("/api/v1/books/5/convert", body={"from": "epub", "to": "mobi"}):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod.calibre_db, "get_book", return_value=SimpleNamespace(id=5)), \
+             patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=5)), \
              patch.object(mod, "config", SimpleNamespace(get_book_path=lambda: "/books")), \
              patch.object(mod, "get_convert_options", return_value=(["epub"], ["mobi"])), \
              patch.object(mod, "convert_book_format", return_value=None) as core:

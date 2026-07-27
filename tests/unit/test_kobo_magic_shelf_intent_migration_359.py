@@ -152,16 +152,21 @@ class TestIntentMigration:
         _make_app_db(db, flag_value=0, intent_rows=1)
         ro_config = tmp_path / "ro-config"
         ro_config.mkdir()
-        ro_config.chmod(0o500)  # .cwa_migrations/ not creatable inside
-        try:
-            _run_migration(db, ro_config, monkeypatch)  # must not raise
-            assert _flag(db) == 0, (
-                "flag must NOT flip when the marker is unwritable — "
-                "flip + marker land together or not at all"
-            )
-            assert not (ro_config / ".cwa_migrations").exists()
-        finally:
-            ro_config.chmod(0o700)
+        real_makedirs = os.makedirs
+
+        def deny_marker_directory(path, *args, **kwargs):
+            if Path(path) == ro_config / ".cwa_migrations":
+                raise PermissionError("simulated read-only config")
+            return real_makedirs(path, *args, **kwargs)
+
+        with monkeypatch.context() as denied:
+            denied.setattr(os, "makedirs", deny_marker_directory)
+            _run_migration(db, ro_config, denied)  # must not raise
+        assert _flag(db) == 0, (
+            "flag must NOT flip when the marker is unwritable — "
+            "flip + marker land together or not at all"
+        )
+        assert not (ro_config / ".cwa_migrations").exists()
         # Filesystem fixed → next boot applies the flip and the marker.
         _run_migration(db, ro_config, monkeypatch)
         assert _flag(db) == 1

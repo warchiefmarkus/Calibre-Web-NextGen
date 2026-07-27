@@ -42,7 +42,8 @@ def test_spa_and_classic_share_row():
                                   json={"format": "epub", "bookmark": "cfiA"}), \
          patch.object(reader, "current_user", SimpleNamespace(id=3, is_authenticated=True, is_anonymous=False)), \
          patch.object(reader.ub, "session", spa_session), \
-         patch.object(reader.ub, "session_commit"):
+         patch.object(reader.ub, "session_commit"), \
+         patch.object(reader.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=7)):
         assert inspect.unwrap(reader.save_bookmark)(7)[1] == 204
     spa_row = spa_session.merge.call_args.args[0]
     assert spa_row.format == "epub"

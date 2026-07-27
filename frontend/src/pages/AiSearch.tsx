@@ -9,6 +9,7 @@ import { Spinner, SpinnerCentered } from '../components/Spinner';
 import { useMe, useRagSearch, useRagStatus, useSearchOptions } from '../lib/queries';
 import type { RagSearchMode, RagSearchResult } from '../lib/api';
 import { useT } from '../lib/i18n';
+import { formatAuthors } from '../lib/authors';
 import styles from './AiSearch.module.css';
 
 const LIMITS = [6, 12, 20];
@@ -272,7 +273,7 @@ export function AiSearch() {
                           </Link>
                         </h3>
                         <p className={styles.sourceMeta}>
-                          {result.authors.length > 0 && <span>{result.authors.join(', ')}</span>}
+                          {result.authors.length > 0 && <span>{formatAuthors(result.authors)}</span>}
                           {result.format && <span>{result.format}</span>}
                           {location && <span>{location}</span>}
                         </p>

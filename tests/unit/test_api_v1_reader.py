@@ -25,6 +25,11 @@ def _auth_user():
     return SimpleNamespace(is_authenticated=True, is_anonymous=False, id=1)
 
 
+def _visible_book(mod, *, visible=True):
+    book = SimpleNamespace(id=5) if visible else None
+    return patch.object(mod.calibre_db, "get_filtered_book", return_value=book)
+
+
 @pytest.mark.unit
 def test_get_bookmark_anonymous_401():
     from cps.api import reader as mod
@@ -36,13 +41,23 @@ def test_get_bookmark_anonymous_401():
 
 
 @pytest.mark.unit
+def test_get_bookmark_returns_404_for_invisible_book():
+    from cps.api import reader as mod
+    with _ctx("/api/v1/books/5/bookmark"):
+        with patch.object(mod, "current_user", _auth_user()), _visible_book(mod, visible=False):
+            resp = inspect.unwrap(mod.get_bookmark)(5)
+    assert resp[1] == 404
+
+
+@pytest.mark.unit
 def test_get_bookmark_returns_key():
     from cps.api import reader as mod
     row = SimpleNamespace(bookmark_key="epubcfi(/6/4!/4/2)")
     mock_ub = MagicMock()
     mock_ub.session.query.return_value.filter.return_value.first.return_value = row
     with _ctx("/api/v1/books/5/bookmark?format=epub"):
-        with patch.object(mod, "current_user", _auth_user()), patch.object(mod, "ub", mock_ub):
+        with patch.object(mod, "current_user", _auth_user()), \
+             patch.object(mod, "ub", mock_ub), _visible_book(mod):
             resp = inspect.unwrap(mod.get_bookmark)(5)
     assert resp.status_code == 200
     assert json.loads(resp.get_data())["bookmark"] == "epubcfi(/6/4!/4/2)"
@@ -54,7 +69,8 @@ def test_get_bookmark_none_when_absent():
     mock_ub = MagicMock()
     mock_ub.session.query.return_value.filter.return_value.first.return_value = None
     with _ctx("/api/v1/books/5/bookmark"):
-        with patch.object(mod, "current_user", _auth_user()), patch.object(mod, "ub", mock_ub):
+        with patch.object(mod, "current_user", _auth_user()), \
+             patch.object(mod, "ub", mock_ub), _visible_book(mod):
             resp = inspect.unwrap(mod.get_bookmark)(5)
     assert json.loads(resp.get_data())["bookmark"] is None
 
@@ -66,7 +82,8 @@ def test_save_bookmark_lowercases_format_and_merges():
     mock_ub = MagicMock()
     with _ctx("/api/v1/books/5/bookmark", method="POST",
               body={"format": "EPUB", "bookmark": "epubcfi(/6/8)"}):
-        with patch.object(mod, "current_user", _auth_user()), patch.object(mod, "ub", mock_ub):
+        with patch.object(mod, "current_user", _auth_user()), \
+             patch.object(mod, "ub", mock_ub), _visible_book(mod):
             resp = inspect.unwrap(mod.save_bookmark)(5)
     assert resp[1] == 204
     _args, kwargs = mock_ub.Bookmark.call_args
@@ -80,7 +97,8 @@ def test_save_empty_bookmark_clears_without_merge():
     from cps.api import reader as mod
     mock_ub = MagicMock()
     with _ctx("/api/v1/books/5/bookmark", method="POST", body={"format": "epub", "bookmark": ""}):
-        with patch.object(mod, "current_user", _auth_user()), patch.object(mod, "ub", mock_ub):
+        with patch.object(mod, "current_user", _auth_user()), \
+             patch.object(mod, "ub", mock_ub), _visible_book(mod):
             resp = inspect.unwrap(mod.save_bookmark)(5)
     assert resp[1] == 204
     assert mock_ub.session.query.return_value.filter.return_value.delete.called

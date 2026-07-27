@@ -279,8 +279,8 @@ def test_helper_download_branch_degrades_to_original():
     # normal (non-GDrive) download branch
     _branch_guards_none(
         "cps/helper.py",
-        'elif book_format != "kepub" and config.config_binariesdir and config.config_embed_metadata:',
-        "if not filename or not download_name:",
+        'elif book_format != "kepub" and config.config_binariesdir and embed_metadata:',
+        "if (not filename or not download_name",
     )
 
 
@@ -288,7 +288,7 @@ def test_helper_gdrive_branch_degrades_to_original():
     _branch_guards_none(
         "cps/helper.py",
         'elif book_format != "kepub" and config.config_binariesdir:',
-        "if not filename or not download_name:",
+        "if (not filename or not download_name",
     )
 
 

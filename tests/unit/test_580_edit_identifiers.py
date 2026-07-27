@@ -41,11 +41,20 @@ def _fake_book(identifiers=None):
     )
 
 
+def _fake_calibre_db(book, session):
+    return SimpleNamespace(
+        get_filtered_book=lambda *args, **kwargs: book,
+        get_book=lambda _id: book,
+        session=session,
+    )
+
+
 def test_editable_metadata_includes_identifiers():
     from cps.api import edit as mod
     book = _fake_book([SimpleNamespace(type="isbn", val="123"),
                        SimpleNamespace(type="amazon", val="B01")])
-    out = mod._editable_metadata(book)
+    with patch.object(mod, "_ordered_language_codes", return_value=[]):
+        out = mod._editable_metadata(book)
     assert out["identifiers"] == [
         {"type": "isbn", "val": "123"},
         {"type": "amazon", "val": "B01"},
@@ -70,8 +79,7 @@ def test_update_metadata_persists_identifiers_lowercased_and_skips_blank_rows():
     ]}
     with _ctx("/api/v1/books/5/metadata", body=body):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod, "calibre_db",
-                          SimpleNamespace(get_book=lambda _id: _fake_book(), session=session)), \
+             patch.object(mod, "calibre_db", _fake_calibre_db(_fake_book(), session)), \
              patch.object(mod, "modify_identifiers", side_effect=fake_modify), \
              patch.object(mod, "get_locale", return_value="en"):
             resp = inspect.unwrap(mod.update_metadata)(5)
@@ -97,8 +105,7 @@ def test_update_metadata_duplicate_identifier_reports_field_error():
     body = {"identifiers": [{"type": "isbn", "val": "1"}, {"type": "isbn", "val": "2"}]}
     with _ctx("/api/v1/books/5/metadata", body=body):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod, "calibre_db",
-                          SimpleNamespace(get_book=lambda _id: _fake_book(), session=session)), \
+             patch.object(mod, "calibre_db", _fake_calibre_db(_fake_book(), session)), \
              patch.object(mod, "modify_identifiers", side_effect=fake_modify), \
              patch.object(mod, "get_locale", return_value="en"):
             resp = inspect.unwrap(mod.update_metadata)(5)
@@ -116,8 +123,7 @@ def test_update_metadata_without_identifiers_key_does_not_touch_them():
     session = MagicMock()
     with _ctx("/api/v1/books/5/metadata", body={"title": "New"}):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod, "calibre_db",
-                          SimpleNamespace(get_book=lambda _id: _fake_book(), session=session)), \
+             patch.object(mod, "calibre_db", _fake_calibre_db(_fake_book(), session)), \
              patch.object(mod, "modify_identifiers", side_effect=AssertionError("must not be called")), \
              patch.object(mod, "edit_book_param",
                           return_value=flask.Response(json.dumps({"success": True}),

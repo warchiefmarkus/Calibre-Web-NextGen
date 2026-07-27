@@ -280,18 +280,22 @@ def _typeahead_names(field, query):
     spec = _TYPEAHEAD_MODELS.get(field)
     if spec is None:
         return None
+    _model_factory, replace_chars = spec
     # Scope author/publisher/series suggestions to books visible to this user.
     # A global typeahead leaks metadata from denied languages/tags/custom columns.
     books = (calibre_db.session.query(db.Books)
              .filter(calibre_db.common_filters())
              .all())
     relation = {"authors": "authors", "publishers": "publishers", "series": "series"}[field]
-    values = {
-        str(item.name).strip()
-        for book in books
-        for item in (getattr(book, relation, None) or [])
-        if str(getattr(item, "name", "") or "").strip()
-    }
+    values = set()
+    for book in books:
+        for item in (getattr(book, relation, None) or []):
+            value = str(getattr(item, "name", "") or "").strip()
+            if not value:
+                continue
+            if replace_chars[0]:
+                value = value.replace(replace_chars[0], replace_chars[1])
+            values.add(value)
     needle = query.casefold()
     starts = sorted(value for value in values if value.casefold().startswith(needle))
     contains = sorted(

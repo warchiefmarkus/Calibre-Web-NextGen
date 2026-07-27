@@ -14,7 +14,7 @@ import json
 import flask
 import pytest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 def _ctx(path, method="GET"):
@@ -88,23 +88,23 @@ def test_tags_field_uses_tag_filter_and_returns_names():
 
 
 @pytest.mark.unit
-def test_authors_field_normalizes_pipe_to_comma():
+def test_authors_field_scopes_visible_books_and_normalizes_pipe_to_comma():
     from cps.api import edit as mod
-    captured = {}
-
-    def fake_typeahead(model, query, replace=("", ""), tag_filter=None):
-        captured["replace"] = replace
-        return json.dumps([{"name": "Le Guin, Ursula K."}])
-
+    session = MagicMock()
+    session.query.return_value.filter.return_value.all.return_value = [
+        SimpleNamespace(authors=[SimpleNamespace(name="Le Guin| Ursula K.")])
+    ]
+    scoped_db = SimpleNamespace(
+        session=session,
+        common_filters=lambda: object(),
+    )
     with _ctx("/api/v1/metadata/typeahead/authors?q=le"):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod, "calibre_db", SimpleNamespace(get_typeahead=fake_typeahead)), \
-             patch.object(mod.db, "Authors", "AUTHORS_MODEL"):
+             patch.object(mod, "calibre_db", scoped_db):
             resp = inspect.unwrap(mod.metadata_typeahead)("authors")
     body = json.loads(resp.get_data())
     assert body["suggestions"] == ["Le Guin, Ursula K."]
-    # legacy /get_authors_json normalizes calibre's '|' author-join to ','
-    assert captured["replace"] == ("|", ",")
+    session.query.assert_called_once_with(mod.db.Books)
 
 
 @pytest.mark.unit
@@ -128,11 +128,15 @@ def test_languages_field_ranks_start_matches_first():
 @pytest.mark.unit
 def test_result_is_capped():
     from cps.api import edit as mod
-    many = json.dumps([{"name": "tag%02d" % i} for i in range(200)])
+    session = MagicMock()
+    session.query.return_value.filter.return_value.all.return_value = [
+        SimpleNamespace(series=[SimpleNamespace(name="series%03d" % i)])
+        for i in range(200)
+    ]
+    scoped_db = SimpleNamespace(session=session, common_filters=lambda: object())
     with _ctx("/api/v1/metadata/typeahead/series?q="):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod, "calibre_db", SimpleNamespace(get_typeahead=lambda *a, **k: many)), \
-             patch.object(mod.db, "Series", "SERIES_MODEL"):
+             patch.object(mod, "calibre_db", scoped_db):
             resp = inspect.unwrap(mod.metadata_typeahead)("series")
     suggestions = json.loads(resp.get_data())["suggestions"]
     assert len(suggestions) == mod._TYPEAHEAD_LIMIT

@@ -12,6 +12,7 @@ import { SpinnerCentered } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { VisuallyHidden } from '../components/VisuallyHidden';
 import { useT } from '../lib/i18n';
+import { formatAuthors } from '../lib/authors';
 import { decodeFb2, parseFb2, type Fb2Document } from '../lib/fb2';
 import styles from './NativeReader.module.css';
 
@@ -160,7 +161,7 @@ function Fb2Reader({
       <article className={styles.fb2}>
         <header className={styles.fb2Header}>
           <h1 className={styles.fb2Title}>{document.title}</h1>
-          {document.authors.length > 0 && <p className={styles.fb2Authors}>{document.authors.join(', ')}</p>}
+          {document.authors.length > 0 && <p className={styles.fb2Authors}>{formatAuthors(document.authors)}</p>}
         </header>
         {document.blocks.map((block, index) => {
           if (block.kind === 'heading') {
