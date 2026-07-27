@@ -10960,14 +10960,14 @@ msgid "Spread"
 msgstr "已读"
 
 #: cps/templates/read.html:153
-#, fuzzy
 msgid "Two columns"
-msgstr "双栏"
+msgstr ""
+
 
 #: cps/templates/read.html:154
-#, fuzzy
 msgid "One column"
-msgstr "单栏"
+msgstr ""
+
 
 #: cps/templates/read.html:161
 msgid "Reflow text when sidebars are open."

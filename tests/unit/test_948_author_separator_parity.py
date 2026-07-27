@@ -53,7 +53,6 @@ AUTHOR_DISPLAY_SITES = {
     "pages/CoverPicker.tsx": "formatAuthors",     # cover picker header
     "pages/EditBook.tsx": "formatAuthors",        # metadata-search previews
     "pages/AiSearch.tsx": "formatAuthors",        # RAG source metadata
-    "pages/NativeReader.tsx": "formatAuthors",     # FB2 title metadata
 }
 
 

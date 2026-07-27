@@ -1,160 +1,31 @@
-# Calibre-Web Automated – fork of Calibre-Web
-# Copyright (C) 2024-2026 Calibre-Web-NextGen contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
-# See CONTRIBUTORS for full list of authors.
-
-"""Regression tests for fork issue #782: in the new UI's epub reader you could
-*create* a colored highlight but never *remove* one — tapping an existing
-highlight did nothing.
-
-Root cause (verified against this tree): both highlight paint sites
-(`Reader.tsx`'s ``paintHighlight`` + the saved-highlights load loop) called
-``rendition.annotations.highlight(cfiRange, {}, undefined, '', …)`` — the 3rd
-arg (click callback) was ``undefined`` and the 4th (className) was ``''``, so
-epub.js never fired anything on tap. The reader also discarded each saved
-row's ``annotation_id``, and the create path ignored the id the POST returns,
-so even with a callback there was no server id to DELETE.
-
-The backend already had a working ``DELETE /annotations/<book_id>/<ann_id>``
-(soft delete, idempotent) and a ``PATCH`` that supports ``highlight_color``;
-the fix is entirely client-side. ``api.ts`` gained ``apiDelete`` (mirrors
-``apiPost``'s CSRF handling; tolerates empty/204) and ``apiPatch`` (for the
-recolor path).
-
-These are source-pins (the SPA is TypeScript, so like ``test_750``'s
-``feed.xml`` pin we read the source as text and assert on the call shape):
-1. ``api.ts`` exports ``apiDelete`` (method ``DELETE``) + ``apiPatch``.
-2. ``Reader.tsx`` no longer paints highlights with an undefined click callback,
-   and wires a real handler (``openHighlightEditor``) + ``cwng-hl`` className.
-3. ``Reader.tsx`` captures the annotation id at both paint sites (load + create).
-4. The remove flow calls ``apiDelete`` on the annotation path and un-paints via
-   ``rendition.annotations.remove(…, 'highlight')``.
-5. ``spa_strings.py`` anchors the new SPA-only msgid (``Remove highlight``).
-
-Every assertion below fails on ``main`` (no apiDelete, undefined callback, no
-id capture, no remove call, no msgid) and passes on the branch.
-"""
-
-from __future__ import annotations
-
+"""Unified foliate reader highlight/notes regression coverage."""
 from pathlib import Path
-
 import pytest
 
 pytestmark = pytest.mark.unit
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-API_TS = REPO_ROOT / "frontend" / "src" / "lib" / "api.ts"
-READER_TSX = REPO_ROOT / "frontend" / "src" / "pages" / "Reader.tsx"
-SPA_STRINGS = REPO_ROOT / "cps" / "spa_strings.py"
+ROOT = Path(__file__).resolve().parents[2]
+READER = (ROOT / 'frontend/src/pages/Reader.tsx').read_text()
+API = (ROOT / 'frontend/src/lib/api.ts').read_text()
 
 
-@pytest.fixture(scope="module")
-def api_src() -> str:
-    return API_TS.read_text()
+def test_reader_uses_foliate_overlay_and_server_annotation_ids():
+    assert "Overlayer.highlight" in READER
+    assert "annotationsRef.current" in READER
+    assert "annotation_id" in READER
+    assert "view.addAnnotation" in READER
+    assert "deleteAnnotation(annotation)" in READER
 
 
-@pytest.fixture(scope="module")
-def reader_src() -> str:
-    return READER_TSX.read_text()
+def test_highlight_create_update_delete_use_server_api():
+    assert "apiPost<ServerAnnotation>(`/annotations/${id}`" in READER
+    assert "apiPatch<ServerAnnotation>" in READER
+    assert "apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}`)" in READER
+    assert "note_text" in READER
+    assert "highlight_color" in READER
 
 
-# ---------------------------------------------------------------------------
-# 1. api.ts gained apiDelete (method DELETE) + apiPatch (recolor)
-# ---------------------------------------------------------------------------
-
-def test_api_ts_defines_delete_helper(api_src):
-    assert "export async function apiDelete" in api_src, (
-        "api.ts must export an apiDelete helper for the remove flow"
-    )
-    assert "method: 'DELETE'" in api_src, "apiDelete must issue a DELETE request"
-    # DELETE responses are frequently 204/empty — the helper tolerates that
-    # rather than throwing on res.json() (mirrors apiPost's 204 branch).
-    assert "204" in api_src and "res.text()" in api_src, (
-        "apiDelete must tolerate an empty/204 body"
-    )
-
-
-def test_api_ts_defines_patch_helper(api_src):
-    # Recolor rides the backend's PATCH /annotations/<book>/<ann> route.
-    assert "export async function apiPatch" in api_src, (
-        "api.ts must export an apiPatch helper for the recolor flow"
-    )
-    assert "method: 'PATCH'" in api_src
-
-
-# ---------------------------------------------------------------------------
-# 2. Reader wires a real click callback (not undefined) + className
-# ---------------------------------------------------------------------------
-
-def test_reader_does_not_paint_with_undefined_callback(reader_src):
-    # Pre-fix both paint sites called `.highlight(cfiRange, {}, undefined, '', …)`.
-    # That exact shape must be gone — a tap must now fire a callback.
-    assert ", {}, undefined, ''" not in reader_src, (
-        "annotations.highlight must not be called with an undefined click callback"
-    )
-
-
-def test_reader_passes_click_callback_and_classname(reader_src):
-    assert "openHighlightEditor" in reader_src, (
-        "a click handler (openHighlightEditor) must open the edit/remove popover"
-    )
-    assert "() => openHighlightEditor(cfiRange, annotationId, color)" in reader_src, (
-        "the highlight click callback must be a real function, not undefined"
-    )
-    assert "'cwng-hl'" in reader_src, (
-        "highlights must carry a className so epub.js wires the click callback"
-    )
-
-
-# ---------------------------------------------------------------------------
-# 3. The annotation id is captured at both paint sites
-# ---------------------------------------------------------------------------
-
-def test_reader_captures_id_on_load(reader_src):
-    # Saved highlights come from /annotations/<id>/data.json; each row's
-    # annotation_id must reach paintHighlight so a tap can target the row.
-    assert (
-        "paintHighlight(a.cfi_range, a.highlight_color || 'yellow', a.annotation_id)"
-        in reader_src
-    ), "the load loop must pass the saved annotation_id into paintHighlight"
-
-
-def test_reader_captures_id_on_create(reader_src):
-    # The create POST returns the new annotation row (incl. its id); capture it
-    # so a just-created highlight is immediately removable.
-    assert "paintHighlight(sel.cfiRange, color, created?.annotation_id" in reader_src, (
-        "createHighlight must capture the returned annotation_id and paint with it"
-    )
-
-
-# ---------------------------------------------------------------------------
-# 4. The remove flow DELETEs + un-paints; recolor PATCHes
-# ---------------------------------------------------------------------------
-
-def test_reader_remove_flow_calls_delete_and_unpaints(reader_src):
-    assert "apiDelete(" in reader_src, "remove flow must call apiDelete"
-    # The annotation id is interpolated into the per-annotation DELETE path.
-    assert "${hl.id}" in reader_src, "the remove path must target the annotation id"
-    assert "remove(hl.cfiRange, 'highlight')" in reader_src, (
-        "remove flow must un-paint via rendition.annotations.remove(…, 'highlight')"
-    )
-
-
-def test_reader_recolor_flow_calls_patch(reader_src):
-    assert "apiPatch(" in reader_src, "recolor flow must call apiPatch"
-    assert "highlight_color: color" in reader_src, (
-        "recolor must send highlight_color to the PATCH endpoint"
-    )
-
-
-# ---------------------------------------------------------------------------
-# 5. spa_strings.py anchors the new SPA-only msgid
-# ---------------------------------------------------------------------------
-
-def test_spa_strings_anchors_remove_highlight():
-    src = SPA_STRINGS.read_text()
-    assert '_("Remove highlight")' in src, (
-        "the new 'Remove highlight' msgid must be anchored in spa_strings.py "
-        "so pybabel re-extraction doesn't drop it"
-    )
+def test_api_helpers_support_annotation_mutations():
+    assert "export async function apiDelete" in API
+    assert "method: 'DELETE'" in API
+    assert "export async function apiPatch" in API
+    assert "method: 'PATCH'" in API

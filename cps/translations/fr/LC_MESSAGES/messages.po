@@ -11240,9 +11240,9 @@ msgstr ""
 "ouverts."
 
 #: cps/templates/read.html:189
-#, fuzzy
 msgid "Note"
-msgstr "Note :"
+msgstr ""
+
 
 #: cps/templates/read.html:190
 msgid "Add a note (optional)"

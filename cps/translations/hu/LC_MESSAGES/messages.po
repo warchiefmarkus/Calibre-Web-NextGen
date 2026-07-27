@@ -11101,9 +11101,9 @@ msgid "Reflow text when sidebars are open."
 msgstr "Szöveg újratördelése amikor az oldalsávok nyitva vannak."
 
 #: cps/templates/read.html:189
-#, fuzzy
 msgid "Note"
-msgstr "Megjegyzés:"
+msgstr ""
+
 
 #: cps/templates/read.html:190
 msgid "Add a note (optional)"

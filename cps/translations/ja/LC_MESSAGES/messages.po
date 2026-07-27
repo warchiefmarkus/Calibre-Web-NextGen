@@ -11065,9 +11065,9 @@ msgid "Reflow text when sidebars are open."
 msgstr "サイドバーが開いているとき、テキストを再度流し込みます。"
 
 #: cps/templates/read.html:189
-#, fuzzy
 msgid "Note"
-msgstr "メモ："
+msgstr ""
+
 
 #: cps/templates/read.html:190
 msgid "Add a note (optional)"

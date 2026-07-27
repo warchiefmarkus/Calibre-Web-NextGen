@@ -1,17 +1,25 @@
-const SPA_READABLE = new Set(['epub', 'kepub']);
-const SERVER_READABLE = new Set([
-  'pdf', 'txt', 'fb2', 'djvu', 'cbz', 'cbr', 'cbt', 'cb7',
-  'mp3', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav',
+export const FOLIATE_READER_FORMATS = new Set([
+  'epub', 'kepub', 'fb2', 'fbz', 'mobi', 'azw', 'azw3', 'cbz',
 ]);
 
+const NATIVE_READER_FORMATS = new Set([
+  'pdf', 'txt', 'djvu', 'cbr', 'cbt', 'cb7',
+  'mp3', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav', 'aac',
+]);
+
+const FORMAT_PRIORITY = [
+  'epub', 'kepub', 'fb2', 'mobi', 'azw3', 'azw', 'cbz',
+  'pdf', 'txt', 'cbr', 'cbt', 'cb7', 'djvu',
+  'm4b', 'm4a', 'mp3', 'flac', 'ogg', 'opus', 'wav', 'aac',
+];
+
 export function getPrimaryReadTarget(id: number | string, formats: string[]): string | null {
-  const normalized = formats.map((format) => format.toLowerCase());
-  if (normalized.some((format) => SPA_READABLE.has(format))) return `/read/${id}`;
-  const fallback = normalized.find((format) => SERVER_READABLE.has(format));
-  return fallback ? `/view/${id}/${fallback}` : null;
+  const available = new Set(formats.map((format) => format.toLowerCase()));
+  const selected = FORMAT_PRIORITY.find((format) => available.has(format));
+  return selected ? `/view/${id}/${selected}` : null;
 }
 
 export function isReadableFormat(format: string): boolean {
   const normalized = format.toLowerCase();
-  return SPA_READABLE.has(normalized) || SERVER_READABLE.has(normalized);
+  return FOLIATE_READER_FORMATS.has(normalized) || NATIVE_READER_FORMATS.has(normalized);
 }

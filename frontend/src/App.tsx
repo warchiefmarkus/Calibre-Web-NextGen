@@ -35,11 +35,11 @@ import { I18nProvider } from './lib/i18n';
 import { usePostAuthRedirect } from './lib/authRedirect';
 import { AUTH_ROUTES, SPA_ROUTES } from './lib/routes';
 
-// The reader pulls in epub.js (large) — load it only when a book is opened so it
-// stays out of the initial bundle.
+// The unified foliate-js reader is lazy so parsers/renderers stay out of the initial bundle.
 const Reader = lazy(() => import('./pages/Reader').then((m) => ({ default: m.Reader })));
-// Native multi-format reader (PDF/audio/text) — also lazy, full-screen.
+// Native fallback for PDF/audio/text/CBR/CBT — also lazy, full-screen.
 const NativeReader = lazy(() => import('./pages/NativeReader').then((m) => ({ default: m.NativeReader })));
+const FOLIATE_FORMATS = new Set(['epub', 'kepub', 'fb2', 'fbz', 'mobi', 'azw', 'azw3', 'cbz']);
 
 // The SPA is mounted at <prefix>/app — where <prefix> is the reverse-proxy mount
 // path (empty at the domain root). wouter needs the full base so client-side
@@ -154,11 +154,14 @@ export function App() {
           )}
         </Route>
 
-        {/* Native non-EPUB reader (PDF / audio / text) — full screen */}
+        {/* Exact-format reader route. foliate-js handles reflowable books and CBZ;
+            the existing native fallback keeps PDF/audio/text/CBR/CBT. */}
         <Route path={SPA_ROUTES.nativeReader}>
           {(p) => (
             <Suspense fallback={<SpinnerCentered size={40} />}>
-              <NativeReader id={p.id} format={p.format} />
+              {FOLIATE_FORMATS.has(p.format.toLowerCase())
+                ? <Reader id={p.id} format={p.format} />
+                : <NativeReader id={p.id} format={p.format} />}
             </Suspense>
           )}
         </Route>

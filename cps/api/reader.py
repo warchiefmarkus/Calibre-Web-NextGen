@@ -7,6 +7,8 @@ In ``mcp-managed-library`` it preserves the same SPA contract while storing the
 CFI and normalized progress in Calibre's native ``last_read_positions`` table
 through the private CalibreMCP REST adapter.
 """
+import uuid
+
 from flask import jsonify, request
 from sqlalchemy import and_
 from sqlalchemy.orm.attributes import flag_modified
@@ -126,6 +128,109 @@ def save_bookmark(book_id):
             bookmark_key=bookmark_key,
         ))
     ub.session_commit("Bookmark for user {} in book {} via api".format(current_user.id, book_id))
+    return "", 204
+
+
+def _reader_bookmark_dict(row):
+    return {
+        "bookmark_id": row.bookmark_id,
+        "book_id": row.book_id,
+        "format": row.format,
+        "locator": row.locator,
+        "progression": float(row.progression or 0),
+        "label": row.label,
+        "chapter": row.chapter,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _reader_bookmark_query(book_id):
+    return ub.session.query(ub.ReaderBookmark).filter(
+        ub.ReaderBookmark.user_id == int(current_user.id),
+        ub.ReaderBookmark.book_id == book_id,
+    )
+
+
+@api_v1.route("/books/<int:book_id>/reader-bookmarks")
+@login_required_if_no_ano
+def get_reader_bookmarks(book_id):
+    guard = _require_real_user()
+    if guard:
+        return guard
+    visible = _require_visible_book(book_id)
+    if visible:
+        return visible
+    fmt = (request.args.get("format") or "").strip().lower()
+    query = _reader_bookmark_query(book_id)
+    if fmt:
+        query = query.filter(ub.ReaderBookmark.format == fmt)
+    rows = query.order_by(
+        ub.ReaderBookmark.progression.asc(),
+        ub.ReaderBookmark.created_at.asc(),
+    ).all()
+    return jsonify({"bookmarks": [_reader_bookmark_dict(row) for row in rows]})
+
+
+@api_v1.route("/books/<int:book_id>/reader-bookmarks", methods=["POST"])
+@login_required_if_no_ano
+def create_reader_bookmark(book_id):
+    guard = _require_real_user()
+    if guard:
+        return guard
+    visible = _require_visible_book(book_id)
+    if visible:
+        return visible
+    data = request.get_json(silent=True) or {}
+    locator = str(data.get("locator") or "").strip()
+    fmt = str(data.get("format") or "epub").strip().lower()[:16]
+    if not locator or len(locator) > 8192:
+        return _err("invalid_locator", "A valid reader locator is required", 400)
+    try:
+        progression = max(0.0, min(1.0, float(data.get("progression") or 0)))
+    except (TypeError, ValueError):
+        return _err("invalid_progression", "Progression must be a number", 400)
+    row = ub.ReaderBookmark(
+        bookmark_id="cwn-reader-" + uuid.uuid4().hex,
+        user_id=int(current_user.id),
+        book_id=book_id,
+        format=fmt,
+        locator=locator,
+        progression=progression,
+        label=str(data.get("label") or "").strip()[:500] or None,
+        chapter=str(data.get("chapter") or "").strip()[:500] or None,
+    )
+    ub.session.add(row)
+    try:
+        ub.session.commit()
+    except Exception:
+        ub.session.rollback()
+        return _err("save_failed", "Could not save reader bookmark", 500)
+    return jsonify(_reader_bookmark_dict(row)), 201
+
+
+@api_v1.route(
+    "/books/<int:book_id>/reader-bookmarks/<bookmark_id>", methods=["DELETE"]
+)
+@login_required_if_no_ano
+def delete_reader_bookmark(book_id, bookmark_id):
+    guard = _require_real_user()
+    if guard:
+        return guard
+    visible = _require_visible_book(book_id)
+    if visible:
+        return visible
+    row = _reader_bookmark_query(book_id).filter(
+        ub.ReaderBookmark.bookmark_id == bookmark_id,
+    ).first()
+    if row is None:
+        return _err("not_found", "Reader bookmark not found", 404)
+    ub.session.delete(row)
+    try:
+        ub.session.commit()
+    except Exception:
+        ub.session.rollback()
+        return _err("delete_failed", "Could not delete reader bookmark", 500)
     return "", 204
 
 

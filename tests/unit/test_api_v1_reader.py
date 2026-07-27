@@ -148,3 +148,64 @@ def test_save_reader_settings_rejects_non_object_payload():
         with patch.object(mod, "current_user", user):
             resp = inspect.unwrap(mod.save_reader_settings)()
     assert resp[1] == 400
+
+@pytest.mark.unit
+def test_reader_bookmarks_require_visible_book():
+    from cps.api import reader as mod
+    with _ctx('/api/v1/books/5/reader-bookmarks'):
+        with patch.object(mod, 'current_user', _auth_user()), _visible_book(mod, visible=False):
+            resp = inspect.unwrap(mod.get_reader_bookmarks)(5)
+    assert resp[1] == 404
+
+
+@pytest.mark.unit
+def test_reader_bookmarks_list_is_format_scoped():
+    from cps.api import reader as mod
+    row = SimpleNamespace(
+        bookmark_id='cwn-reader-1', book_id=5, format='fb2', locator='foliate-locator',
+        progression=.42, label='42', chapter='Chapter', created_at=None, updated_at=None,
+    )
+    mock_ub = MagicMock()
+    query = mock_ub.session.query.return_value.filter.return_value
+    query.filter.return_value.order_by.return_value.all.return_value = [row]
+    with _ctx('/api/v1/books/5/reader-bookmarks?format=fb2'):
+        with patch.object(mod, 'current_user', _auth_user()), patch.object(mod, 'ub', mock_ub), _visible_book(mod):
+            resp = inspect.unwrap(mod.get_reader_bookmarks)(5)
+    body = json.loads(resp.get_data())
+    assert body['bookmarks'][0]['locator'] == 'foliate-locator'
+    assert body['bookmarks'][0]['progression'] == .42
+
+
+@pytest.mark.unit
+def test_create_reader_bookmark_clamps_progression_and_commits():
+    from cps.api import reader as mod
+    mock_ub = MagicMock()
+    created = {}
+    def make_row(**kwargs):
+        row = SimpleNamespace(id=1, created_at=None, updated_at=None, **kwargs)
+        created.update(kwargs)
+        return row
+    mock_ub.ReaderBookmark.side_effect = make_row
+    with _ctx('/api/v1/books/5/reader-bookmarks', method='POST', body={
+        'format': 'FB2', 'locator': 'foliate-cfi', 'progression': 4, 'chapter': 'Part I',
+    }):
+        with patch.object(mod, 'current_user', _auth_user()), patch.object(mod, 'ub', mock_ub), _visible_book(mod):
+            resp = inspect.unwrap(mod.create_reader_bookmark)(5)
+    assert resp[1] == 201
+    assert created['format'] == 'fb2'
+    assert created['progression'] == 1.0
+    mock_ub.session.commit.assert_called_once()
+
+
+@pytest.mark.unit
+def test_delete_reader_bookmark_is_user_and_book_scoped():
+    from cps.api import reader as mod
+    row = SimpleNamespace(bookmark_id='cwn-reader-1')
+    mock_ub = MagicMock()
+    mock_ub.session.query.return_value.filter.return_value.filter.return_value.first.return_value = row
+    with _ctx('/api/v1/books/5/reader-bookmarks/cwn-reader-1', method='DELETE'):
+        with patch.object(mod, 'current_user', _auth_user()), patch.object(mod, 'ub', mock_ub), _visible_book(mod):
+            resp = inspect.unwrap(mod.delete_reader_bookmark)(5, 'cwn-reader-1')
+    assert resp[1] == 204
+    mock_ub.session.delete.assert_called_once_with(row)
+    mock_ub.session.commit.assert_called_once()

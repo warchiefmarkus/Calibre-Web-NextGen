@@ -10880,9 +10880,9 @@ msgid "Open annotations page"
 msgstr ""
 
 #: cps/templates/read.html:111
-#, fuzzy
 msgid "Black"
-msgstr "Tillbaka"
+msgstr ""
+
 
 #: cps/templates/read.html:116
 msgid "Font Sizes"
@@ -10926,14 +10926,14 @@ msgid "Spread"
 msgstr "Läst"
 
 #: cps/templates/read.html:153
-#, fuzzy
 msgid "Two columns"
-msgstr "Ogiltig roll"
+msgstr ""
+
 
 #: cps/templates/read.html:154
-#, fuzzy
 msgid "One column"
-msgstr "Ogiltig roll"
+msgstr ""
+
 
 #: cps/templates/read.html:161
 msgid "Reflow text when sidebars are open."

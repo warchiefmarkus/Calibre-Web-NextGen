@@ -29,6 +29,7 @@ exists. It deliberately does not cover Python-generated references, SPA
 references, or dynamic template expressions — those need their own checks.
 """
 import os
+from pathlib import Path
 import re
 
 import flask
@@ -286,26 +287,25 @@ def test_reader_position_saver_flushes_on_lifecycle_boundaries():
 
 
 @pytest.mark.unit
-def test_fb2_reader_persists_and_restores_normalized_scroll_progress():
-    """FB2 is no longer a stateless long HTML page."""
-    path = os.path.join(FRONTEND_DIR, "src", "pages", "NativeReader.tsx")
-    with open(path, encoding="utf-8") as handle:
-        source = handle.read()
-    assert "useBookmark(id, 'fb2')" in source
-    assert "useReadingPositionSaver(id, 'fb2')" in source
-    assert "fb2ScrollBookmark" in source
-    assert "saved?.position_fraction" in source
-    assert 'role="progressbar"' in source
+def test_unified_reader_persists_positions_for_epub_and_fb2():
+    """foliate-js owns both formats while preserving legacy FB2 fractions."""
+    reader = (Path(FRONTEND_DIR) / "src/pages/Reader.tsx").read_text()
+    native = (Path(FRONTEND_DIR) / "src/pages/NativeReader.tsx").read_text()
+    assert "foliate-view" in reader
+    assert "parseFb2ScrollBookmark" in reader
+    assert "position_fraction" in reader
+    assert "goToFraction" in reader
+    assert "useReadingPositionSaver" in reader
+    assert "Fb2Reader" not in native
+    assert "decodeFb2" not in native
 
 
 @pytest.mark.unit
-def test_epub_reader_uses_shared_reliable_position_saver():
-    path = os.path.join(FRONTEND_DIR, "src", "pages", "Reader.tsx")
-    with open(path, encoding="utf-8") as handle:
-        source = handle.read()
-    assert "useReadingPositionSaver(id, 'epub')" in source
-    assert "schedulePosition(cfi, normalized)" in source
-    assert "useSaveBookmark" not in source
+def test_unified_reader_has_navigation_search_and_synced_bookmarks():
+    reader = (Path(FRONTEND_DIR) / "src/pages/Reader.tsx").read_text()
+    for token in ("Table of contents", "view.search", "useReaderBookmarks",
+                  "useCreateReaderBookmark", "progressSlider", "SpeechSynthesisUtterance"):
+        assert token in reader
 
 
 @pytest.mark.unit

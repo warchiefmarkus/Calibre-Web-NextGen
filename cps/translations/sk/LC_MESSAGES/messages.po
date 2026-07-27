@@ -10899,14 +10899,14 @@ msgid "Spread"
 msgstr "Čítať"
 
 #: cps/templates/read.html:153
-#, fuzzy
 msgid "Two columns"
-msgstr "Neplatný stĺpec na čítanie"
+msgstr ""
+
 
 #: cps/templates/read.html:154
-#, fuzzy
 msgid "One column"
-msgstr "Neplatný stĺpec na čítanie"
+msgstr ""
+
 
 #: cps/templates/read.html:161
 msgid "Reflow text when sidebars are open."

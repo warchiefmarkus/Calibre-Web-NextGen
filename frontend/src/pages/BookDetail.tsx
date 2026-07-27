@@ -52,7 +52,7 @@ function formatCustomValue(column: CustomColumn, entry: CustomColumnValue, yes: 
   return String(value);
 }
 
-// Formats the in-browser reader can open. EPUB/KEPUB use the SPA's epub.js
+// Formats the in-browser reader can open. Reflowable formats use foliate-js
 // reader; the rest (PDF, comics, plain text, DjVu, audiobooks) open in the
 // server's format-specific reader at read_url — so every readable format the
 // library supports is reachable from the SPA, not just EPUB.

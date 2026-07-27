@@ -120,7 +120,7 @@ _start_time = time.time()
 
 @app.after_request
 def add_security_headers(resp):
-    # The SPA reader (spa.spa_shell serves /app/*) renders EPUBs with epub.js,
+    # The SPA reader (spa.spa_shell serves /app/*) renders publications with foliate-js,
     # which loads in-book images and CSS as blob: URLs inside an iframe — the
     # same need the legacy web.read_book reader has. Since the SPA serves one
     # shell for every /app route (client-side nav keeps the initial CSP), the
@@ -154,7 +154,13 @@ def add_security_headers(resp):
         # widens where covers can load from, not the script/XSS surface).
         csp += " *"
     if reader_like:
+        # foliate-js renders sanitized publication documents in sandboxed
+        # same-origin/blob iframes. Publication iframes omit the sandbox `allow-scripts` capability; this
+        # only permits the frame, embedded resources, and generated stylesheet
+        # blobs while ebook code remains non-executable.
         csp += " blob: ; style-src-elem 'self' blob: 'unsafe-inline'"
+        csp += "; frame-src 'self' blob: data:"
+        csp += "; worker-src 'self' blob:"
     # #60: the "Back to the classic view" feedback popup (layout.html) POSTs to our
     # first-party feedback endpoint (a Cloudflare Worker on a different origin).
     # Without an explicit connect-src, fetch()/XHR fall back to default-src 'self'

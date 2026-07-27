@@ -658,6 +658,35 @@ class Bookmark(Base):
     bookmark_key = Column(String)
 
 
+class ReaderBookmark(Base):
+    """A named reader bookmark, separate from the single current-position row.
+
+    Reader bookmarks deliberately live in app.db even in the MCP-managed
+    profile: they are CWNG user state, must sync between browsers, and must not
+    be exported or fanned out as highlights/notes.
+    """
+    __tablename__ = 'reader_bookmark'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    bookmark_id = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    book_id = Column(Integer, nullable=False)
+    format = Column(String(collation='NOCASE'), nullable=False)
+    locator = Column(Text, nullable=False)
+    progression = Column(Float, nullable=False, default=0.0)
+    label = Column(String, nullable=True)
+    chapter = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'book_id', 'bookmark_id',
+                         name='uq_reader_bookmark_user_book_id'),
+        Index('ix_reader_bookmark_user_book_format', 'user_id', 'book_id', 'format'),
+    )
+
+
 class BookCoverLock(Base):
     """Per-book flag that prevents the cover from being overwritten by the
     metadata-fetch path on the edit page. Set/cleared from the cover-picker

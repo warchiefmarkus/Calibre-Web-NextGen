@@ -1,689 +1,782 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'wouter';
-import ePub from 'epubjs';
 import {
-  ChevronLeft, ChevronRight, X, List, Sun, Moon, Coffee, Loader2, Trash2,
-  SlidersHorizontal,
+  AlignJustify, Bookmark, BookOpen, ChevronLeft, ChevronRight,
+  Columns2, Highlighter, List, Maximize, Search, Settings,
+  Square, StickyNote, Trash2, Volume2, X,
 } from 'lucide-react';
-import {
-  type ReaderSettings, useBook, useBookmark, useReaderSettings, useSaveReaderSettings,
-} from '../lib/queries';
-import { apiPost, apiDelete, apiPatch, apiUrl, resourceUrl } from '../lib/api';
-import { useReadingPositionSaver } from '../lib/readerProgress';
 import { EmptyState } from '../components/EmptyState';
-import { VisuallyHidden } from '../components/VisuallyHidden';
-import { useFocusTrap } from '../lib/a11y/useFocusTrap';
+import { SpinnerCentered } from '../components/Spinner';
+import { apiDelete, apiGet, apiPatch, apiPost, resourceUrl } from '../lib/api';
+import {
+  useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
+  useReaderBookmarks, useReaderSettings,
+  useSaveReaderSettings, type ReaderBookmark, type ReaderSettings,
+} from '../lib/queries';
 import { useT } from '../lib/i18n';
-import { useAnnouncer } from '../lib/a11y/announcer';
+import { parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
 import styles from './Reader.module.css';
 
-// Highlight colors as ARIA/label keys (SC 1.4.1: a color must never be conveyed
-// by hue alone — every swatch + saved highlight carries the color's name).
-const HILITE_ORDER = ['yellow', 'green', 'blue', 'red'] as const;
-type HiliteColor = (typeof HILITE_ORDER)[number];
+// Vendored at an exact upstream commit; see vendor/foliate-js/UPSTREAM.md.
+import '../vendor/foliate-js/view.js';
+// @ts-expect-error foliate-js intentionally ships browser JavaScript without declarations.
+import { Overlayer } from '../vendor/foliate-js/overlayer.js';
+type TocItem = { label?: string; href?: string; subitems?: TocItem[] };
+type SearchExcerpt = { pre: string; match: string; post: string };
+type SearchResult = { cfi: string; label: string; excerpt: SearchExcerpt };
+type ReaderPanel = 'toc' | 'search' | 'bookmarks' | 'notes' | 'settings' | null;
 
-// Highlight colors (match the legacy/Kobo set). Rendered semi-transparent.
-const HILITE_FILL: Record<string, string> = {
-  yellow: '#e6c34a', red: '#d9534f', green: '#5cb85c', blue: '#5b9bd5',
+type FoliateLocation = {
+  fraction?: number;
+  location?: { current?: number; total?: number };
+  tocItem?: { label?: string; href?: string };
+  pageItem?: { label?: string };
+  cfi?: string;
+  range?: Range;
 };
 
-type ReaderTheme = 'light' | 'sepia' | 'dark';
-
-interface TocItem {
-  label: string;
-  href: string;
-}
-
-// epub.js ships loose types; the rendition/book objects are treated as `any`
-// behind small typed wrappers so the rest of the component stays readable.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-// !important on the body rules so a theme switch always wins over the book's own
-// CSS and any previously-selected theme (without it, re-selecting a theme epub.js
-// considers "already applied" can leave the prior background showing).
-const THEMES: Record<ReaderTheme, { body: Record<string, string> }> = {
-  light: { body: { background: '#fbf7ee !important', color: '#2a2a2a !important' } },
-  sepia: { body: { background: '#f2e6cf !important', color: '#43381f !important' } },
-  dark: { body: { background: '#15110c !important', color: '#cdc6bb !important' } },
+type FoliateAnnotation = {
+  value: string;
+  color?: string;
+  note?: string | null;
+  id?: string;
+  text?: string | null;
 };
 
+type FoliateRenderer = HTMLElement & {
+  setStyles?: (css: string | [string, string]) => void;
+  getContents?: () => Array<{ doc: Document; index: number }>;
+};
+type FoliateView = HTMLElement & {
+  book?: {
+    toc?: TocItem[];
+    sections?: unknown[];
+    metadata?: { title?: unknown; author?: unknown; language?: string };
+    dir?: string;
+  };
+  renderer?: FoliateRenderer;
+  lastLocation?: FoliateLocation;
+  open: (file: File) => Promise<void>;
+  init: (options: { lastLocation?: string | { fraction: number }; showTextStart?: boolean }) => Promise<void>;
+  close: () => void;
+  prev: () => Promise<void>;
+  next: () => Promise<void>;
+  goLeft: () => Promise<void>;
+  goRight: () => Promise<void>;
+  goTo: (target: string | number | { fraction: number }) => Promise<unknown>;
+  goToFraction: (fraction: number) => Promise<void>;
+  getSectionFractions: () => number[];
+  getCFI: (index: number, range?: Range) => string;
+  search: (options: Record<string, unknown>) => AsyncGenerator<unknown>;
+  clearSearch: () => void;
+  addAnnotation: (annotation: FoliateAnnotation) => Promise<unknown>;
+  deleteAnnotation: (annotation: FoliateAnnotation) => Promise<unknown>;
+  showAnnotation: (annotation: FoliateAnnotation) => Promise<void>;
+  deselect: () => void;
+};
+
+type ServerAnnotation = {
+  annotation_id: string;
+  cfi_range: string | null;
+  highlighted_text: string | null;
+  highlight_color: string;
+  note_text: string | null;
+};
+const FOLIATE_FORMATS = ['EPUB', 'KEPUB', 'FB2', 'FBZ', 'MOBI', 'AZW3', 'AZW', 'CBZ'] as const;
+const FORMAT_PRIORITY = ['EPUB', 'KEPUB', 'FB2', 'MOBI', 'AZW3', 'AZW', 'CBZ'];
 const FONT_MIN = 75;
 const FONT_MAX = 200;
-const LS_THEME = 'cwng.reader.theme';
-const LS_FONT = 'cwng.reader.font';
 
-const THEME_TO_READER: Record<ReaderSettings['theme'], ReaderTheme> = {
-  lightTheme: 'light', sepiaTheme: 'sepia', darkTheme: 'dark', blackTheme: 'dark',
+const MIME: Record<string, string> = {
+  EPUB: 'application/epub+zip',
+  KEPUB: 'application/epub+zip',
+  FB2: 'application/x-fictionbook+xml',
+  FBZ: 'application/x-zip-compressed-fb2',
+  MOBI: 'application/x-mobipocket-ebook',
+  AZW: 'application/vnd.amazon.ebook',
+  AZW3: 'application/vnd.amazon.ebook',
+  CBZ: 'application/vnd.comicbook+zip',
 };
-const READER_TO_THEME: Record<ReaderTheme, ReaderSettings['theme']> = {
-  light: 'lightTheme', sepia: 'sepiaTheme', dark: 'darkTheme',
-};
+
 const FONT_FAMILY: Record<ReaderSettings['font'], string> = {
-  default: '', Yahei: 'Microsoft YaHei, sans-serif', SimSun: 'SimSun, serif',
-  KaiTi: 'KaiTi, serif', Arial: 'Arial, sans-serif',
+  default: 'Georgia, "Times New Roman", serif',
+  Yahei: '"Microsoft YaHei", sans-serif',
+  SimSun: 'SimSun, serif',
+  KaiTi: 'KaiTi, serif',
+  Arial: 'Arial, sans-serif',
 };
 
-function loadTheme(): ReaderTheme {
-  const v = localStorage.getItem(LS_THEME);
-  if (v === 'light' || v === 'sepia' || v === 'dark') return v;
-  // First reader visit follows the already-resolved per-user app palette.
-  // Thereafter the reader's explicit page-theme choice remains independent.
-  const appTheme = document.documentElement.getAttribute('data-theme');
-  if (appTheme === 'light') return 'light';
-  if (appTheme === 'sepia') return 'sepia';
-  return 'dark';
-}
-function loadFont(): number {
-  const v = Number(localStorage.getItem(LS_FONT));
-  return v >= FONT_MIN && v <= FONT_MAX ? v : 100;
+const THEME: Record<ReaderSettings['theme'], { background: string; text: string; link: string }> = {
+  lightTheme: { background: '#fffdf8', text: '#24211d', link: '#225ea8' },
+  sepiaTheme: { background: '#f4ecd8', text: '#433422', link: '#7a4b20' },
+  darkTheme: { background: '#202124', text: '#e8eaed', link: '#8ab4f8' },
+  blackTheme: { background: '#000000', text: '#eeeeee', link: '#8ab4f8' },
+};
+function formatLanguageMap(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const entries = Object.values(value as Record<string, unknown>);
+    return entries.find((item): item is string => typeof item === 'string') ?? '';
+  }
+  return '';
 }
 
-export function Reader({ id }: { id: string }) {
+function flattenToc(items: TocItem[] = [], depth = 0): Array<TocItem & { depth: number }> {
+  return items.flatMap((item) => [
+    { ...item, depth },
+    ...flattenToc(item.subitems ?? [], depth + 1),
+  ]);
+}
+
+function excerptText(excerpt: SearchExcerpt): string {
+  return `${excerpt.pre}${excerpt.match}${excerpt.post}`;
+}
+
+function fileName(format: string): string {
+  const extension = format === 'KEPUB' ? 'epub' : format.toLowerCase();
+  return `book.${extension}`;
+}
+
+function readerCss(settings: ReaderSettings): string {
+  const theme = THEME[settings.theme];
+  return `
+    :root { color-scheme: ${settings.theme === 'lightTheme' || settings.theme === 'sepiaTheme' ? 'light' : 'dark'}; }
+    html, body { background: ${theme.background} !important; color: ${theme.text} !important; }
+    body { font-family: ${FONT_FAMILY[settings.font]} !important; font-size: ${settings.fontSize}% !important;
+      line-height: ${settings.lineHeight / 100} !important; text-align: left !important; }
+    a { color: ${theme.link} !important; }
+    img, svg, video { max-width: 100% !important; }
+    ::selection { background: rgba(255, 214, 64, .55); }
+  `;
+}
+export function Reader({ id, format }: { id: string; format?: string }) {
   const t = useT();
-  const announce = useAnnouncer();
-  const { data: book, isLoading, error } = useBook(id);
-  const { data: savedBookmark, isFetched: isBookmarkFetched } = useBookmark(id, 'epub');
-  const { data: settingsData, isFetched: isSettingsFetched } = useReaderSettings();
-  const { schedule: schedulePosition, saveError: positionSaveError } = useReadingPositionSaver(id, 'epub');
+  const bookQuery = useBook(id);
+  const requested = format?.toUpperCase();
+  const selectedFormat = useMemo(() => {
+    const formats = bookQuery.data?.formats ?? [];
+    if (requested && FOLIATE_FORMATS.includes(requested as typeof FOLIATE_FORMATS[number])) {
+      return formats.find((item) => item.format.toUpperCase() === requested) ?? null;
+    }
+    return FORMAT_PRIORITY
+      .map((name) => formats.find((item) => item.format.toUpperCase() === name))
+      .find(Boolean) ?? null;
+  }, [bookQuery.data?.formats, requested]);
+
+  const fmt = selectedFormat?.format.toLowerCase() ?? requested?.toLowerCase() ?? 'epub';
+  const settingsQuery = useReaderSettings();
+  const positionQuery = useBookmark(id, fmt);
+  const bookmarksQuery = useReaderBookmarks(id, fmt);
   const saveSettings = useSaveReaderSettings();
+  const createBookmark = useCreateReaderBookmark(id, fmt);
+  const deleteBookmark = useDeleteReaderBookmark(id, fmt);
 
-  const viewerRef = useRef<HTMLDivElement>(null);
-  const tocRef = useRef<HTMLElement>(null);
-  const settingsRef = useRef<HTMLDivElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
-  // Edit/remove popover for an existing highlight (#782). Separate from popRef
-  // (the create-color popover) so each has its own focus-trap lifecycle; the two
-  // are mutually exclusive — opening one closes the other.
-  const hlPopRef = useRef<HTMLDivElement>(null);
-  const renditionRef = useRef<any>(null);
-  const bookRef = useRef<any>(null);
+  const { schedule: schedulePosition, saveError } = useReadingPositionSaver(id, fmt, 450);
 
-  // Localized color names for highlight swatches + accessible labels.
-  const colorLabel = (c: HiliteColor) =>
-    ({ yellow: t('Yellow'), green: t('Green'), blue: t('Blue'), red: t('Red') })[c];
-  const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const settingsPendingRef = useRef<Partial<ReaderSettings>>({});
-  const lastCfiRef = useRef<string | null>(null);
-  const lastProgressRef = useRef(0);
-  // Hold the freshest saved CFI so it survives re-renders without re-running the effect.
-  const savedCfiRef = useRef<string | null>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<FoliateView | null>(null);
+  const searchRunRef = useRef(0);
+  const annotationsRef = useRef<Map<string, FoliateAnnotation>>(new Map());
+  const currentRef = useRef<FoliateLocation>({ fraction: 0 });
 
-  const [rendered, setRendered] = useState(false);
-  const [renderError, setRenderError] = useState<string | null>(null);
-  const [toc, setToc] = useState<TocItem[]>([]);
-  const [tocOpen, setTocOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useState<ReaderTheme>(loadTheme);
-  const [fontPct, setFontPct] = useState(loadFont);
-  const [fontFamily, setFontFamily] = useState<ReaderSettings['font']>('default');
-  const [margin, setMargin] = useState(16);
-  const [lineHeight, setLineHeight] = useState(150);
-  const [settingsHydrated, setSettingsHydrated] = useState(false);
-  const [progress, setProgress] = useState(0);
-  // Pending text selection awaiting a highlight-color choice. Keep both the
-  // epub.js CFI and Calibre spine identity so one row renders in both readers.
-  const [pendingSel, setPendingSel] = useState<{
-    cfiRange: string;
-    text: string;
-    spineIndex: number;
-    spineName: string;
-  } | null>(null);
-  // Existing highlight the user tapped — drives the edit/remove popover (#782).
-  const [activeHl, setActiveHl] = useState<{ cfiRange: string; id: string; color: string } | null>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [panel, setPanel] = useState<ReaderPanel>(null);
+  const [title, setTitle] = useState('');
+  const [toc, setToc] = useState<Array<TocItem & { depth: number }>>([]);
+  const [sectionFractions, setSectionFractions] = useState<number[]>([]);
+  const [location, setLocation] = useState<FoliateLocation>({ fraction: 0 });
+  const [settings, setSettings] = useState<ReaderSettings | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchProgress, setSearchProgress] = useState(0);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [pendingSelection, setPendingSelection] = useState<{ value: string; text: string } | null>(null);
+  const [annotations, setAnnotations] = useState<FoliateAnnotation[]>([]);
+  const [selectedAnnotation, setSelectedAnnotation] = useState<FoliateAnnotation | null>(null);
+  const [speaking, setSpeaking] = useState(false);
 
-  const epubFormat = book?.formats.find((f) => f.format.toLowerCase() === 'epub');
-
-  // C10: the TOC drawer and highlight popovers are overlays — trap focus while
-  // open, restore on close, Escape closes (hooks run unconditionally every render).
-  useFocusTrap(tocRef, { onClose: () => setTocOpen(false), active: tocOpen });
-  useFocusTrap(settingsRef, { onClose: () => setSettingsOpen(false), active: settingsOpen });
-  useFocusTrap(popRef, { onClose: () => setPendingSel(null), active: !!pendingSel });
-  useFocusTrap(hlPopRef, { onClose: () => setActiveHl(null), active: !!activeHl });
-
-  // Open the edit/remove popover for a highlight the reader was tapped on (#782).
-  // Closes the create-color popover so the two never show at once.
-  const openHighlightEditor = useCallback((cfiRange: string, annotationId: string, color: string) => {
-    setPendingSel(null);
-    setActiveHl({ cfiRange, id: annotationId, color });
+  const applySettings = useCallback((next: ReaderSettings) => {
+    const view = viewRef.current;
+    const renderer = view?.renderer;
+    if (!renderer) return;
+    renderer.setAttribute('flow', next.flow);
+    renderer.setAttribute('margin', String(next.margin));
+    renderer.setAttribute('gap', String(Math.max(12, next.margin)));
+    renderer.setAttribute('max-inline-size', String(next.maxInlineSize));
+    renderer.setAttribute('max-column-count', String(next.spread === 'nonespread' ? 1 : next.maxColumnCount));
+    renderer.toggleAttribute('animated', next.animated && next.flow === 'paginated');
+    renderer.setAttribute('background', THEME[next.theme].background);
+    renderer.setStyles?.(readerCss(next));
   }, []);
 
-  // Paint a highlight onto the live rendition (epub.js annotations API). The
-  // data param stashes the server annotation id + color so the click callback
-  // knows which row it represents; a real click callback (3rd arg) + 'cwng-hl'
-  // className (4th arg) make tapping the highlight open the editor (#782).
-  const paintHighlight = useCallback((cfiRange: string, color: string, annotationId: string) => {
-    try {
-      renditionRef.current?.annotations?.highlight(
-        cfiRange,
-        { id: annotationId, color },
-        () => openHighlightEditor(cfiRange, annotationId, color),
-        'cwng-hl',
-        { fill: HILITE_FILL[color] || HILITE_FILL.yellow, 'fill-opacity': '0.35' },
-      );
-    } catch { /* epub.js throws on a stale/foreign CFI — ignore */ }
-  }, [openHighlightEditor]);
-
-  // Create a highlight from the pending selection, persist it, paint it. The
-  // create endpoint returns the new annotation row (incl. its id) — capture it
-  // so the just-created highlight is immediately removable (#782).
-  const createHighlight = useCallback(async (color: string) => {
-    const sel = pendingSel;
-    if (!sel) return;
-    setPendingSel(null);
-    try {
-      const created = await apiPost<{ annotation_id?: string }>(`/annotations/${id}`, {
-        cfi_range: sel.cfiRange,
-        highlighted_text: sel.text,
-        highlight_color: color,
-        spine_index: sel.spineIndex,
-        spine_name: sel.spineName,
-        chapter_progress: lastProgressRef.current,
-      });
-      paintHighlight(sel.cfiRange, color, created?.annotation_id ?? '');
-    } catch { /* surfaced as no-op; user can retry */ }
-    try {
-      (renditionRef.current?.getContents?.() || []).forEach((c: any) => c.window?.getSelection?.().removeAllRanges());
-    } catch { /* noop */ }
-  }, [pendingSel, id, paintHighlight]);
-
-  // Remove the tapped highlight server-side, then un-paint it (#782). Fails
-  // silently (the reader has no toast) and leaves the highlight painted on
-  // error — the row is still on the server, so keeping it painted stays honest.
-  const removeHighlight = useCallback(async () => {
-    const hl = activeHl;
-    if (!hl) return;
-    setActiveHl(null);
-    try {
-      await apiDelete(`/annotations/${id}/${hl.id}`);
-      try { renditionRef.current?.annotations?.remove(hl.cfiRange, 'highlight'); } catch { /* noop */ }
-    } catch { /* silent: keep the highlight painted */ }
-  }, [activeHl, id]);
-
-  // Recolor the tapped highlight (PATCH supports highlight_color). epub.js keys
-  // an annotation by (cfiRange + type), so a new color is applied by removing
-  // the old paint and re-adding with the new fill. Silent on error (old paint
-  // is untouched, server keeps the prior color).
-  const recolorHighlight = useCallback(async (color: string) => {
-    const hl = activeHl;
-    if (!hl) return;
-    setActiveHl(null);
-    if (hl.color === color) return;
-    try {
-      await apiPatch(`/annotations/${id}/${hl.id}`, { highlight_color: color });
-      try { renditionRef.current?.annotations?.remove(hl.cfiRange, 'highlight'); } catch { /* noop */ }
-      paintHighlight(hl.cfiRange, color, hl.id);
-    } catch { /* silent: keep the highlight in its original color */ }
-  }, [activeHl, id, paintHighlight]);
-
+  const updateSettings = useCallback((patch: Partial<ReaderSettings>) => {
+    setSettings((current) => {
+      if (!current) return current;
+      const next = { ...current, ...patch };
+      applySettings(next);
+      saveSettings.mutate(patch);
+      return next;
+    });
+  }, [applySettings, saveSettings]);
   useEffect(() => {
-    savedCfiRef.current = savedBookmark?.bookmark ?? savedCfiRef.current;
-    const fraction = savedBookmark?.position_fraction;
-    if (typeof fraction === 'number' && Number.isFinite(fraction)) {
-      const normalized = Math.min(1, Math.max(0, fraction));
-      lastProgressRef.current = normalized;
-      setProgress(Math.round(normalized * 100));
-    }
-  }, [savedBookmark]);
-
-  useEffect(() => {
-    // Wait for the query to settle, not for it to succeed. A guest has no
-    // server-side reader settings — /api/v1/reader/settings answers 401 for an
-    // anonymous user by design — so gating hydration on a payload left the
-    // guest's reader waiting forever behind the render guard below (#1074).
-    // Settled-with-nothing is a real answer: boot on the defaults already in
-    // state, which is what the guest reader is supposed to use.
-    if (!isSettingsFetched) return;
-    const settings = settingsData?.reader;
-    if (settings) {
-      setTheme(THEME_TO_READER[settings.theme]);
-      setFontPct(settings.fontSize);
-      setFontFamily(settings.font);
-      setMargin(settings.margin);
-      setLineHeight(settings.lineHeight);
-    }
-    // Start epub.js only on the next render, after this server snapshot has
-    // become the state captured by the rendition callbacks.
-    setSettingsHydrated(true);
-  }, [settingsData, isSettingsFetched]);
-
-  const persistSetting = useCallback(<K extends keyof ReaderSettings>(key: K, value: ReaderSettings[K]) => {
-    settingsPendingRef.current = { ...settingsPendingRef.current, [key]: value };
-    if (settingsSaveTimer.current) clearTimeout(settingsSaveTimer.current);
-    settingsSaveTimer.current = setTimeout(() => {
-      const patch = settingsPendingRef.current;
-      settingsPendingRef.current = {};
-      settingsSaveTimer.current = null;
-      saveSettings.mutate(patch, {
-        onSuccess: () => announce(t('Reader settings saved.')),
-        onError: () => announce(t('Could not save reader settings.'), { assertive: true }),
-      });
-    }, 300);
-  }, [saveSettings, announce, t]);
-
-  const persistCfi = useCallback(
-    (cfi: string, positionFraction: number) => {
-      const normalized = Math.min(1, Math.max(0, positionFraction));
-      lastCfiRef.current = cfi;
-      lastProgressRef.current = normalized;
-      schedulePosition(cfi, normalized);
-    },
-    [schedulePosition],
-  );
-
-  const applyTheme = useCallback((t: ReaderTheme) => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-    // Select the registered theme so future (page-turn) sections paint correctly…
-    rendition.themes.select(t);
-    // …and force it onto the currently-rendered iframe with inline styles, which
-    // win unconditionally. epub.js can skip re-applying a theme it considers
-    // already current (notably the initial 'dark'), leaving the prior background.
-    const bg = THEMES[t].body.background.replace(' !important', '');
-    const fg = THEMES[t].body.color.replace(' !important', '');
-    // epub.js injects several equal-specificity `!important` body rules per theme;
-    // the LAST one appended wins, so a previously-selected light/sepia rule beats
-    // dark on re-select. An `!important` INLINE style sits above every stylesheet
-    // rule in the cascade — set it with priority so the chosen theme always wins.
-    try {
-      (rendition.getContents?.() || []).forEach((c: any) => {
-        if (!c?.document) return;
-        c.document.documentElement.style.setProperty('background', bg, 'important');
-        if (c.document.body) {
-          c.document.body.style.setProperty('background', bg, 'important');
-          c.document.body.style.setProperty('color', fg, 'important');
-        }
-      });
-    } catch { /* same-origin blob content; guard regardless */ }
-  }, []);
-
-  const applyTypography = useCallback(() => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-    rendition.themes.fontSize(`${fontPct}%`);
-    if (fontFamily === 'default') rendition.themes.font('initial');
-    else rendition.themes.font(FONT_FAMILY[fontFamily]);
-    try {
-      (rendition.getContents?.() || []).forEach((c: any) => {
-        if (!c?.document?.body) return;
-        c.document.body.style.setProperty('padding-inline', `${margin}px`, 'important');
-        c.document.body.style.setProperty('line-height', String(lineHeight / 100), 'important');
-      });
-    } catch { /* same-origin blob content; guard regardless */ }
-  }, [fontPct, fontFamily, margin, lineHeight]);
-
-  const goPrev = useCallback(() => renditionRef.current?.prev(), []);
-  const goNext = useCallback(() => renditionRef.current?.next(), []);
-
-  // Build the rendition once the epub format + its download URL are known.
-  useEffect(() => {
-    if (!epubFormat || !viewerRef.current || !isBookmarkFetched || !isSettingsFetched || !settingsHydrated) return;
+    if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
     let cancelled = false;
-    setRendered(false);
-    setRenderError(null);
+    const host = hostRef.current;
+    const view = document.createElement('foliate-view') as FoliateView;
+    view.className = styles.foliateView;
+    viewRef.current = view;
+    host.replaceChildren(view);
+    setReady(false);
+    setError(null);
+    const initialSettings = settingsQuery.data.reader;
+    setSettings(initialSettings);
 
-    (async () => {
-      try {
-        // Fetch the .epub ourselves (same-origin cookie auth) and hand epub.js
-        // an ArrayBuffer — reliable archive open regardless of the URL extension.
-        const rawBookUrl = resourceUrl(`/show/${id}/${epubFormat.format.toLowerCase()}`);
-        const res = await fetch(rawBookUrl, { credentials: 'include' });
-        if (!res.ok) throw new Error(t('Could not load the book file ({status})', { status: res.status }));
-        const buf = await res.arrayBuffer();
-        if (cancelled) return;
+    const onRelocate = (event: Event) => {
+      const detail = (event as CustomEvent<FoliateLocation>).detail;
+      currentRef.current = detail;
+      setLocation(detail);
+      if (detail.cfi) schedulePosition(detail.cfi, detail.fraction ?? 0);
+    };
 
-        const epubBook = ePub(buf as any);
-        bookRef.current = epubBook;
-        const rendition = epubBook.renderTo(viewerRef.current!, {
-          width: '100%',
-          height: '100%',
-          flow: 'paginated',
-          spread: 'auto',
-        });
-        renditionRef.current = rendition;
-
-        Object.entries(THEMES).forEach(([name, t]) => rendition.themes.register(name, t));
-        rendition.themes.select(theme);
-        rendition.themes.fontSize(`${fontPct}%`);
-
-        // C10 (SC 4.1.2): epub.js renders each section into an <iframe> with no
-        // title — screen readers announce "frame" with no name. Title them as
-        // they render so the book content region is named.
-        rendition.on('rendered', () => {
-          viewerRef.current?.querySelectorAll('iframe').forEach((f) => {
-            f.setAttribute('title', t('Book content'));
-          });
-          applyTheme(theme);
-          applyTypography();
-        });
-
-        await rendition.display(savedCfiRef.current || undefined);
-        if (cancelled) return;
-        setRendered(true);
-
-        epubBook.loaded.navigation.then((nav: any) => {
-          if (!cancelled) {
-            setToc(nav.toc.map((t: any) => ({ label: (t.label || '').trim(), href: t.href })));
-          }
-        });
-
-        // Lazily generate locations for a progress percentage.
-        epubBook.ready
-          .then(() => epubBook.locations.generate(1600))
-          .then(() => {
-            if (cancelled) return;
-            const loc = rendition.currentLocation() as any;
-            if (loc?.start?.cfi && epubBook.locations.length()) {
-              const fraction = epubBook.locations.percentageFromCfi(loc.start.cfi);
-              persistCfi(loc.start.cfi, fraction);
-              setProgress(Math.round(fraction * 100));
-            }
-          })
-          .catch(() => {/* locations are best-effort */});
-
-        rendition.on('relocated', (location: any) => {
-          const cfi = location?.start?.cfi;
-          if (!cfi) return;
-          const fraction = epubBook.locations.length()
-            ? epubBook.locations.percentageFromCfi(cfi)
-            : lastProgressRef.current;
-          persistCfi(cfi, fraction);
-          setProgress(Math.round(fraction * 100));
-        });
-
-        // Render existing highlights (the CFI-anchored ones we can place). Each
-        // row carries its server annotation_id; paintHighlight stashes it in the
-        // epub.js data param so a later tap can target the right row (#782).
-        fetch(apiUrl(`/annotations/${id}/data.json`), { credentials: 'include' })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((d) => {
-            if (cancelled || !d) return;
-            (d.annotations || []).forEach((a: any) => {
-              if (a.cfi_range) {
-                paintHighlight(a.cfi_range, a.highlight_color || 'yellow', a.annotation_id);
-              }
-            });
-          })
-          .catch(() => { /* highlights are best-effort */ });
-
-        // Capture a text selection → offer a highlight-color popover.
-        rendition.on('selected', (cfiRange: string, contents: any) => {
-          let text = '';
-          let spineIndex = 0;
-          let spineName = '';
-          try {
-            text = (contents?.window?.getSelection?.().toString() || '').trim();
-            const section = epubBook.spine?.get?.(cfiRange);
-            if (typeof section?.index === 'number') spineIndex = section.index;
-            spineName = section?.href || section?.url || section?.canonical || section?.idref || '';
-          } catch { /* selection metadata is best-effort */ }
-          if (cfiRange) {
-            setActiveHl(null);
-            setPendingSel({ cfiRange, text, spineIndex, spineName });
-          }
-        });
-      } catch (e) {
-        if (!cancelled) setRenderError(e instanceof Error ? e.message : t('Failed to open the book.'));
+    const attachSelection = (doc: Document, index: number) => {
+      const readSelection = () => {
+        const selection = doc.getSelection();
+        if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+        const range = selection.getRangeAt(0).cloneRange();
+        const text = selection.toString().replace(/\s+/g, ' ').trim();
+        if (!text) return;
+        setPendingSelection({ value: view.getCFI(index, range), text });
+      };
+      doc.addEventListener('mouseup', readSelection);
+      doc.addEventListener('keyup', readSelection);
+      doc.addEventListener('keydown', onReaderKeyDown);
+    };
+    const onLoad = (event: Event) => {
+      const detail = (event as CustomEvent<{ doc: Document; index: number }>).detail;
+      attachSelection(detail.doc, detail.index);
+    };
+    const onDrawAnnotation = (event: Event) => {
+      const { draw, annotation } = (event as CustomEvent<{
+        draw: (fn: unknown, options: unknown) => void;
+        annotation: FoliateAnnotation;
+      }>).detail;
+      draw(Overlayer.highlight, { color: annotation.color ?? 'yellow' });
+    };
+    const onShowAnnotation = (event: Event) => {
+      const value = (event as CustomEvent<{ value: string }>).detail.value;
+      setSelectedAnnotation(annotationsRef.current.get(value) ?? null);
+      setPanel('notes');
+    };
+    const redrawAnnotations = () => {
+      for (const annotation of annotationsRef.current.values()) {
+        void view.addAnnotation(annotation);
       }
-    })();
+    };
+
+    view.addEventListener('relocate', onRelocate);
+    view.addEventListener('load', onLoad);
+    view.addEventListener('draw-annotation', onDrawAnnotation);
+    view.addEventListener('show-annotation', onShowAnnotation);
+    view.addEventListener('create-overlay', redrawAnnotations);
+
+    const open = async () => {
+      try {
+        const formatName = selectedFormat.format.toUpperCase();
+        const response = await fetch(resourceUrl(`/show/${id}/${formatName.toLowerCase()}`), {
+          credentials: 'include',
+        });
+        if (!response.ok) throw new Error(t('Could not load the book file ({status})', { status: response.status }));
+        const data = await response.arrayBuffer();
+        if (cancelled) return;
+        await view.open(new File([data], fileName(formatName), { type: MIME[formatName] ?? '' }));
+        if (cancelled) return;
+        applySettings(initialSettings);
+        setTitle(formatLanguageMap(view.book?.metadata?.title) || bookQuery.data?.title || t('Untitled'));
+        setToc(flattenToc(view.book?.toc ?? []));
+        setSectionFractions(view.getSectionFractions());
+        const annotationPayload = await apiGet<{ annotations: ServerAnnotation[] }>(
+          `/annotations/${id}/data.json`,
+        ).catch(() => ({ annotations: [] }));
+        const loaded = annotationPayload.annotations
+          .filter((row) => !!row.cfi_range)
+          .map((row): FoliateAnnotation => ({
+            value: row.cfi_range ?? '',
+            color: row.highlight_color || 'yellow',
+            note: row.note_text,
+            id: row.annotation_id,
+            text: row.highlighted_text,
+          }));
+        annotationsRef.current = new Map(loaded.map((item) => [item.value, item]));
+        setAnnotations(loaded);
+
+        const savedLocator = positionQuery.data?.bookmark;
+        const legacyFb2Fraction = fmt === 'fb2' ? parseFb2ScrollBookmark(savedLocator) : null;
+        const savedFraction = Number(positionQuery.data?.position_fraction ?? legacyFb2Fraction ?? 0);
+        const lastLocation = savedFraction > 0
+          ? { fraction: Math.min(1, Math.max(0, savedFraction)) }
+          : savedLocator || undefined;
+        await view.init({ lastLocation, showTextStart: true });
+        if (cancelled) return;
+        redrawAnnotations();
+        setReady(true);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : t('Could not open this book.'));
+      }
+    };
+    void open();
 
     return () => {
       cancelled = true;
-      try { renditionRef.current?.destroy(); } catch { /* noop */ }
-      try { bookRef.current?.destroy(); } catch { /* noop */ }
-      renditionRef.current = null;
-      bookRef.current = null;
+      window.speechSynthesis?.cancel();
+      view.removeEventListener('relocate', onRelocate);
+      view.removeEventListener('load', onLoad);
+      view.removeEventListener('draw-annotation', onDrawAnnotation);
+      view.removeEventListener('show-annotation', onShowAnnotation);
+      view.removeEventListener('create-overlay', redrawAnnotations);
+      view.close();
+      view.remove();
+      if (viewRef.current === view) viewRef.current = null;
     };
-    // Re-render only when the source changes; theme/font are applied imperatively.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [epubFormat?.download_url, isBookmarkFetched, isSettingsFetched, settingsHydrated]);
+  }, [applySettings, bookQuery.data?.title, fmt, id, positionQuery.data?.bookmark,
+    positionQuery.data?.position_fraction, positionQuery.isFetched, selectedFormat,
+    settingsQuery.data, schedulePosition, t]);
+  function onReaderKeyDown(event: KeyboardEvent) {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      void viewRef.current?.goLeft();
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      void viewRef.current?.goRight();
+    } else if (event.key === 'Escape') {
+      setPanel(null);
+      setPendingSelection(null);
+      viewRef.current?.deselect();
+    }
+  }
 
-  // Apply theme / font changes to a live rendition without rebuilding it, and
-  // remember the preference across sessions.
   useEffect(() => {
-    localStorage.setItem(LS_THEME, theme);
-    applyTheme(theme);
-  }, [theme, applyTheme]);
-  useEffect(() => {
-    localStorage.setItem(LS_FONT, String(fontPct));
-    applyTypography();
-  }, [fontPct, fontFamily, margin, lineHeight, applyTypography]);
+    document.addEventListener('keydown', onReaderKeyDown);
+    return () => document.removeEventListener('keydown', onReaderKeyDown);
+  });
 
-  // Arrow-key navigation (the iframe also forwards keys via rendition).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') goPrev();
-      if (e.key === 'ArrowRight') goNext();
-    };
-    document.addEventListener('keyup', onKey);
-    renditionRef.current?.on('keyup', onKey);
-    return () => document.removeEventListener('keyup', onKey);
-  }, [goPrev, goNext, rendered]);
-
-  const goToc = (href: string) => {
-    const rendition = renditionRef.current;
-    const epubBook = bookRef.current;
-    setTocOpen(false);
-    if (!rendition) return;
-    // Resolve the TOC href to a spine section first: epub.js's display(href) can
-    // throw "No Section Found" when the toc href and spine href bases differ
-    // (common when opening from an ArrayBuffer). spine.get() matches by href/id/
-    // index and is robust; fall back to the raw href (sans fragment) if needed.
-    let target: string | number = href;
+  const runSearch = async () => {
+    const query = searchText.trim();
+    const view = viewRef.current;
+    if (!query || !view) return;
+    const run = ++searchRunRef.current;
+    setSearching(true);
+    setSearchProgress(0);
+    setSearchResults([]);
+    const found: SearchResult[] = [];
     try {
-      const section = epubBook?.spine?.get(href);
-      if (section && typeof section.index === 'number') target = section.index;
-    } catch { /* fall through to href */ }
-    Promise.resolve(rendition.display(target)).catch(() => {
-      Promise.resolve(rendition.display(href.split('#')[0])).catch(() => {/* give up quietly */});
+      for await (const raw of view.search({ query, matchCase: false, matchDiacritics: false })) {
+        if (run !== searchRunRef.current) return;
+        if (raw === 'done') break;
+        const item = raw as { progress?: number; label?: string; subitems?: Array<{ cfi: string; excerpt: SearchExcerpt }> };
+        if (typeof item.progress === 'number') setSearchProgress(item.progress);
+        for (const subitem of item.subitems ?? []) {
+          found.push({ cfi: subitem.cfi, label: item.label ?? '', excerpt: subitem.excerpt });
+        }
+        setSearchResults([...found]);
+      }
+    } finally {
+      if (run === searchRunRef.current) setSearching(false);
+    }
+  };
+  const createHighlight = async (withNote = false) => {
+    const selection = pendingSelection;
+    const view = viewRef.current;
+    if (!selection || !view) return;
+    const note = withNote ? window.prompt(t('Note'), '') : null;
+    if (withNote && note === null) return;
+    const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
+      cfi_range: selection.value,
+      highlighted_text: selection.text,
+      highlight_color: 'yellow',
+      note_text: note || null,
+    });
+    const annotation: FoliateAnnotation = {
+      value: row.cfi_range ?? selection.value,
+      color: row.highlight_color || 'yellow',
+      note: row.note_text,
+      id: row.annotation_id,
+      text: row.highlighted_text,
+    };
+    annotationsRef.current.set(annotation.value, annotation);
+    setAnnotations(Array.from(annotationsRef.current.values()));
+    await view.addAnnotation(annotation);
+    view.deselect();
+    setPendingSelection(null);
+  };
+
+  const removeAnnotation = async (annotation: FoliateAnnotation) => {
+    if (!annotation.id) return;
+    await apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}`);
+    annotationsRef.current.delete(annotation.value);
+    setAnnotations(Array.from(annotationsRef.current.values()));
+    await viewRef.current?.deleteAnnotation(annotation);
+    if (selectedAnnotation?.id === annotation.id) setSelectedAnnotation(null);
+  };
+
+  const updateAnnotationNote = async (annotation: FoliateAnnotation) => {
+    if (!annotation.id) return;
+    const note = window.prompt(t('Note'), annotation.note ?? '');
+    if (note === null) return;
+    const row = await apiPatch<ServerAnnotation>(
+      `/annotations/${id}/${encodeURIComponent(annotation.id)}`,
+      { note_text: note || null },
+    );
+    const updated = { ...annotation, note: row.note_text };
+    annotationsRef.current.set(updated.value, updated);
+    setAnnotations(Array.from(annotationsRef.current.values()));
+    setSelectedAnnotation(updated);
+  };
+  const addReaderBookmark = () => {
+    const locator = currentRef.current.cfi;
+    if (!locator) return;
+    createBookmark.mutate({
+      locator,
+      progression: currentRef.current.fraction ?? 0,
+      label: currentRef.current.pageItem?.label || undefined,
+      chapter: currentRef.current.tocItem?.label || undefined,
     });
   };
 
-  if (isLoading) {
-    return (
-      <div className={styles.fullCenter}>
-        <Loader2 className={styles.spin} size={36} />
-      </div>
-    );
-  }
+  const openReaderBookmark = (bookmark: ReaderBookmark) => {
+    void viewRef.current?.goTo(bookmark.locator);
+    setPanel(null);
+  };
 
-  if (error || !book) {
-    return (
-      <div className={styles.fullCenter}>
-        <EmptyState message={error instanceof Error ? error.message : t('Book not found.')} />
-        <Link href="/" className={styles.exitLink}>{t('← Library')}</Link>
-      </div>
-    );
-  }
+  const toggleSpeech = () => {
+    const synth = window.speechSynthesis;
+    const contents = viewRef.current?.renderer?.getContents?.();
+    if (!synth || !contents?.length) return;
+    if (synth.speaking) {
+      synth.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const doc = contents[0].doc;
+    const text = (doc.body?.innerText ?? '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = doc.documentElement.lang || navigator.language;
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    setSpeaking(true);
+    synth.speak(utterance);
+  };
 
-  if (!epubFormat) {
-    // No epub format — fall back to the legacy reader for other formats.
-    const other = book.formats[0];
-    return (
-      <div className={styles.fullCenter}>
-        <EmptyState message={t('In-browser reading currently supports EPUB. Use download or the classic reader for other formats.')} />
-        <div className={styles.fallbackRow}>
-          {other && <a className={styles.exitLink} href={resourceUrl(other.read_url)}>{t('Open classic reader')}</a>}
-          <Link href={`/book/${id}`} className={styles.exitLink}>{t('← Back to book')}</Link>
-        </div>
-      </div>
-    );
-  }
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void hostRef.current?.parentElement?.requestFullscreen();
+  };
 
+  const progress = Math.max(0, Math.min(1, location.fraction ?? 0));
+  const percent = Math.round(progress * 100);
+  const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
+  const loading = bookQuery.isLoading || settingsQuery.isLoading || positionQuery.isLoading;
+
+  if (loading) return <SpinnerCentered size={44} />;
+  if (bookQuery.error) return <EmptyState message={t('Could not load the book.')} />;
+  if (!selectedFormat) return <EmptyState message={t('No supported reader format is available.')} />;
   return (
-    <div className={`${styles.reader} ${styles[`bg_${theme}`]}`}>
-      {/* Top bar */}
-      <header className={styles.bar}>
-        {/* Page heading for the reader view (SC 1.3.1), visually the bar title. */}
-        <VisuallyHidden as="h1">{book.title}</VisuallyHidden>
-        <Link href={`/book/${id}`} className={styles.iconBtn} title={t('Close reader')} aria-label={t('Close reader')}>
-          <X size={20} aria-hidden="true" focusable={false} />
+    <main className={`${styles.reader} ${styles[settings?.theme ?? 'lightTheme']}`}>
+      <header className={styles.topBar}>
+        <Link href={`/book/${id}`} className={styles.iconButton} title={t('Close reader')}>
+          <X size={20} aria-hidden="true" />
         </Link>
-        <span className={styles.bookTitle} aria-hidden="true">{book.title}</span>
-        <div className={styles.barControls}>
-          <button className={styles.iconBtn} onClick={() => setTocOpen((o) => !o)}
-            aria-label={t('Table of contents')} aria-expanded={tocOpen} title={t('Contents')}>
-            <List size={19} aria-hidden="true" focusable={false} />
-          </button>
-          <button className={styles.iconBtn} onClick={() => setSettingsOpen((o) => !o)}
-            aria-label={t('Reading appearance')} aria-expanded={settingsOpen} title={t('Reading appearance')}>
-            <SlidersHorizontal size={19} aria-hidden="true" focusable={false} />
-          </button>
+        <div className={styles.bookIdentity}>
+          <strong>{title || bookQuery.data?.title}</strong>
+          <span>{selectedFormat.format.toUpperCase()}</span>
         </div>
+        <nav className={styles.toolbar} aria-label={t('Reader tools')}>
+          <button className={styles.iconButton} onClick={() => setPanel(panel === 'toc' ? null : 'toc')}
+            title={t('Table of contents')} aria-pressed={panel === 'toc'}>
+            <List size={19} aria-hidden="true" />
+          </button>
+          <button className={styles.iconButton} onClick={() => setPanel(panel === 'search' ? null : 'search')}
+            title={t('Search in book')} aria-pressed={panel === 'search'}>
+            <Search size={19} aria-hidden="true" />
+          </button>
+          <button className={styles.iconButton} onClick={addReaderBookmark}
+            title={t('Add bookmark')} disabled={!location.cfi || createBookmark.isPending}>
+            <Bookmark size={19} aria-hidden="true" />
+          </button>
+          <button className={styles.iconButton} onClick={() => setPanel(panel === 'bookmarks' ? null : 'bookmarks')}
+            title={t('Bookmarks')} aria-pressed={panel === 'bookmarks'}>
+            <BookOpen size={19} aria-hidden="true" />
+          </button>
+          <button className={styles.iconButton} onClick={() => setPanel(panel === 'notes' ? null : 'notes')}
+            title={t('Highlights and notes')} aria-pressed={panel === 'notes'}>
+            <StickyNote size={19} aria-hidden="true" />
+          </button>
+          <button className={styles.iconButton} onClick={toggleSpeech}
+            title={speaking ? t('Stop reading aloud') : t('Read aloud')} aria-pressed={speaking}>
+            {speaking ? <Square size={18} aria-hidden="true" /> : <Volume2 size={19} aria-hidden="true" />}
+          </button>
+          <button className={styles.iconButton} onClick={() => setPanel(panel === 'settings' ? null : 'settings')}
+            title={t('Reader settings')} aria-pressed={panel === 'settings'}>
+            <Settings size={19} aria-hidden="true" />
+          </button>
+          <button className={styles.iconButton} onClick={toggleFullscreen} title={t('Full screen')}>
+            <Maximize size={19} aria-hidden="true" />
+          </button>
+        </nav>
       </header>
 
-      {/* TOC drawer */}
-      {tocOpen && (
-        <>
-          <div className={styles.tocScrim} onClick={() => setTocOpen(false)} aria-hidden="true" />
-          <nav ref={tocRef} className={styles.toc} aria-label={t('Table of contents')} tabIndex={-1}>
-            <div className={styles.panelHeading}>
-              <p className={styles.tocHeading}>{t('Contents')}</p>
-              <button className={styles.iconBtn} onClick={() => setTocOpen(false)} aria-label={t('Close')}>
-                <X size={18} aria-hidden="true" focusable={false} />
-              </button>
-            </div>
-            {toc.length === 0 ? (
-              <p className={styles.tocEmpty}>{t('No contents found.')}</p>
-            ) : (
-              <ul role="list">
-                {toc.map((tocItem, i) => (
-                  <li key={`${tocItem.href}-${i}`}>
-                    <button className={styles.tocItem} onClick={() => goToc(tocItem.href)}>{tocItem.label || t('Untitled')}</button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </nav>
-        </>
+      {pendingSelection && (
+        <div className={styles.selectionBar} role="toolbar" aria-label={t('Selected text actions')}>
+          <span>{pendingSelection.text.slice(0, 120)}</span>
+          <button onClick={() => void createHighlight(false)}>
+            <Highlighter size={17} aria-hidden="true" /> {t('Highlight')}
+          </button>
+          <button onClick={() => void createHighlight(true)}>
+            <StickyNote size={17} aria-hidden="true" /> {t('Add note')}
+          </button>
+          <button onClick={() => { setPendingSelection(null); viewRef.current?.deselect(); }}>
+            <X size={17} aria-hidden="true" /> {t('Cancel')}
+          </button>
+        </div>
       )}
 
-      {settingsOpen && (
-        <>
-          <div className={styles.tocScrim} onClick={() => setSettingsOpen(false)} aria-hidden="true" />
-          <div ref={settingsRef} className={styles.settingsPanel} role="dialog" aria-modal="true"
-            aria-labelledby="reader-appearance-title" tabIndex={-1}>
-            <div className={styles.panelHeading}>
-              <h2 id="reader-appearance-title">{t('Reading appearance')}</h2>
-              <button className={styles.iconBtn} onClick={() => setSettingsOpen(false)} aria-label={t('Close')}>
-                <X size={18} aria-hidden="true" focusable={false} />
+      <div className={styles.workspace}>
+        {panel && <ReaderSidePanel
+          panel={panel} onClose={() => setPanel(null)} toc={toc}
+          onNavigate={(target) => { void viewRef.current?.goTo(target); setPanel(null); }}
+          searchText={searchText} setSearchText={setSearchText} runSearch={() => void runSearch()}
+          searching={searching} searchProgress={searchProgress} searchResults={searchResults}
+          bookmarks={bookmarks} openBookmark={openReaderBookmark}
+          deleteBookmark={(bookmarkId) => deleteBookmark.mutate(bookmarkId)}
+          annotations={annotations}
+          showAnnotation={(annotation) => { void viewRef.current?.showAnnotation(annotation); setPanel(null); }}
+          removeAnnotation={(annotation) => void removeAnnotation(annotation)}
+          updateAnnotationNote={(annotation) => void updateAnnotationNote(annotation)}
+          settings={settings} updateSettings={updateSettings}
+        />}
+        <section className={styles.stage} aria-label={t('Book content')}>
+          {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
+          {error && <EmptyState message={error} />}
+          <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
+        </section>
+      </div>
+      <footer className={styles.bottomBar}>
+        <button className={styles.pageButton} onClick={() => void viewRef.current?.prev()} title={t('Previous page')}>
+          <ChevronLeft size={22} aria-hidden="true" />
+        </button>
+        <div className={styles.progressArea}>
+          <div className={styles.progressMeta}>
+            <span>{location.tocItem?.label || t('Book')}</span>
+            <span>
+              {location.pageItem?.label ? `${t('Page')} ${location.pageItem.label} · ` : ''}
+              {location.location?.current && location.location?.total
+                ? `${t('Location')} ${location.location.current}/${location.location.total} · ` : ''}
+              {percent}%
+            </span>
+          </div>
+          <input className={styles.progressSlider} type="range" min={0} max={1000}
+            value={Math.round(progress * 1000)} list="reader-section-marks"
+            aria-label={t('Reading progress')}
+            onChange={(event) => {
+              const fraction = Number(event.target.value) / 1000;
+              setLocation((current) => ({ ...current, fraction }));
+              void viewRef.current?.goToFraction(fraction);
+            }} />
+          <datalist id="reader-section-marks">
+            {sectionFractions.map((fraction) => <option key={fraction} value={Math.round(fraction * 1000)} />)}
+          </datalist>
+        </div>
+        <button className={styles.pageButton} onClick={() => void viewRef.current?.next()} title={t('Next page')}>
+          <ChevronRight size={22} aria-hidden="true" />
+        </button>
+      </footer>
+      {saveError && <div className={styles.saveError} role="alert">
+        {t('Could not save reading position. It will be retried automatically.')}
+      </div>}
+    </main>
+  );
+}
+type ReaderSidePanelProps = {
+  panel: Exclude<ReaderPanel, null>;
+  onClose: () => void;
+  toc: Array<TocItem & { depth: number }>;
+  onNavigate: (target: string) => void;
+  searchText: string;
+  setSearchText: (value: string) => void;
+  runSearch: () => void;
+  searching: boolean;
+  searchProgress: number;
+  searchResults: SearchResult[];
+  bookmarks: ReaderBookmark[];
+  openBookmark: (bookmark: ReaderBookmark) => void;
+  deleteBookmark: (bookmarkId: string) => void;
+  annotations: FoliateAnnotation[];
+  showAnnotation: (annotation: FoliateAnnotation) => void;
+  removeAnnotation: (annotation: FoliateAnnotation) => void;
+  updateAnnotationNote: (annotation: FoliateAnnotation) => void;
+  settings: ReaderSettings | null;
+  updateSettings: (patch: Partial<ReaderSettings>) => void;
+};
+
+function ReaderSidePanel(props: ReaderSidePanelProps) {
+  const t = useT();
+  const { panel, onClose } = props;
+  const title = {
+    toc: t('Table of contents'), search: t('Search in book'),
+    bookmarks: t('Bookmarks'), notes: t('Highlights and notes'),
+    settings: t('Reader settings'),
+  }[panel];
+  return (
+    <aside className={styles.sidePanel} aria-label={title}>
+      <header className={styles.panelHeader}>
+        <h2>{title}</h2>
+        <button className={styles.iconButton} onClick={onClose} title={t('Close')}>
+          <X size={18} aria-hidden="true" />
+        </button>
+      </header>
+
+      {panel === 'toc' && (
+        <div className={styles.panelList}>
+          {props.toc.length === 0 && <p className={styles.muted}>{t('No contents found.')}</p>}
+          {props.toc.map((item, index) => (
+            <button key={`${item.href}-${index}`} className={styles.listButton}
+              style={{ paddingInlineStart: `${12 + item.depth * 16}px` }}
+              disabled={!item.href}
+              onClick={() => item.href && props.onNavigate(item.href)}>
+              {item.label || t('Untitled')}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {panel === 'search' && (
+        <div className={styles.panelBody}>
+          <form className={styles.searchForm} onSubmit={(event) => { event.preventDefault(); props.runSearch(); }}>
+            <input value={props.searchText} onChange={(event) => props.setSearchText(event.target.value)}
+              placeholder={t('Search in book')} aria-label={t('Search in book')} />
+            <button type="submit" disabled={!props.searchText.trim() || props.searching}>{t('Search')}</button>
+          </form>
+          {props.searching && <progress max={1} value={props.searchProgress} />}
+          <div className={styles.panelList}>
+            {props.searchResults.map((result, index) => (
+              <button key={`${result.cfi}-${index}`} className={styles.searchResult}
+                onClick={() => props.onNavigate(result.cfi)}>
+                <strong>{result.label || t('Book')}</strong>
+                <span>{excerptText(result.excerpt)}</span>
               </button>
-            </div>
-            <fieldset className={styles.settingGroup}>
-              <legend>{t('Page theme')}</legend>
-              <div className={styles.themeChoices}>
-                {([
-                  ['light', Sun, t('Light')], ['sepia', Coffee, t('Sepia')], ['dark', Moon, t('Dark')],
-                ] as const).map(([value, Icon, label]) => (
-                  <button key={value} className={theme === value ? styles.choiceActive : styles.choice}
-                    aria-pressed={theme === value} onClick={() => {
-                      setTheme(value); persistSetting('theme', READER_TO_THEME[value]);
-                    }}>
-                    <Icon size={17} aria-hidden="true" focusable={false} /> {label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-            <label className={styles.settingField}>
-              <span>{t('Font family')}</span>
-              <select value={fontFamily} onChange={(e) => {
-                const value = e.target.value as ReaderSettings['font'];
-                setFontFamily(value); persistSetting('font', value);
-              }}>
-                <option value="default">{t('Book default')}</option>
-                <option value="Arial">Arial</option><option value="Yahei">Microsoft YaHei</option>
-                <option value="SimSun">SimSun</option><option value="KaiTi">KaiTi</option>
-              </select>
-            </label>
-            {([
-              ['font-size', t('Font size'), fontPct, FONT_MIN, FONT_MAX, '%', setFontPct, 'fontSize'],
-              ['page-margin', t('Page margins'), margin, 0, 80, 'px', setMargin, 'margin'],
-              ['line-height', t('Line height'), lineHeight, 100, 220, '%', setLineHeight, 'lineHeight'],
-            ] as const).map(([key, label, value, min, max, unit, setter, settingKey]) => (
-              <label key={key} className={styles.settingField} htmlFor={`reader-${key}`}>
-                <span>{label} <output>{value}{unit}</output></span>
-                <input id={`reader-${key}`} type="range" min={min} max={max}
-                  step={key === 'page-margin' ? 4 : key === 'font-size' ? 5 : 10}
-                  value={value} onChange={(e) => {
-                    const next = Number(e.target.value);
-                    setter(next);
-                    persistSetting(settingKey, next as never);
-                  }} />
-              </label>
             ))}
           </div>
-        </>
+        </div>
+      )}
+      {panel === 'bookmarks' && (
+        <div className={styles.panelList}>
+          {props.bookmarks.length === 0 && <p className={styles.muted}>{t('No bookmarks yet.')}</p>}
+          {props.bookmarks.map((bookmark) => (
+            <div className={styles.savedItem} key={bookmark.bookmark_id}>
+              <button onClick={() => props.openBookmark(bookmark)}>
+                <strong>{bookmark.chapter || t('Bookmark')}</strong>
+                <span>{Math.round(bookmark.progression * 100)}%
+                  {bookmark.label ? ` · ${bookmark.label}` : ''}</span>
+              </button>
+              <button className={styles.deleteButton} onClick={() => props.deleteBookmark(bookmark.bookmark_id)}
+                title={t('Delete')}><Trash2 size={16} aria-hidden="true" /></button>
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* Viewer + page-turn zones */}
-      <div className={styles.stage}>
-        <button className={`${styles.navZone} ${styles.navPrev}`} onClick={goPrev} aria-label={t('Previous page')}>
-          <ChevronLeft size={28} aria-hidden="true" focusable={false} />
-        </button>
-        <div ref={viewerRef} className={styles.viewer} />
-        <button className={`${styles.navZone} ${styles.navNext}`} onClick={goNext} aria-label={t('Next page')}>
-          <ChevronRight size={28} aria-hidden="true" focusable={false} />
-        </button>
+      {panel === 'notes' && (
+        <div className={styles.panelList}>
+          {props.annotations.length === 0 && <p className={styles.muted}>{t('No highlights yet.')}</p>}
+          {props.annotations.map((annotation) => (
+            <div className={styles.annotationItem} key={annotation.id ?? annotation.value}>
+              <button onClick={() => props.showAnnotation(annotation)}>
+                <span className={styles.annotationText}>{annotation.text || t('Highlight')}</span>
+                {annotation.note && <span className={styles.annotationNote}>{annotation.note}</span>}
+              </button>
+              <div className={styles.itemActions}>
+                <button onClick={() => props.updateAnnotationNote(annotation)}>{t('Note')}</button>
+                <button className={styles.deleteButton} onClick={() => props.removeAnnotation(annotation)}
+                  title={t('Delete')}><Trash2 size={16} aria-hidden="true" /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-        {!rendered && !renderError && (
-          <div className={styles.viewerOverlay}>
-            <Loader2 className={styles.spin} size={32} />
-          </div>
-        )}
-        {renderError && (
-          <div className={styles.viewerOverlay}>
-            <EmptyState message={renderError} />
-          </div>
-        )}
+      {panel === 'settings' && props.settings && (
+        <ReaderSettingsPanel settings={props.settings} update={props.updateSettings} />
+      )}
+    </aside>
+  );
+}
+function ReaderSettingsPanel({ settings, update }: {
+  settings: ReaderSettings;
+  update: (patch: Partial<ReaderSettings>) => void;
+}) {
+  const t = useT();
+  return (
+    <div className={styles.settingsPanel}>
+      <label>{t('Reading mode')}
+        <select value={settings.flow} onChange={(event) => update({ flow: event.target.value as ReaderSettings['flow'] })}>
+          <option value="paginated">{t('Pages')}</option>
+          <option value="scrolled">{t('Continuous scroll')}</option>
+        </select>
+      </label>
+      <label>{t('Columns')}
+        <select value={settings.spread} onChange={(event) => update({ spread: event.target.value as ReaderSettings['spread'] })}
+          disabled={settings.flow === 'scrolled'}>
+          <option value="nonespread">{t('One column')}</option>
+          <option value="spread">{t('Two columns')}</option>
+        </select>
+      </label>
+      <label>{t('Theme')}
+        <select value={settings.theme} onChange={(event) => update({ theme: event.target.value as ReaderSettings['theme'] })}>
+          <option value="lightTheme">{t('Light')}</option>
+          <option value="sepiaTheme">{t('Sepia')}</option>
+          <option value="darkTheme">{t('Dark')}</option>
+          <option value="blackTheme">{t('Black')}</option>
+        </select>
+      </label>
+      <label>{t('Font')}
+        <select value={settings.font} onChange={(event) => update({ font: event.target.value as ReaderSettings['font'] })}>
+          <option value="default">{t('Publisher / serif')}</option>
+          <option value="Arial">Arial</option>
+          <option value="Yahei">Microsoft YaHei</option>
+          <option value="SimSun">SimSun</option>
+          <option value="KaiTi">KaiTi</option>
+        </select>
+      </label>
+      <label>{t('Font size')} <output>{settings.fontSize}%</output>
+        <input type="range" min={FONT_MIN} max={FONT_MAX} value={settings.fontSize}
+          onChange={(event) => update({ fontSize: Number(event.target.value) })} />
+      </label>
+      <label>{t('Line height')} <output>{(settings.lineHeight / 100).toFixed(1)}</output>
+        <input type="range" min={100} max={220} step={5} value={settings.lineHeight}
+          onChange={(event) => update({ lineHeight: Number(event.target.value) })} />
+      </label>
+      <label>{t('Page margins')} <output>{settings.margin}px</output>
+        <input type="range" min={0} max={80} step={4} value={settings.margin}
+          onChange={(event) => update({ margin: Number(event.target.value) })} />
+      </label>
+      <label>{t('Text width')} <output>{settings.maxInlineSize}px</output>
+        <input type="range" min={420} max={1200} step={20} value={settings.maxInlineSize}
+          onChange={(event) => update({ maxInlineSize: Number(event.target.value) })} />
+      </label>
+      <label className={styles.checkboxLabel}>
+        <input type="checkbox" checked={settings.animated}
+          onChange={(event) => update({ animated: event.target.checked })} />
+        {t('Animated page turns')}
+      </label>
+      <div className={styles.settingsHint}>
+        <AlignJustify size={18} aria-hidden="true" />
+        <span>{t('Reader settings are saved to your account and follow you across devices.')}</span>
       </div>
-
-      {/* Highlight color popover for the current selection */}
-      {pendingSel && (
-        <div ref={popRef} className={styles.hilitePop} role="dialog" aria-modal="true"
-          aria-label={t('Highlight color')} tabIndex={-1}>
-          <span className={styles.hiliteLabel}>{t('Highlight')}</span>
-          {HILITE_ORDER.map((c) => (
-            <button key={c} className={styles.hiliteSwatch} style={{ background: HILITE_FILL[c] }}
-              onClick={() => createHighlight(c)} aria-label={colorLabel(c)} title={colorLabel(c)} />
-          ))}
-          <button className={styles.hiliteCancel} onClick={() => setPendingSel(null)} aria-label={t('Cancel')}>
-            <X size={16} aria-hidden="true" focusable={false} />
-          </button>
-        </div>
-      )}
-
-      {/* Edit/remove popover for a tapped existing highlight (#782).
-          Swatches recolor (PATCH); the Remove button deletes (DELETE) + unpaints. */}
-      {activeHl && (
-        <div ref={hlPopRef} className={styles.hilitePop} role="dialog" aria-modal="true"
-          aria-label={t('Highlight color')} tabIndex={-1}>
-          <span className={styles.hiliteLabel}>{t('Highlight')}</span>
-          {HILITE_ORDER.map((c) => (
-            <button key={c} className={styles.hiliteSwatch} style={{ background: HILITE_FILL[c] }}
-              onClick={() => recolorHighlight(c)}
-              aria-pressed={activeHl.color === c} aria-label={colorLabel(c)} title={colorLabel(c)} />
-          ))}
-          <button className={styles.hiliteRemove} onClick={removeHighlight} title={t('Remove highlight')}>
-            <Trash2 size={15} aria-hidden="true" focusable={false} />
-            <span>{t('Remove highlight')}</span>
-          </button>
-          <button className={styles.hiliteCancel} onClick={() => setActiveHl(null)} aria-label={t('Cancel')}>
-            <X size={16} aria-hidden="true" focusable={false} />
-          </button>
-        </div>
-      )}
-
-      {positionSaveError && (
-        <div className={styles.positionSaveError} role="alert">
-          {t('Could not save reading position. It will be retried automatically.')}
-        </div>
-      )}
-
-      {/* Progress (SC 4.1.2: a named progressbar, not an aria-hidden bar). */}
-      <div className={styles.progressBar} role="progressbar"
-        aria-label={t('Reading progress')}
-        aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}
-        aria-valuetext={t('{pct}% read', { pct: Math.round(progress) })}>
-        <div className={styles.progressFill} style={{ width: `${progress}%` }} />
+      <div className={styles.settingsHint}>
+        <Columns2 size={18} aria-hidden="true" />
+        <span>{t('Page count changes with font, margins, and window size; progress remains stable.')}</span>
       </div>
     </div>
   );

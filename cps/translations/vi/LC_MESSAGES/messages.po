@@ -10817,9 +10817,9 @@ msgid "Open annotations page"
 msgstr ""
 
 #: cps/templates/read.html:111
-#, fuzzy
 msgid "Black"
-msgstr "Quay lại"
+msgstr ""
+
 
 #: cps/templates/read.html:116
 msgid "Font Sizes"
@@ -10863,14 +10863,14 @@ msgid "Spread"
 msgstr "Đọc"
 
 #: cps/templates/read.html:153
-#, fuzzy
 msgid "Two columns"
-msgstr "Cột đọc không hợp lệ"
+msgstr ""
+
 
 #: cps/templates/read.html:154
-#, fuzzy
 msgid "One column"
-msgstr "Cột đọc không hợp lệ"
+msgstr ""
+
 
 #: cps/templates/read.html:161
 msgid "Reflow text when sidebars are open."

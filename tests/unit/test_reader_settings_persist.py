@@ -1,6 +1,6 @@
 """Per-user web-reader display settings (task #31).
 
-Reader settings (theme/font/fontSize/spread/reflow/margin/lineHeight) are persisted under
+Reader settings (theme/font/fontSize/spread/flow/reflow/margin/lineHeight/column width) are persisted under
 view_settings['reader'] so they follow a user across devices. sanitize_reader_settings()
 is the gate that keeps a crafted POST from storing junk on the user row — pin
 its whitelist + clamping. RED on main (the function doesn't exist there); GREEN
@@ -17,10 +17,12 @@ def test_keeps_each_valid_field():
     out = sanitize_reader_settings({
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
+        "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840, "animated": False,
     })
     assert out == {
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
+        "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840, "animated": False,
     }
 
 
@@ -40,6 +42,9 @@ def test_clamps_numeric_ranges():
     assert sanitize_reader_settings({"margin": 999})["margin"] == 80
     assert sanitize_reader_settings({"lineHeight": 50})["lineHeight"] == 100
     assert sanitize_reader_settings({"lineHeight": 999})["lineHeight"] == 220
+    assert sanitize_reader_settings({"maxColumnCount": 99})["maxColumnCount"] == 2
+    assert sanitize_reader_settings({"maxInlineSize": 100})["maxInlineSize"] == 420
+    assert sanitize_reader_settings({"maxInlineSize": 5000})["maxInlineSize"] == 1200
 
 
 def test_numeric_strings_accepted_booleans_rejected():
@@ -50,11 +55,15 @@ def test_numeric_strings_accepted_booleans_rejected():
     assert "lineHeight" not in sanitize_reader_settings({"lineHeight": True})
 
 
-def test_reflow_coercion():
+def test_flow_and_boolean_coercion():
+    assert sanitize_reader_settings({"flow": "paginated"})["flow"] == "paginated"
+    assert sanitize_reader_settings({"flow": "scrolled"})["flow"] == "scrolled"
+    assert "flow" not in sanitize_reader_settings({"flow": "columns"})
     assert sanitize_reader_settings({"reflow": True})["reflow"] is True
     assert sanitize_reader_settings({"reflow": "true"})["reflow"] is True
     assert sanitize_reader_settings({"reflow": "false"})["reflow"] is False
     assert "reflow" not in sanitize_reader_settings({"reflow": 5})
+    assert sanitize_reader_settings({"animated": "false"})["animated"] is False
 
 
 def test_non_dict_payload_is_empty():

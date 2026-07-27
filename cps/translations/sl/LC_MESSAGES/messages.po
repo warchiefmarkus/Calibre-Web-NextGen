@@ -11166,9 +11166,9 @@ msgid "Reflow text when sidebars are open."
 msgstr "Preusmerjanje besedila, ko so odprte stranske vrstice."
 
 #: cps/templates/read.html:189
-#, fuzzy
 msgid "Note"
-msgstr "Opomba:"
+msgstr ""
+
 
 #: cps/templates/read.html:190
 msgid "Add a note (optional)"

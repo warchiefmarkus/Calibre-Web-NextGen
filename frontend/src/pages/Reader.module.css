@@ -1,367 +1,409 @@
 .reader {
+  --reader-bg: #f6f4ef;
+  --reader-panel: rgba(255, 255, 255, .96);
+  --reader-text: #24211d;
+  --reader-muted: #6d675f;
+  --reader-border: rgba(35, 31, 27, .16);
+  --reader-accent: #315f8c;
   position: fixed;
   inset: 0;
-  z-index: var(--z-overlay);
-  display: flex;
-  flex-direction: column;
-  transition: background var(--dur-base) var(--ease);
+  z-index: 1000;
+  display: grid;
+  grid-template-rows: 54px minmax(0, 1fr) 64px;
+  background: var(--reader-bg);
+  color: var(--reader-text);
 }
 
-/* Reading-surface backgrounds (match the epub themes for a seamless frame). */
-.bg_light {
-  background: #fbf7ee;
-  --reader-chrome: rgba(255, 255, 255, 0.96);
-  --reader-chrome-text: #2a2a2a;
-  --reader-chrome-muted: #59646f;
-  --reader-chrome-border: rgba(35, 41, 47, 0.18);
-  --reader-chrome-hover: rgba(35, 41, 47, 0.08);
-  --reader-scrim: rgba(20, 28, 36, 0.42);
+.lightTheme { color-scheme: light; }
+.sepiaTheme {
+  color-scheme: light;
+  --reader-bg: #e8deca;
+  --reader-panel: rgba(246, 237, 218, .97);
+  --reader-text: #433422;
+  --reader-muted: #79664c;
+  --reader-border: rgba(88, 64, 36, .22);
+  --reader-accent: #7a4b20;
 }
-.bg_sepia {
-  background: #f2e6cf;
-  --reader-chrome: rgba(242, 230, 207, 0.96);
-  --reader-chrome-text: #382d18;
-  --reader-chrome-muted: #5a4d31;
-  --reader-chrome-border: rgba(56, 45, 24, 0.20);
-  --reader-chrome-hover: rgba(56, 45, 24, 0.09);
-  --reader-scrim: rgba(56, 45, 24, 0.42);
-}
-.bg_dark {
-  background: #15110c;
-  --reader-chrome: rgba(20, 28, 36, 0.96);
-  --reader-chrome-text: #ece8e1;
-  --reader-chrome-muted: #c5cdd5;
-  --reader-chrome-border: rgba(255, 255, 255, 0.12);
-  --reader-chrome-hover: rgba(255, 255, 255, 0.08);
-  --reader-scrim: rgba(0, 0, 0, 0.50);
+.darkTheme {
+  color-scheme: dark;
+  --reader-bg: #17191c;
+  --reader-panel: rgba(34, 36, 40, .97);
+  --reader-text: #e8eaed;
+  --reader-muted: #aeb4bc;
+  --reader-border: rgba(255, 255, 255, .14);
+  --reader-accent: #8ab4f8;
 }
 
-.fullCenter {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-overlay);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-4);
-  background: var(--bg);
+.blackTheme {
+  color-scheme: dark;
+  --reader-bg: #000;
+  --reader-panel: rgba(12, 12, 12, .98);
+  --reader-text: #eee;
+  --reader-muted: #aaa;
+  --reader-border: rgba(255, 255, 255, .18);
+  --reader-accent: #8ab4f8;
 }
 
-.spin { animation: spin 0.9s linear infinite; color: var(--accent); }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.exitLink {
-  color: var(--accent);
-  font-size: var(--fs-sm);
-}
-
-.fallbackRow {
-  display: flex;
-  gap: var(--sp-4);
-}
-
-/* Top bar — translucent over the page so the reading surface is the focus. */
-.bar {
+.topBar,
+.bottomBar {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  height: 48px;
-  flex-shrink: 0;
-  padding: 0 var(--sp-3);
-  background: var(--reader-chrome);
-  border-bottom: 1px solid var(--reader-chrome-border);
-  color: var(--reader-chrome-text);
+  gap: 10px;
+  padding: 7px 12px;
+  background: var(--reader-panel);
+  border-color: var(--reader-border);
+  backdrop-filter: blur(14px);
+}
+.topBar { border-bottom: 1px solid var(--reader-border); }
+.bottomBar { border-top: 1px solid var(--reader-border); }
+
+.bookIdentity {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 9px;
 }
 
-.bookTitle {
-  flex: 1 1 auto;
-  font-family: var(--font-display);
-  font-size: var(--fs-sm);
-  white-space: nowrap;
+.bookIdentity strong {
   overflow: hidden;
   text-overflow: ellipsis;
-  opacity: 0.85;
+  white-space: nowrap;
 }
 
-.barControls {
+.bookIdentity span {
+  flex: 0 0 auto;
+  color: var(--reader-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.toolbar {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: 3px;
 }
 
-.fontControls, .themeControls {
+.iconButton,
+.pageButton {
+  display: inline-grid;
+  place-items: center;
+  min-width: 38px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.iconButton:hover,
+.iconButton[aria-pressed='true'],
+.pageButton:hover {
+  background: color-mix(in srgb, var(--reader-accent) 14%, transparent);
+}
+
+.iconButton:disabled,
+.pageButton:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.workspace {
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 2px;
-  padding-left: var(--sp-2);
-  border-left: 1px solid var(--reader-chrome-border);
+  position: relative;
 }
 
-.iconBtn, .themeActive {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--r-sm);
-  color: var(--reader-chrome-muted);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-}
-
-.iconBtn:hover { background: var(--reader-chrome-hover); color: var(--reader-chrome-text); }
-
-.themeActive {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-/* Stage holds the epub viewer flanked by page-turn zones. */
 .stage {
   position: relative;
-  flex: 1 1 auto;
-  display: flex;
+  min-width: 0;
   min-height: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
-.viewer {
-  flex: 1 1 auto;
+.host,
+.foliateView {
+  display: block;
+  width: 100%;
   height: 100%;
+}
+
+.host[data-ready='false'] { visibility: hidden; }
+
+.stageLoading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.sidePanel {
+  width: min(380px, 88vw);
+  min-width: min(380px, 88vw);
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--reader-panel);
+  border-right: 1px solid var(--reader-border);
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--reader-border);
+}
+
+.panelHeader h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.panelBody,
+.panelList,
+.settingsPanel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.panelList {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 4px;
+}
+
+.listButton,
+.searchResult {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+.listButton:hover,
+.searchResult:hover,
+.savedItem:hover,
+.annotationItem:hover {
+  background: color-mix(in srgb, var(--reader-accent) 10%, transparent);
+}
+
+.searchForm {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  padding: 10px;
+}
+
+.searchForm input,
+.searchForm button,
+.settingsPanel select,
+.settingsPanel input[type='range'] {
   min-width: 0;
 }
 
-.navZone {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  flex-shrink: 0;
-  color: var(--reader-chrome-muted);
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+.searchForm input,
+.settingsPanel select {
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  background: var(--reader-bg);
+  color: inherit;
+  padding: 9px 10px;
 }
 
-.navZone:hover {
-  color: var(--accent);
-  background: var(--reader-chrome-hover);
+.searchForm button,
+.selectionBar button,
+.itemActions button {
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  background: var(--reader-panel);
+  color: inherit;
+  padding: 7px 10px;
+  cursor: pointer;
 }
 
-@media (max-width: 600px) {
-  .navZone { width: 44px; }
-}
-
-.viewerOverlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: inherit;
-}
-
-/* TOC drawer */
-.tocScrim {
-  position: fixed;
-  inset: 0;
-  background: var(--reader-scrim);
-  z-index: var(--z-overlay);
-}
-
-.toc {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 320px;
-  max-width: 84vw;
-  z-index: calc(var(--z-overlay) + 1);
-  background: var(--surface-1);
-  border-right: 1px solid var(--border);
-  box-shadow: var(--elev-3);
-  padding: var(--sp-4);
-  overflow-y: auto;
-  animation: slideIn var(--dur-base) var(--ease-out) both;
-}
-
-.settingsPanel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(380px, 92vw);
-  z-index: calc(var(--z-overlay) + 1);
+.searchResult {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
-  overflow-y: auto;
-  padding: var(--sp-4);
-  background: var(--surface-1);
-  color: var(--text);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--elev-3);
-  animation: settingsIn var(--dur-base) var(--ease-out) both;
+  gap: 4px;
+}
+.searchResult span,
+.savedItem span,
+.annotationNote,
+.muted {
+  color: var(--reader-muted);
+  font-size: 13px;
 }
 
-@keyframes settingsIn {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-.panelHeading {
-  display: flex;
+.savedItem,
+.annotationItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
+  gap: 6px;
+  border-radius: 7px;
+  padding: 5px;
 }
 
-.panelHeading h2 {
-  font-family: var(--font-display);
-  font-size: var(--fs-lg);
-}
-
-.settingGroup {
+.savedItem > button:first-child,
+.annotationItem > button:first-child {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: 4px;
   border: 0;
-  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 6px;
+  cursor: pointer;
 }
 
-.settingGroup legend,
-.settingField > span {
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
+.annotationText {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.itemActions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.deleteButton { color: #b43c3c !important; }
+.settingsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.settingsPanel label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
   font-weight: 600;
 }
 
-.themeChoices {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--sp-2);
+.settingsPanel output {
+  justify-self: end;
+  color: var(--reader-muted);
+  font-weight: 400;
 }
 
-.choice,
-.choiceActive {
-  min-height: 44px;
-  display: inline-flex;
+.checkboxLabel {
+  grid-template-columns: auto 1fr;
   align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  color: var(--text);
-  background: var(--surface-2);
 }
 
-.choiceActive {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.settingField {
+.settingsHint {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
+  gap: 9px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid var(--reader-border);
+  border-radius: 8px;
+  color: var(--reader-muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
-.settingField > span {
+.bottomBar {
+  justify-content: center;
+}
+
+.progressArea {
+  width: min(900px, calc(100vw - 120px));
+  display: grid;
+  gap: 7px;
+}
+.progressMeta {
   display: flex;
   justify-content: space-between;
-  gap: var(--sp-3);
+  gap: 12px;
+  color: var(--reader-muted);
+  font-size: 12px;
 }
 
-.settingField select {
+.progressMeta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progressSlider {
   width: 100%;
-  min-height: 44px;
-  padding: 0 var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  color: var(--text);
-  background: var(--surface-2);
+  accent-color: var(--reader-accent);
 }
 
-.settingField input[type='range'] {
-  width: 100%;
-  min-height: 24px;
-  accent-color: var(--accent);
-}
-
-@keyframes slideIn {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
-}
-
-.tocHeading {
-  font-family: var(--font-display);
-  font-size: var(--fs-md);
-  color: var(--text);
-  margin-bottom: var(--sp-3);
-}
-
-.tocEmpty { color: var(--text-muted); font-size: var(--fs-sm); }
-
-.tocItem {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: var(--sp-2) var(--sp-3);
-  border-radius: var(--r-sm);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-snug);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-}
-
-.tocItem:hover { background: var(--surface-2); color: var(--text); }
-
-/* Progress */
-.progressBar {
-  height: 3px;
-  flex-shrink: 0;
-  background: var(--reader-chrome-border);
-}
-
-.progressFill {
-  height: 100%;
-  background: var(--accent);
-  transition: width var(--dur-base) var(--ease);
-}
-
-/* Highlight color popover */
-.hilitePop {
-  position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 10px; z-index: 50;
-  background: var(--reader-chrome); border: 1px solid var(--reader-chrome-border);
-  border-radius: 999px; padding: 8px 14px; box-shadow: var(--elev-3);
-  max-width: calc(100vw - 16px);
-}
-.hiliteLabel { color: var(--reader-chrome-muted); font-size: 13px; margin-right: 2px; }
-/* SC 2.5.8: 24x24 minimum target size. */
-.hiliteSwatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--reader-chrome-border); cursor: pointer; }
-.hiliteSwatch:hover { border-color: var(--reader-chrome-text); }
-.hiliteCancel { color: var(--reader-chrome-muted); display: inline-flex; align-items: center; margin-left: 4px; }
-.hiliteCancel:hover { color: var(--reader-chrome-text); }
-/* #782 — clearly-labeled remove action in the edit popover (icon + text so the
- * destructive intent is unambiguous, not color/position alone). Danger-red. */
-.hiliteRemove {
-  display: inline-flex; align-items: center; gap: 5px;
-  margin-left: 6px; padding: 5px 11px;
-  color: var(--danger); font-size: 13px; line-height: 1; white-space: nowrap;
-  border-radius: 999px; cursor: pointer;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-}
-.hiliteRemove:hover { background: var(--danger-soft); color: var(--danger); }
-
-.positionSaveError {
+.selectionBar {
   position: fixed;
-  right: var(--sp-3);
-  bottom: calc(var(--sp-3) + 3px);
-  z-index: 60;
-  max-width: min(420px, calc(100vw - 2 * var(--sp-3)));
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--danger, #b42318);
-  border-radius: var(--r-md);
-  background: var(--reader-chrome);
-  color: var(--danger, #b42318);
-  font-size: var(--fs-sm);
+  z-index: 1003;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 24px));
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--reader-border);
+  border-radius: 10px;
+  background: var(--reader-panel);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .22);
+}
+
+.selectionBar span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.selectionBar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.saveError {
+  position: fixed;
+  right: 12px;
+  bottom: 74px;
+  z-index: 1004;
+  max-width: 380px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #8b2525;
+  color: white;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .reader { grid-template-rows: 52px minmax(0, 1fr) 72px; }
+  .bookIdentity span { display: none; }
+  .toolbar { gap: 0; }
+  .iconButton { min-width: 34px; min-height: 34px; }
+  .sidePanel {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 1002;
+    box-shadow: 10px 0 30px rgba(0, 0, 0, .28);
+  }
+  .progressMeta span:first-child { max-width: 55%; }
+  .selectionBar { align-items: stretch; flex-wrap: wrap; }
+  .selectionBar span { flex-basis: 100%; }
+}
+
+@media (max-width: 520px) {
+  .toolbar .iconButton:nth-of-type(4),
+  .toolbar .iconButton:nth-of-type(6) { display: none; }
+  .progressArea { width: calc(100vw - 92px); }
 }

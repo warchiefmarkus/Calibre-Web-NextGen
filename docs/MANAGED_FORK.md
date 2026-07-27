@@ -45,9 +45,13 @@ CalibreMCP owns extraction, indexing, FTS/BM25, E5 embeddings, LanceDB, query no
 
 ## Reader behavior
 
-FB2 is fetched as bytes and decoded from the XML declaration and BOM. The decoder supports UTF-8, Windows-1251/CP1251, Windows-1252/CP1252, and UTF-16 LE/BE, including UTF-16 documents without a BOM. It must not be replaced with `response.text()`, which corrupts legacy FB2 files such as `Хельсрич`.
+The SPA uses one vendored `foliate-js` runtime for EPUB/KEPUB, FB2/FBZ, MOBI/AZW/AZW3, and CBZ. The snapshot is pinned to commit `78914aefbb1351545fe60e4cdbabcce514d1f201`; its LGPL-3.0-or-later license and update record are stored in `frontend/src/vendor/foliate-js/`. PDF, audio, TXT, CBR, CBT, and CB7 remain on the native fallback reader.
 
-EPUB is fetched as an `ArrayBuffer` and passed to epub.js, which reads the encoding of the XHTML/XML files inside the archive.
+The unified reader provides paginated and continuous modes, one/two-column layout, recursive TOC, full-text search, stable whole-book progress, section/page/location labels, account-synced settings and named bookmarks, highlights/notes, TTS, fullscreen, and keyboard navigation. Current position remains in the shared Calibre bookmark/reader-data row; named bookmarks live in CWNG `app.db`; highlights and notes continue to use the existing annotations API.
+
+FB2 is fetched as bytes. The vendored parser inspects the XML declaration and re-decodes non-UTF-8 files, preserving Windows-1251 books such as `Хельсрич`. Legacy `fb2-scroll:` bookmarks and `position_fraction` values are accepted on first open and then rewritten as foliate locators. Do not replace byte loading with `response.text()`.
+
+Book content is rendered in sandboxed publication iframes. The SPA CSP permits only the required same-origin/blob frames and resources; `/show` responses retain `script-src 'none'` so ebook scripts cannot execute.
 
 ## RAG UI behavior
 

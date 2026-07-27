@@ -11184,9 +11184,9 @@ msgid "Reflow text when sidebars are open."
 msgstr "Reajustar el texto cuando las barras laterales están abiertas."
 
 #: cps/templates/read.html:189
-#, fuzzy
 msgid "Note"
-msgstr "Nota:"
+msgstr ""
+
 
 #: cps/templates/read.html:190
 msgid "Add a note (optional)"

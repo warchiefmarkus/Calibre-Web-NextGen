@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  apiGet, apiPost, apiUpload, apiPostForm, ApiError,
+  apiGet, apiPost, apiDelete, apiUpload, apiPostForm, ApiError,
   navigateToLogout, noteSessionIdentity,
   getMetadataProviders, setMetadataProviderActive,
 } from './api';
@@ -815,11 +815,27 @@ export interface ReaderSettings {
   lineHeight: number;
   spread: 'spread' | 'nonespread';
   reflow: boolean;
+  flow: 'paginated' | 'scrolled';
+  maxColumnCount: 1 | 2;
+  maxInlineSize: number;
+  animated: boolean;
+}
+
+export interface ReaderBookmark {
+  bookmark_id: string;
+  book_id: number;
+  format: string;
+  locator: string;
+  progression: number;
+  label: string | null;
+  chapter: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 /** A 401 is a definitive answer, not a flaky one. A guest has no bookmark and no
  *  saved reader settings — both endpoints say so by design — and the reader waits
- *  for these two queries to settle before it starts epub.js, so retrying a
+ *  for these two queries to settle before it starts foliate-js, so retrying a
  *  settled "no" just spends the guest's whole boot on re-asking (#1074). */
 const retryUnlessUnauthorized = (failureCount: number, error: unknown) =>
   !(error instanceof ApiError && error.status === 401) && failureCount < 3;
@@ -854,6 +870,40 @@ export function useSaveBookmark(bookId: string | number) {
   return useMutation({
     mutationFn: (vars: { format: string; bookmark: string; position_fraction?: number; device?: string }) =>
       apiPost(`/api/v1/books/${bookId}/bookmark`, vars),
+  });
+}
+
+
+export function useReaderBookmarks(bookId: string | number, format: string) {
+  return useQuery<{ bookmarks: ReaderBookmark[] }>({
+    queryKey: ['reader-bookmarks', String(bookId), format],
+    queryFn: () => apiGet<{ bookmarks: ReaderBookmark[] }>(
+      `/api/v1/books/${bookId}/reader-bookmarks?format=${encodeURIComponent(format)}`),
+    staleTime: 0,
+    retry: retryUnlessUnauthorized,
+  });
+}
+
+export function useCreateReaderBookmark(bookId: string | number, format: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { locator: string; progression: number; label?: string; chapter?: string }) =>
+      apiPost<ReaderBookmark>(`/api/v1/books/${bookId}/reader-bookmarks`, { format, ...vars }),
+    onSuccess: () => void qc.invalidateQueries({
+      queryKey: ['reader-bookmarks', String(bookId), format],
+    }),
+  });
+}
+
+
+export function useDeleteReaderBookmark(bookId: string | number, format: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (bookmarkId: string) => apiDelete(
+      `/api/v1/books/${bookId}/reader-bookmarks/${encodeURIComponent(bookmarkId)}`),
+    onSuccess: () => void qc.invalidateQueries({
+      queryKey: ['reader-bookmarks', String(bookId), format],
+    }),
   });
 }
 

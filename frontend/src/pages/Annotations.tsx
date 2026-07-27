@@ -23,7 +23,7 @@ const COLOR_HEX: Record<string, string> = {
 
 /** Native per-book highlights view: every annotation the user has for the book,
  *  with export (MD/CSV/JSON) and Kobo import. Consumes /annotations/<id>/data.json.
- *  (In-reader CFI highlight creation lives in the epub.js reader — phase 2.) */
+ *  (In-reader locator highlight creation lives in the foliate-js reader — phase 2.) */
 export function Annotations({ id }: { id: string }) {
   const t = useT();
   const book = useBook(id).data;

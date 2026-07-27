@@ -11132,9 +11132,9 @@ msgid "Reflow text when sidebars are open."
 msgstr "Text umbrechen, wenn Seitenleiste geöffnet ist."
 
 #: cps/templates/read.html:189
-#, fuzzy
 msgid "Note"
-msgstr "Hinweis:"
+msgstr ""
+
 
 #: cps/templates/read.html:190
 msgid "Add a note (optional)"

@@ -5,6 +5,7 @@
 READER_THEMES = {"lightTheme", "darkTheme", "sepiaTheme", "blackTheme"}
 READER_FONTS = {"default", "Yahei", "SimSun", "KaiTi", "Arial"}
 READER_SPREADS = {"spread", "nonespread"}
+READER_FLOWS = {"paginated", "scrolled"}
 
 READER_DEFAULTS = {
     "theme": "lightTheme",
@@ -14,6 +15,10 @@ READER_DEFAULTS = {
     "lineHeight": 150,
     "spread": "nonespread",
     "reflow": True,
+    "flow": "paginated",
+    "maxColumnCount": 2,
+    "maxInlineSize": 720,
+    "animated": True,
 }
 
 
@@ -38,19 +43,24 @@ def sanitize_reader_settings(payload):
         out["font"] = payload["font"]
     if payload.get("spread") in READER_SPREADS:
         out["spread"] = payload["spread"]
+    if payload.get("flow") in READER_FLOWS:
+        out["flow"] = payload["flow"]
     for key, lo, hi in (
         ("fontSize", 75, 200),
         ("margin", 0, 80),
         ("lineHeight", 100, 220),
+        ("maxColumnCount", 1, 2),
+        ("maxInlineSize", 420, 1200),
     ):
         value = reader_setting_int(payload.get(key), lo, hi)
         if value is not None:
             out[key] = value
-    reflow = payload.get("reflow")
-    if isinstance(reflow, bool):
-        out["reflow"] = reflow
-    elif isinstance(reflow, str) and reflow.strip().lower() in {"true", "false"}:
-        out["reflow"] = reflow.strip().lower() == "true"
+    for key in ("reflow", "animated"):
+        value = payload.get(key)
+        if isinstance(value, bool):
+            out[key] = value
+        elif isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+            out[key] = value.strip().lower() == "true"
     return out
 
 
