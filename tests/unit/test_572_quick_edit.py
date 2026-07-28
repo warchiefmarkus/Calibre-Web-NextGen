@@ -59,16 +59,23 @@ def test_catalog_wires_quick_edit_gated_on_edit_role():
 
 
 def test_quick_edit_does_not_squeeze_the_read_action():
-    """Narrow desktop series cards still need a one-line Read now action."""
+    """Read and edit actions share normal flow and remain usable on narrow cards."""
     src = (_FE / "components" / "BookCard.tsx").read_text()
     css = (_FE / "components" / "BookCard.module.css").read_text()
     assert "readNowInset" not in src
     assert ".readNowInset" not in css
+    assert "hasActionRow" in src
+    assert "styles.actionRow" in src
+    assert "styles.readNowLabel" in src
     quick_edit = css[css.index(".quickEditBtn {"):css.index(".wrap:hover .quickEditBtn")]
-    assert "top: var(--sp-2)" in quick_edit
-    assert "bottom:" not in quick_edit
-    read_now = css[css.index(".readNow {"):css.index(".wrap:hover .readNow")]
+    assert "margin-left: auto" in quick_edit
+    assert "position: absolute" not in quick_edit
+    action_row = css[css.index(".actionRow {"):css.index(".readNow {")]
+    assert "display: flex" in action_row
+    assert "flex-wrap: wrap" in action_row
+    read_now = css[css.index(".readNow {"):css.index(".readNow svg")]
     assert "white-space: nowrap" in read_now
+    assert "overflow: hidden" in read_now
 
 
 def test_book_detail_has_inline_tag_editor():

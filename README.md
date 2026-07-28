@@ -5,7 +5,7 @@
 [![Latest release](https://img.shields.io/github/v/release/new-usemame/Calibre-Web-NextGen)](https://github.com/new-usemame/Calibre-Web-NextGen/releases/latest)
 [![Container](https://img.shields.io/badge/ghcr.io-calibre--web--nextgen-blue?logo=docker)](https://github.com/new-usemame/Calibre-Web-NextGen/pkgs/container/calibre-web-nextgen)
 [![Open issues](https://img.shields.io/github/issues/new-usemame/Calibre-Web-NextGen)](https://github.com/new-usemame/Calibre-Web-NextGen/issues)
-[![Support monthly on Ko-fi](https://img.shields.io/badge/Ko--fi-Subscribe%20monthly-cc7b19?logo=kofi&logoColor=white)](https://ko-fi.com/calibrewebnextgen)
+[![Sponsor](https://img.shields.io/badge/Sponsor-nothing%20paywalled-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/new-usemame)
 
 ---
 
@@ -27,7 +27,7 @@ Library, settings, users, OAuth tokens, and KOReader sync state are preserved. S
 - **Bug?** [File it here.](https://github.com/new-usemame/Calibre-Web-NextGen/issues/new?template=bug_report.md)
 - **Feature idea?** [Open a request.](https://github.com/new-usemame/Calibre-Web-NextGen/issues/new?template=feature_request.md) Anything goes, no checklist required — even half-formed ideas are welcome and help prioritize what to look at next.
 - **New here?** See [Quick start](#quick-start) below.
-- **Want to back the work?** [**Subscribe monthly on Ko-fi**](https://ko-fi.com/calibrewebnextgen) — recurring support funds ongoing development. One-time tips welcome too.
+- **Want to back the work?** [**Sponsor on GitHub**](https://github.com/sponsors/new-usemame) — no rewards, no paywalled features, one-time or monthly. [Here's what it actually pays for.](#supporting-the-project)
 - **Setting up with an AI assistant** (Claude, ChatGPT, etc.)? Point it at [`AI_README.md`](AI_README.md) — a setup guide written for the assistant to follow, verify, and hand back to you working.
 
 ---
@@ -49,6 +49,7 @@ Library, settings, users, OAuth tokens, and KOReader sync state are preserved. S
   - [Network shares (NFS, SMB, ZFS)](#network-shares-nfs-smb-zfs)
   - [Calibre desktop coexistence](#calibre-desktop-coexistence)
   - [Calibre plugins (DeDRM and others)](#calibre-plugins-dedrm-and-others)
+  - [Reverse proxy with a prefix](#reverse-proxy-with-a-prefix)
   - [Reverse proxy / Cloudflare Tunnel](#reverse-proxy--cloudflare-tunnel)
   - [Hardcover metadata provider](#hardcover-metadata-provider)
   - [KOReader sync](#koreader-sync)
@@ -56,13 +57,14 @@ Library, settings, users, OAuth tokens, and KOReader sync state are preserved. S
 - [Troubleshooting](#troubleshooting)
 - [Differences from upstream](#differences-from-upstream)
 - [Contributing](#contributing)
+- [Supporting the project](#supporting-the-project)
 - [Credits](#credits)
 
 ---
 
 ## Why this fork exists
 
-CWA has an open PR queue with community-submitted bug fixes that aren't in the latest published image. This build picks the safe ones, ships them in regular releases, and adds fresh fixes for high-impact bugs that don't have an upstream PR yet. Scope is bug fixes; feature work is out of scope.
+CWA has an open PR queue with community-submitted bug fixes that aren't in the latest published image. This build picks the safe ones, ships them in regular releases, and adds fresh fixes for high-impact bugs that don't have an upstream PR yet. Feature work happens here too, driven by what users ask for in the issue tracker.
 
 The data format and configuration are byte-compatible with upstream, so swapping images is reversible and migrations aren't needed in either direction.
 
@@ -410,6 +412,47 @@ docker exec -e HOME=/config calibre-web /app/calibre/calibre-customize -a "/conf
 
 The feature is off by default because it runs third-party plugin code inside your container — only install plugins you trust, from their official release pages. Which plugins are appropriate to use is your call.
 
+### Reverse proxy with a prefix
+
+To deploy CWA behind a reverse proxy, configure your reverse proxy to forward
+requests to the CWA service and handle the path prefix (e.g. `/cwa/`). For
+instance, with Nginx:
+
+```
+location /cwa/ {
+    proxy_pass http://calibre-web-automated:8083/;
+
+    proxy_set_header Host              $http_host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+The trailing slash on `proxy_pass` matters: it strips `/cwa/` before the request
+reaches CWA. The headers are written out rather than pulled in with
+`include proxy_params;` because that file ships with Debian and Ubuntu's nginx
+package only — the official `nginx` Docker images don't have it, and nginx
+refuses to start when the include is missing.
+
+You must also configure the application with the external URL prefix by setting
+the following environment variable in your Docker compose file:
+
+```yaml
+environment:
+  - PROXY_SCRIPT_NAME=/cwa
+```
+
+Leave the trailing slash off `PROXY_SCRIPT_NAME` — CWA joins it to each path
+directly, so `/cwa/` would generate doubled-slash URLs.
+
+This ensures that CWA correctly generates URLs when it is served from the
+prefix path instead of the web server root.
+
+For TLS, upload limits, and the larger proxy buffers Kobo sync needs, see
+[`examples/nginx-reverse-proxy.conf`](examples/nginx-reverse-proxy.conf) — the
+settings there apply to a prefixed deployment too.
+
 ### Reverse proxy / Cloudflare Tunnel
 
 Behind multiple proxies (e.g. Cloudflare Tunnel then nginx then CWA), set the proxy count:
@@ -638,6 +681,30 @@ Governance: [`GOVERNANCE.md`](GOVERNANCE.md). Contributing details: [`CONTRIBUTI
 
 ---
 
+## Supporting the project
+
+<!-- funding-stats:start (regenerate with scripts/funding-stats.sh — do not hand-edit) -->
+Since May 2026: **188 releases, 673 merged pull requests, 262 issues closed, and 155 contributors credited by name.**
+<!-- funding-stats:end -->
+
+This build exists because the project it's based on stopped cutting releases in February with a
+queue of community pull requests still sitting in it — real bug fixes, written by real people,
+that weren't going to reach anybody. Shipping them turned out to be a full-time habit.
+
+**Nothing here is paywalled and nothing ever will be.** No sponsor-only features, no private
+Discord, no early access, no "pro" tier. Every line is GPL-3.0 and free whether you contribute
+or not. Sponsorship supports one thing: keeping this going.
+
+If the project has been useful to you, a few dollars is a fair trade and genuinely appreciated.
+If it hasn't, that's completely fine — it stays free either way.
+
+- **[GitHub Sponsors](https://github.com/sponsors/new-usemame)** — one-time or monthly. GitHub takes 0%, so all of it arrives.
+- **[Ko-fi](https://ko-fi.com/calibrewebnextgen)** — the same thing, if you already have an account there.
+
+The most useful thing you can do costs nothing: [file a bug](https://github.com/new-usemame/Calibre-Web-NextGen/issues/new?template=bug_report.md) when something breaks. That helps more than a few dollars does.
+
+---
+
 ## Credits
 
 Built on:
@@ -648,7 +715,7 @@ Built on:
 
 Every backported patch is credited to its original author by GitHub handle in the commit message and in [`CHANGES-vs-upstream.md`](CHANGES-vs-upstream.md).
 
-If this build is useful to you, you can support its development on [Ko-fi](https://ko-fi.com/calibrewebnextgen). To support the upstream project it builds on, [@crocodilestick has a Ko-fi](https://ko-fi.com/crocodilestick) too.
+If this build is useful to you, see [Supporting the project](#supporting-the-project). To support the upstream project it builds on, [@crocodilestick has a Ko-fi](https://ko-fi.com/crocodilestick) too.
 
 ---
 
