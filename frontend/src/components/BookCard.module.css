@@ -126,14 +126,13 @@
    spot. A flex row makes that impossible rather than relying on each badge's
    comment asserting the others are elsewhere.
 
-   max-width reserves the bottom-right corner for the quick-edit pencil, so
-   the row can never grow under it (the #1112 collision, avoided by
-   construction this time). */
+   The quick-edit pencil now lives at the top-right of the cover, so the whole
+   bottom edge is available to the badges. */
 .badgeRow {
   position: absolute;
   bottom: var(--sp-2);
   left: var(--sp-2);
-  max-width: calc(100% - var(--sp-2) * 2 - 34px);
+  max-width: calc(100% - var(--sp-2) * 2);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -246,12 +245,13 @@
   border-color: var(--danger);
 }
 
-/* Quick-edit pencil (fork #572): bottom-right so it never overlaps the read
-   badge (top-right) or the remove control (top-left). Hover/focus-reveal like
-   the remove button, but always reachable via keyboard focus. */
+/* Quick-edit pencil (fork #572): top-right over the cover. Keeping it out of
+   the bottom action row leaves the full card width to "Read now", including
+   narrow desktop series cards where the old inset forced the label to wrap.
+   Hover/focus-reveal like the remove button, but always keyboard reachable. */
 .quickEditBtn {
   position: absolute;
-  bottom: var(--sp-2);
+  top: var(--sp-2);
   right: var(--sp-2);
   width: 24px;
   height: 24px;
@@ -281,24 +281,6 @@
   border-color: var(--accent);
 }
 
-/* The pencil floats over the bottom-right corner while .readNow spans the full
-   card width, so a centred label runs underneath it. Measured at 360px in a
-   touch context: 52px of the label sat under the button, clipping the tail of
-   "Read now" (#1112, reported by @Andrew-H2O). On touch it is always visible —
-   the coarse-pointer block below sets both to opacity 1 — so this is the
-   default state on a phone, not a hover edge case.
-
-   Reserve the corner rather than moving the label. Left-aligning it (the
-   reporter's suggestion) still collides once the title's button label is long,
-   and it changes the look on desktop where nothing collides. Padding keeps the
-   label centred within the space actually available.
-
-   Only applied when the pencil is rendered, so a card without edit permission
-   keeps a truly centred label. */
-.readNowInset {
-  padding-right: calc(24px + var(--sp-2) * 2);
-}
-
 .readNow {
   min-height: 32px;
   margin-top: auto;
@@ -310,6 +292,8 @@
   color: var(--accent-text);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
+  line-height: 1;
+  white-space: nowrap;
   text-decoration: none;
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
@@ -330,10 +314,6 @@
      case the reporter was describing. */
   .readBadge, .hiddenBadge { min-height: 28px; font-size: var(--fs-sm); }
   .seriesBadge { min-width: 28px; height: 28px; font-size: var(--fs-sm); }
-  /* The pencil grows to a 44px touch target here, so the reserved corner has
-     to grow with it or the overlap comes straight back on the exact devices
-     where both controls are permanently visible. */
-  .readNowInset { padding-right: calc(44px + var(--sp-2) * 2); }
   .removeBtn, .quickEditBtn {
     width: 44px;
     height: 44px;

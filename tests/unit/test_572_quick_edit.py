@@ -58,6 +58,19 @@ def test_catalog_wires_quick_edit_gated_on_edit_role():
     assert "role?.edit" in src
 
 
+def test_quick_edit_does_not_squeeze_the_read_action():
+    """Narrow desktop series cards still need a one-line Read now action."""
+    src = (_FE / "components" / "BookCard.tsx").read_text()
+    css = (_FE / "components" / "BookCard.module.css").read_text()
+    assert "readNowInset" not in src
+    assert ".readNowInset" not in css
+    quick_edit = css[css.index(".quickEditBtn {"):css.index(".wrap:hover .quickEditBtn")]
+    assert "top: var(--sp-2)" in quick_edit
+    assert "bottom:" not in quick_edit
+    read_now = css[css.index(".readNow {"):css.index(".wrap:hover .readNow")]
+    assert "white-space: nowrap" in read_now
+
+
 def test_book_detail_has_inline_tag_editor():
     src = (_FE / "pages" / "BookDetail.tsx").read_text()
     assert "useUpdateMetadata" in src

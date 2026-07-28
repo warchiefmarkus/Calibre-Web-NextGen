@@ -152,10 +152,7 @@ export function BookCard({
       {readTarget && (
         <Link
           href={readTarget}
-          // Reserve the bottom-right corner only when the pencil is actually
-          // rendered there, so cards without edit permission keep a centred
-          // label (#1112).
-          className={quickEdit ? `${styles.readNow} ${styles.readNowInset}` : styles.readNow}
+          className={styles.readNow}
           aria-label={t('Read {title}', { title: book.title })}
         >
           <BookOpen size={15} aria-hidden="true" focusable={false} /> {t('Read now')}

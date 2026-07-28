@@ -1780,23 +1780,23 @@ msgstr ""
 
 #: cps/magic_shelf.py:327 cps/spa_strings.py:42
 msgid "Recently Added"
-msgstr ""
+msgstr "Нещодавно додані"
 
 #: cps/magic_shelf.py:346 cps/spa_strings.py:43
 msgid "Highly Rated"
-msgstr ""
+msgstr "З високим рейтингом"
 
 #: cps/magic_shelf.py:383 cps/opds.py:200 cps/spa_strings.py:44
 msgid "Currently Reading"
-msgstr ""
+msgstr "Зараз читаю"
 
 #: cps/magic_shelf.py:400 cps/spa_strings.py:45
 msgid "Yet to Read"
-msgstr ""
+msgstr "Ще не прочитані"
 
 #: cps/magic_shelf.py:417 cps/spa_strings.py:46
 msgid "Recent Publications"
-msgstr ""
+msgstr "Нещодавно видані"
 
 #: cps/oauth_bb.py:288
 #, python-format
@@ -2486,7 +2486,7 @@ msgstr ""
 
 #: cps/spa_strings.py:35 cps/templates/detail.html:634
 msgid "Read now"
-msgstr ""
+msgstr "Читати зараз"
 
 #: cps/spa_strings.py:36
 #, python-brace-format
@@ -3702,7 +3702,7 @@ msgstr ""
 
 #: cps/spa_strings.py:401
 msgid "A few random picks from your library"
-msgstr ""
+msgstr "Кілька випадкових книг із вашої бібліотеки"
 
 #: cps/spa_strings.py:402
 msgid ""
@@ -4920,7 +4920,7 @@ msgstr ""
 
 #: cps/spa_strings.py:701
 msgid "No tasks running."
-msgstr ""
+msgstr "Немає активних завдань."
 
 #: cps/spa_strings.py:702
 #, python-brace-format
@@ -5397,7 +5397,7 @@ msgstr ""
 
 #: cps/spa_strings.py:826
 msgid "Smart shelves"
-msgstr ""
+msgstr "Розумні полиці"
 
 #: cps/spa_strings.py:827
 msgid "Solid: average colour of the cover"
