@@ -39,3 +39,14 @@ def test_format_routing_uses_one_reader_for_reflowable_formats():
         assert f"'{fmt}'" in target
     assert 'FOLIATE_FORMATS.has' in app
     assert "? <Reader id={p.id} format={p.format} />" in app
+
+
+def test_book_detail_cover_opens_primary_reader_without_hiding_cover_edit():
+    detail = (ROOT / 'frontend/src/pages/BookDetail.tsx').read_text()
+    css = (ROOT / 'frontend/src/pages/BookDetail.module.css').read_text()
+    assert 'data-testid="book-cover-read"' in detail
+    assert 'onClick={() => primaryReadTarget && navigate(primaryReadTarget)}' in detail
+    assert 'disabled={!primaryReadTarget}' in detail
+    assert 'className={styles.changeCover}' in detail
+    assert '.coverReadHint' in css
+    assert '.coverReadButton:focus-visible' in css

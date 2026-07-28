@@ -39,6 +39,52 @@
 
 .coverWrap { position: relative; }
 
+.coverReadButton {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.coverReadButton:disabled { cursor: default; }
+.coverReadButton:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.coverReadHint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) translateY(4px);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: var(--r-full);
+  background: rgba(20, 28, 36, .84);
+  color: #f2efe9;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.coverReadButton:hover .coverReadHint,
+.coverReadButton:focus-visible .coverReadHint {
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+
 /* #987 — hairline so a cover whose artwork background matches the page surface
    still has a visible edge. Matches the shared BookCover frame and EditBook. */
 .cover {

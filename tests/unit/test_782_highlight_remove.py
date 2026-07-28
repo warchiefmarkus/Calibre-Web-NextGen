@@ -19,7 +19,7 @@ def test_reader_uses_foliate_overlay_and_server_annotation_ids():
 def test_highlight_create_update_delete_use_server_api():
     assert "apiPost<ServerAnnotation>(`/annotations/${id}`" in READER
     assert "apiPatch<ServerAnnotation>" in READER
-    assert "apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}`)" in READER
+    assert "apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}?format=${encodeURIComponent(fmt)}`)" in READER
     assert "note_text" in READER
     assert "highlight_color" in READER
 

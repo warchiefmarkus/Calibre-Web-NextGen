@@ -284,10 +284,28 @@ def _cwng_user_name() -> str:
     return str(getattr(current_user, "name", "") or "").strip()
 
 
-def _load_user_annotations(user_id: int, book_id: int) -> list:
+def _reader_annotation_format(payload=None) -> str:
+    """Resolve the exact book format for Calibre-native annotation storage.
+
+    Reader routes historically defaulted every web highlight to EPUB. Foliate
+    locators are format-specific, so FB2/MOBI/AZW/CBZ annotations must remain
+    in their matching Calibre ``annotations.format`` namespace.
+    """
+    value = None
+    if isinstance(payload, dict):
+        value = payload.get("format")
+    value = value or request.args.get("format") or "EPUB"
+    normalized = str(value).strip().upper()
+    supported = {"EPUB", "KEPUB", "FB2", "FBZ", "MOBI", "AZW", "AZW3", "CBZ"}
+    if normalized not in supported:
+        raise ValueError(f"unsupported reader annotation format {normalized!r}")
+    return normalized
+
+
+def _load_user_annotations(user_id: int, book_id: int, fmt: str | None = None) -> list:
     """Load the live per-user annotation set from the active storage backend."""
     if deployment_profile.use_calibre_native_reader_data():
-        return calibre_annotations.list_annotations(_cwng_user_name(), book_id)
+        return calibre_annotations.list_annotations(_cwng_user_name(), book_id, fmt or "EPUB")
     return (
         ub.session.query(ub.Annotation)
         .filter(
@@ -515,7 +533,11 @@ def annotations_data(book_id):
     PDF / comic reader JS can decide how to overlay each row.
     """
     book = _resolve_book_or_404(book_id)
-    rows = _load_user_annotations(current_user.id, book_id)
+    try:
+        fmt = _reader_annotation_format()
+    except ValueError as e:
+        return jsonify({"error": "bad_format", "message": str(e)}), 400
+    rows = _load_user_annotations(current_user.id, book_id, fmt)
     out = []
     for r in rows:
         # CFI computation only applies to EPUB-origin rows. For PDF/comic
@@ -782,8 +804,9 @@ def annotations_create(book_id):
     payload = request.get_json(silent=True) or {}
     if deployment_profile.use_calibre_native_reader_data():
         try:
+            fmt = _reader_annotation_format(payload)
             row = calibre_annotations.create_annotation(
-                _cwng_user_name(), book_id, payload
+                _cwng_user_name(), book_id, payload, fmt
             )
         except ValueError as e:
             return jsonify({"error": "bad_anchor", "message": str(e)}), 400
@@ -810,8 +833,9 @@ def annotations_edit(book_id, annotation_id):
     data = request.get_json(silent=True) or {}
     if deployment_profile.use_calibre_native_reader_data():
         try:
+            fmt = _reader_annotation_format(data)
             row = calibre_annotations.update_annotation(
-                _cwng_user_name(), book_id, annotation_id, data
+                _cwng_user_name(), book_id, annotation_id, data, fmt
             )
         except ValueError as e:
             return jsonify({"error": "bad_color", "message": str(e)}), 400
@@ -844,9 +868,12 @@ def annotations_delete(book_id, annotation_id):
     _resolve_book_or_404(book_id)
     if deployment_profile.use_calibre_native_reader_data():
         try:
+            fmt = _reader_annotation_format()
             calibre_annotations.delete_annotation(
-                _cwng_user_name(), book_id, annotation_id
+                _cwng_user_name(), book_id, annotation_id, fmt
             )
+        except ValueError as e:
+            return jsonify({"error": "bad_format", "message": str(e)}), 400
         except CalibreMCPClientError as e:
             return jsonify({"error": "reader_backend_error", "message": str(e)}), e.status_code
         return jsonify({"status": "deleted", "annotation_id": annotation_id}), 200

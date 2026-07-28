@@ -279,21 +279,36 @@ export function BookDetail() {
         {/* LEFT: cover */}
         <div className={styles.coverCol}>
           <div className={styles.coverWrap}>
-            {book.cover_url ? (
-              <img
-                src={resourceUrl(book.cover_url)}
-                alt={book.title}
-                className={styles.cover}
-              />
-            ) : (
-              <div className={styles.coverFallback} aria-label={book.title}>
-                <span className={styles.coverFallbackTitle}>{book.title}</span>
-                {book.authors.length > 0 && (
-                  <span className={styles.coverFallbackAuthor}>{book.authors[0].name}</span>
-                )}
-                <span className={styles.coverFallbackMark} aria-hidden="true">NextGen</span>
-              </div>
-            )}
+            <button
+              type="button"
+              className={styles.coverReadButton}
+              disabled={!primaryReadTarget}
+              onClick={() => primaryReadTarget && navigate(primaryReadTarget)}
+              aria-label={`${t('Read now')}: ${book.title}`}
+              title={primaryReadTarget ? t('Read now') : undefined}
+              data-testid="book-cover-read"
+            >
+              {book.cover_url ? (
+                <img
+                  src={resourceUrl(book.cover_url)}
+                  alt=""
+                  className={styles.cover}
+                />
+              ) : (
+                <div className={styles.coverFallback} aria-hidden="true">
+                  <span className={styles.coverFallbackTitle}>{book.title}</span>
+                  {book.authors.length > 0 && (
+                    <span className={styles.coverFallbackAuthor}>{book.authors[0].name}</span>
+                  )}
+                  <span className={styles.coverFallbackMark} aria-hidden="true">NextGen</span>
+                </div>
+              )}
+              {primaryReadTarget && (
+                <span className={styles.coverReadHint} aria-hidden="true">
+                  <BookOpen size={17} /> {t('Read now')}
+                </span>
+              )}
+            </button>
             {me?.role?.edit && (
               <Link href={`/book/${book.id}/cover`} className={styles.changeCover}>
                 <ImageIcon size={15} /> {t('Change cover')}

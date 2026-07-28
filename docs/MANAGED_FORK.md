@@ -47,9 +47,12 @@ CalibreMCP owns extraction, indexing, FTS/BM25, E5 embeddings, LanceDB, query no
 
 The SPA uses one vendored `foliate-js` runtime for EPUB/KEPUB, FB2/FBZ, MOBI/AZW/AZW3, and CBZ. The snapshot is pinned to commit `78914aefbb1351545fe60e4cdbabcce514d1f201`; its LGPL-3.0-or-later license and update record are stored in `frontend/src/vendor/foliate-js/`. PDF, audio, TXT, CBR, CBT, and CB7 remain on the native fallback reader.
 
-The unified reader provides paginated and continuous modes, one/two-column layout, recursive TOC, full-text search, stable whole-book progress, section/page/location labels, account-synced settings and named bookmarks, highlights/notes, TTS, fullscreen, keyboard navigation, and optional left/right edge click zones. Current position remains in the shared Calibre bookmark/reader-data row; named bookmarks live in CWNG `app.db`; highlights and notes continue to use the existing annotations API.
+The unified reader provides paginated and continuous modes, one/two-column layout, recursive TOC, full-text search, stable whole-book progress, section/page/location labels, account-synced settings and named bookmarks, highlights/notes, TTS, fullscreen, keyboard navigation, and optional left/right edge click zones. Current position remains in the shared Calibre bookmark/reader-data row; named bookmarks live in CWNG `app.db`. In the MCP-managed profile, highlights and notes are stored natively in Calibre `metadata.db.annotations` under the exact source format (`EPUB`, `FB2`, `MOBI`, and so on); note/color/locator details live in `annot_data` JSON and highlighted text is copied to `searchable_text`. The standalone profile continues to use CWNG `app.db.annotation`.
 
 FB2 is fetched as bytes. The vendored parser inspects the XML declaration and re-decodes non-UTF-8 files, preserving Windows-1251 books such as `Хельсрич`. Legacy `fb2-scroll:` bookmarks and `position_fraction` values are accepted on first open and then rewritten as foliate locators. Do not replace byte loading with `response.text()`.
+
+
+On the book detail page, a single click (or keyboard Enter/Space) on the cover opens the primary supported reader format. The separate cover-edit control must remain independently clickable and must not trigger reading.
 
 Book content is rendered in sandboxed publication iframes. The SPA CSP permits only the required same-origin/blob frames and resources; `/show` responses retain `script-src 'none'` so ebook scripts cannot execute.
 

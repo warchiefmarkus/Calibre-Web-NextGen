@@ -317,7 +317,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setToc(flattenToc(view.book?.toc ?? []));
         setSectionFractions(view.getSectionFractions());
         const annotationPayload = await apiGet<{ annotations: ServerAnnotation[] }>(
-          `/annotations/${id}/data.json`,
+          `/annotations/${id}/data.json?format=${encodeURIComponent(fmt)}`,
         ).catch(() => ({ annotations: [] }));
         const loaded = annotationPayload.annotations
           .filter((row) => !!row.cfi_range)
@@ -416,6 +416,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       highlighted_text: selection.text,
       highlight_color: 'yellow',
       note_text: note || null,
+      format: fmt.toUpperCase(),
     });
     const annotation: FoliateAnnotation = {
       value: row.cfi_range ?? selection.value,
@@ -433,7 +434,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
   const removeAnnotation = async (annotation: FoliateAnnotation) => {
     if (!annotation.id) return;
-    await apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}`);
+    await apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}?format=${encodeURIComponent(fmt)}`);
     annotationsRef.current.delete(annotation.value);
     setAnnotations(Array.from(annotationsRef.current.values()));
     await viewRef.current?.deleteAnnotation(annotation);
@@ -446,7 +447,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     if (note === null) return;
     const row = await apiPatch<ServerAnnotation>(
       `/annotations/${id}/${encodeURIComponent(annotation.id)}`,
-      { note_text: note || null },
+      { note_text: note || null, format: fmt.toUpperCase() },
     );
     const updated = { ...annotation, note: row.note_text };
     annotationsRef.current.set(updated.value, updated);

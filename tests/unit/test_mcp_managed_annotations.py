@@ -51,3 +51,24 @@ def test_epubcfi_to_native(cfi, start, end, spine_index):
 def test_epubcfi_to_native_rejects_invalid_value():
     with pytest.raises(ValueError):
         epubcfi_to_native("/6/4!/4/2/1:3")
+
+
+@pytest.mark.unit
+def test_reader_annotation_format_preserves_fb2_namespace():
+    from flask import Flask
+    from cps import annotations
+    app = Flask(__name__)
+    with app.test_request_context('/annotations/1/data.json?format=fb2'):
+        assert annotations._reader_annotation_format() == 'FB2'
+    with app.test_request_context('/annotations/1', method='POST', json={'format': 'azw3'}):
+        assert annotations._reader_annotation_format({'format': 'azw3'}) == 'AZW3'
+
+
+@pytest.mark.unit
+def test_reader_annotation_format_rejects_unknown_namespace():
+    from flask import Flask
+    from cps import annotations
+    app = Flask(__name__)
+    with app.test_request_context('/annotations/1/data.json?format=pdf'):
+        with pytest.raises(ValueError):
+            annotations._reader_annotation_format()
