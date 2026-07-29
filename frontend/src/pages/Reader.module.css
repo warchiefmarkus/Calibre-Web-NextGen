@@ -9,7 +9,9 @@
   inset: 0;
   z-index: 1000;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 54px minmax(0, 1fr) 64px;
+  overflow: hidden;
   background: var(--reader-bg);
   color: var(--reader-text);
 }
@@ -46,6 +48,8 @@
 
 .topBar,
 .bottomBar {
+  min-width: 0;
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -109,9 +113,12 @@
 }
 
 .workspace {
+  min-width: 0;
   min-height: 0;
+  width: 100%;
   display: flex;
   position: relative;
+  overflow: hidden;
 }
 
 .stage {
@@ -143,7 +150,7 @@
   position: absolute;
   inset-block: 0;
   z-index: 2;
-  width: clamp(44px, 6vw, 88px);
+  width: clamp(56px, 9vw, 104px);
   display: grid;
   place-items: center;
   border: 0;
@@ -437,6 +444,7 @@
   .bookIdentity span { display: none; }
   .toolbar { gap: 0; }
   .iconButton { min-width: 34px; min-height: 34px; }
+  .tapZone { width: clamp(88px, 28vw, 128px); }
   .sidePanel {
     position: absolute;
     inset: 0 auto 0 0;

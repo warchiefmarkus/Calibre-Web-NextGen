@@ -137,8 +137,40 @@ function fileName(format: string): string {
   return `book.${extension}`;
 }
 
-function readerCss(settings: ReaderSettings): string {
+function readerCss(settings: ReaderSettings, compactViewport = false): string {
   const theme = THEME[settings.theme];
+  const compactReflow = compactViewport ? `
+    html {
+      inline-size: 100% !important;
+      min-inline-size: 0 !important;
+      max-inline-size: 100% !important;
+      overflow-x: hidden !important;
+      box-sizing: border-box !important;
+    }
+    body {
+      inline-size: auto !important;
+      width: auto !important;
+      min-inline-size: 0 !important;
+      min-width: 0 !important;
+      max-inline-size: 100% !important;
+      max-width: 100% !important;
+      margin-inline: 0 !important;
+      overflow-x: hidden !important;
+      box-sizing: border-box !important;
+    }
+    body * {
+      min-inline-size: 0 !important;
+      min-width: 0 !important;
+      max-inline-size: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    h1, h2, h3, h4, h5, h6, p, pre, code {
+      overflow-wrap: anywhere !important;
+    }
+    pre, code { white-space: pre-wrap !important; }
+    table { inline-size: 100% !important; table-layout: fixed !important; }
+  ` : '';
   return `
     :root { color-scheme: ${settings.theme === 'lightTheme' || settings.theme === 'sepiaTheme' ? 'light' : 'dark'}; }
     html, body { background: ${theme.background} !important; color: ${theme.text} !important; }
@@ -146,6 +178,7 @@ function readerCss(settings: ReaderSettings): string {
       line-height: ${settings.lineHeight / 100} !important; text-align: left !important; }
     a { color: ${theme.link} !important; }
     img, svg, video { max-width: 100% !important; }
+    ${compactReflow}
     ::selection { background: rgba(255, 214, 64, .55); }
   `;
 }
@@ -200,15 +233,29 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     const view = viewRef.current;
     const renderer = view?.renderer;
     if (!renderer) return;
+
+    const compactViewport = window.matchMedia('(max-width: 760px)').matches;
+    const viewportWidth = hostRef.current?.clientWidth
+      || window.visualViewport?.width
+      || window.innerWidth;
+    const effectiveMargin = compactViewport ? Math.min(next.margin, 12) : next.margin;
+    const effectiveInlineSize = compactViewport
+      ? Math.min(next.maxInlineSize, Math.max(1, viewportWidth))
+      : next.maxInlineSize;
+
     renderer.setAttribute('flow', next.flow);
-    renderer.setAttribute('margin', `${next.margin}px`);
-    const pageGapPercent = Math.max(3, Math.min(12, 3 + next.margin / 4));
+    renderer.setAttribute('margin', `${effectiveMargin}px`);
+    const pageGapPercent = compactViewport
+      ? 4
+      : Math.max(3, Math.min(12, 3 + next.margin / 4));
     renderer.setAttribute('gap', `${pageGapPercent}%`);
-    renderer.setAttribute('max-inline-size', `${next.maxInlineSize}px`);
-    renderer.setAttribute('max-column-count', String(next.spread === 'nonespread' ? 1 : next.maxColumnCount));
+    renderer.setAttribute('max-inline-size', `${effectiveInlineSize}px`);
+    renderer.setAttribute('max-column-count', String(
+      compactViewport || next.spread === 'nonespread' ? 1 : next.maxColumnCount,
+    ));
     renderer.toggleAttribute('animated', next.animated && next.flow === 'paginated');
     renderer.setAttribute('background', THEME[next.theme].background);
-    renderer.setStyles?.(readerCss(next));
+    renderer.setStyles?.(readerCss(next, compactViewport));
   }, []);
 
   const updateSettings = useCallback((patch: Partial<ReaderSettings>) => {
@@ -220,6 +267,22 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       return next;
     });
   }, [applySettings, saveSettings]);
+
+  useEffect(() => {
+    if (!settings) return;
+    let frame = 0;
+    const reflow = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => applySettings(settings));
+    };
+    window.addEventListener('resize', reflow);
+    window.visualViewport?.addEventListener('resize', reflow);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', reflow);
+      window.visualViewport?.removeEventListener('resize', reflow);
+    };
+  }, [applySettings, settings]);
 
 
   const dismissSelection = useCallback(() => {
