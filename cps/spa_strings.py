@@ -961,4 +961,31 @@ _("{ok} of {total} sources answered")
 _("…or paste an image URL")
 _("← Back to sign in")
 _("← Library")
+_("≤")
+_("≥")
+
+# #866 — SPA-only strings for the shelf page's Kobo-sync notice.
+_("Account settings")
+_("Books that are not on a Kobo-sync shelf are then removed from the device on its next sync. They stay in your library here.")
+_("Could not update your account setting.")
+_("Saving…")
+_("Sync only my selected shelves")
+_("Your Kobo is still set to sync your whole library, so marking this shelf does nothing on its own. Switch your account to shelf-only syncing to make it take effect.")
+
+# #1048 — SPA-only strings for the duplicates page's manual scan trigger and the
+# admin panel's duplicate-detection settings row.
+_("A duplicate scan is already running. This list updates when it finishes.")
+_("A one-time full duplicate scan is needed. Use “Scan for duplicates” above to run it.")
+_("Could not start the duplicate scan.")
+_("Duplicate detection settings")
+_("Duplicate scan started. It runs in the background — this list updates when it finishes.")
+_("Scan for duplicates")
+_("Starting scan…")
+
+# #997 — SPA-only strings for editing custom columns. The column's own name is
+# user data (it comes from the library), so only the surrounding chrome is
+# translatable; "{field} (comma separated)" takes that name as a placeholder.
+_("Custom columns")
+_("Not set")
+_("{field} (comma separated)")
 # ==== END AUTOGEN ====

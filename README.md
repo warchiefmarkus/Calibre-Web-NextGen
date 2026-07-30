@@ -168,6 +168,11 @@ services:
       # provider. Free; sign up at https://hardcover.app/account/api
       # - HARDCOVER_TOKEN=eyJhbGciOiJIUzI1NiI...
 
+      # Optional: your own ComicVine API key. ComicVine works without
+      # one, on a key shared by every install, so it can hit the rate
+      # limit. Free; sign up at https://comicvine.gamespot.com/api/
+      # - COMICVINE_API_KEY=...
+
     volumes:
       # Settings, user database, logs. Empty folder for new installs;
       # for existing CWA users, point at your existing /config.
@@ -505,6 +510,10 @@ CWA has built-in KOReader progress sync; no separate kosync server is needed.
 2. Point the plugin at `http://your-cwa:8083` and log in with your CWA username and password.
 3. Read on any device. Progress syncs back to CWA, and from there to Kobo if Kobo sync is enabled.
 
+**Keeping the plugin updated.** KOReader's [Updates Manager](https://github.com/advokatb/updatesmanager.koplugin) and [appstore.koplugin](https://github.com/kaz-utashiro/appstore.koplugin) can both update the plugin in place. Point either at the plugin's own repository, [`new-usemame/cwasync.koplugin`](https://github.com/new-usemame/cwasync.koplugin/releases) — not at this one. The plugin publishes a release only when the plugin itself changes, and its version is the server version it last changed in, so it can legitimately sit behind your server version; that alone doesn't mean anything is wrong. With the plugin repository configured, a check that reports no new release means the plugin stream has nothing newer.
+
+If your update manager is still pointed at this repository, switch it. That setup keeps working — a release that changes the plugin attaches the plugin download — but the plugin only appears on those releases, which is easy to misread as "no update available". The download on `/kosync` always serves the plugin bundled with your running server if you would rather update by hand.
+
 **Matching filenames across devices (OPDS downloads).** If you download books to KOReader over OPDS and sync progress by filename across several e-readers, turn on **Use server filenames** in KOReader's OPDS catalog settings (the checkbox when you add or edit the catalog). By default KOReader names a downloaded file `Author - Title.epub` from the catalog entry, which differs from the on-disk library name `Title - Author.epub` and forces a manual rename. CWA already sends the library name in the download's `Content-Disposition` header; with **Use server filenames** on, KOReader uses that name, so the file matches your library and your other devices without renaming.
 
 ### Kobo sync
@@ -638,34 +647,34 @@ The interface ships with the locales below. Completion is auto-refreshed on ever
 | Language | Completion | Strings | Fuzzy |
 |---|---|---:|---:|
 | English (source) | 100% | source | — |
-| Russian (`ru`) | `████████████████████` 100% | 2605/2606 | 0 |
-| Hungarian (`hu`) | `█████████████░░░░░░░` 63% | 1646/2606 | 123 |
-| French (`fr`) | `█████████████░░░░░░░` 63% | 1639/2606 | 129 |
-| German (`de`) | `████████████░░░░░░░░` 61% | 1584/2606 | 126 |
-| Spanish (`es`) | `███████████░░░░░░░░░` 53% | 1378/2606 | 196 |
-| Japanese (`ja`) | `██████████░░░░░░░░░░` 51% | 1320/2606 | 249 |
-| Portuguese (Brazil) (`pt_BR`) | `██████████░░░░░░░░░░` 50% | 1289/2606 | 369 |
-| Slovenian (`sl`) | `█████████░░░░░░░░░░░` 47% | 1214/2606 | 320 |
-| Chinese (Simplified, China) (`zh_Hans_CN`) | `█████████░░░░░░░░░░░` 45% | 1175/2606 | 350 |
-| Dutch (`nl`) | `████████░░░░░░░░░░░░` 38% | 983/2606 | 292 |
-| Italian (`it`) | `███████░░░░░░░░░░░░░` 37% | 958/2606 | 269 |
-| Polish (`pl`) | `███████░░░░░░░░░░░░░` 36% | 950/2606 | 273 |
-| Korean (`ko`) | `███████░░░░░░░░░░░░░` 36% | 949/2606 | 269 |
-| Arabic (`ar`) | `██████░░░░░░░░░░░░░░` 30% | 791/2606 | 286 |
-| Slovak (`sk`) | `██████░░░░░░░░░░░░░░` 29% | 750/2606 | 315 |
-| Portuguese (`pt`) | `█████░░░░░░░░░░░░░░░` 27% | 702/2606 | 362 |
-| Indonesian (`id`) | `█████░░░░░░░░░░░░░░░` 26% | 679/2606 | 364 |
-| Galician (`gl`) | `█████░░░░░░░░░░░░░░░` 26% | 678/2606 | 363 |
-| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `█████░░░░░░░░░░░░░░░` 24% | 619/2606 | 381 |
-| Swedish (`sv`) | `████░░░░░░░░░░░░░░░░` 22% | 585/2606 | 391 |
-| Greek (`el`) | `████░░░░░░░░░░░░░░░░` 20% | 507/2606 | 400 |
-| Czech (`cs`) | `████░░░░░░░░░░░░░░░░` 18% | 478/2606 | 409 |
-| Ukrainian (`uk`) | `███░░░░░░░░░░░░░░░░░` 17% | 443/2606 | 373 |
-| Norwegian (`no`) | `███░░░░░░░░░░░░░░░░░` 16% | 431/2606 | 438 |
-| Vietnamese (`vi`) | `███░░░░░░░░░░░░░░░░░` 16% | 422/2606 | 360 |
-| Finnish (`fi`) | `███░░░░░░░░░░░░░░░░░` 14% | 355/2606 | 389 |
-| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 11% | 290/2606 | 386 |
-| Khmer (`km`) | `██░░░░░░░░░░░░░░░░░░` 8% | 207/2606 | 345 |
+| Polish (`pl`) | `████████████████████` 100% | 2609/2609 | 0 |
+| Russian (`ru`) | `████████████████████` 100% | 2606/2609 | 0 |
+| French (`fr`) | `█████████████████░░░` 84% | 2187/2609 | 129 |
+| Dutch (`nl`) | `█████████████░░░░░░░` 66% | 1723/2609 | 292 |
+| Hungarian (`hu`) | `█████████████░░░░░░░` 63% | 1646/2609 | 123 |
+| German (`de`) | `████████████░░░░░░░░` 61% | 1584/2609 | 126 |
+| Portuguese (Brazil) (`pt_BR`) | `███████████░░░░░░░░░` 54% | 1409/2609 | 312 |
+| Spanish (`es`) | `███████████░░░░░░░░░` 53% | 1378/2609 | 196 |
+| Japanese (`ja`) | `██████████░░░░░░░░░░` 51% | 1320/2609 | 249 |
+| Slovenian (`sl`) | `█████████░░░░░░░░░░░` 46% | 1214/2609 | 320 |
+| Chinese (Simplified, China) (`zh_Hans_CN`) | `█████████░░░░░░░░░░░` 45% | 1175/2609 | 350 |
+| Italian (`it`) | `███████░░░░░░░░░░░░░` 37% | 958/2609 | 269 |
+| Korean (`ko`) | `███████░░░░░░░░░░░░░` 36% | 949/2609 | 269 |
+| Arabic (`ar`) | `██████░░░░░░░░░░░░░░` 30% | 791/2609 | 286 |
+| Slovak (`sk`) | `██████░░░░░░░░░░░░░░` 29% | 750/2609 | 315 |
+| Portuguese (`pt`) | `█████░░░░░░░░░░░░░░░` 27% | 702/2609 | 362 |
+| Galician (`gl`) | `█████░░░░░░░░░░░░░░░` 26% | 678/2609 | 363 |
+| Indonesian (`id`) | `█████░░░░░░░░░░░░░░░` 26% | 679/2609 | 364 |
+| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `█████░░░░░░░░░░░░░░░` 24% | 619/2609 | 381 |
+| Swedish (`sv`) | `████░░░░░░░░░░░░░░░░` 22% | 585/2609 | 391 |
+| Greek (`el`) | `████░░░░░░░░░░░░░░░░` 19% | 507/2609 | 400 |
+| Czech (`cs`) | `████░░░░░░░░░░░░░░░░` 18% | 478/2609 | 409 |
+| Ukrainian (`uk`) | `███░░░░░░░░░░░░░░░░░` 17% | 443/2609 | 373 |
+| Norwegian (`no`) | `███░░░░░░░░░░░░░░░░░` 16% | 431/2609 | 438 |
+| Vietnamese (`vi`) | `███░░░░░░░░░░░░░░░░░` 16% | 422/2609 | 360 |
+| Finnish (`fi`) | `███░░░░░░░░░░░░░░░░░` 14% | 355/2609 | 389 |
+| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 11% | 290/2609 | 386 |
+| Khmer (`km`) | `██░░░░░░░░░░░░░░░░░░` 8% | 207/2609 | 345 |
 <!-- TRANSLATION_STATUS_END -->
 
 ---

@@ -29,6 +29,7 @@ def _fake_calibre_db(book):
     return SimpleNamespace(
         get_filtered_book=lambda *args, **kwargs: book,
         get_book=lambda _id: book,
+        get_cc_columns=lambda *args, **kwargs: [],
         session=MagicMock(),
     )
 

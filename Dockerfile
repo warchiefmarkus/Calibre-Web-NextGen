@@ -266,6 +266,18 @@ LABEL build_version="Version:- ${VERSION}"
 LABEL build_date="${BUILD_DATE}"
 LABEL maintainer="CrocodileStick"
 
+# Where this install keeps its own state. cps.constants.CONFIG_DIR reads this
+# and otherwise falls back to BASE_DIR — the read-only app tree — so anything
+# derived from it (migration markers in .cwa_migrations/, caches, per-user
+# markers) lands somewhere that ships owned by the build user and is wiped on
+# upgrade. Setting it once here covers every s6 service, since they all run
+# under `#!/usr/bin/with-contenv bash` and inherit the container environment;
+# previously only cwa-init and svc-calibre-web-automated exported it by hand,
+# so the ingest service re-ran all five marker migrations on every ingest and
+# logged EACCES each time (#1162). Per-service exports are kept as
+# belt-and-braces; this is the one that must not drift.
+ENV CALIBRE_DBPATH=/config
+
 # Set the default shell for the following RUN instructions to bash instead of sh
 SHELL ["/bin/bash", "-c"]
 
@@ -373,7 +385,7 @@ RUN \
   # STEP 7.5 - ADD files referencing the versions of the installed main packages
   echo "$VERSION" >| /app/CWA_RELEASE && \
   echo "$KEPUBIFY_RELEASE" >| /app/KEPUBIFY_RELEASE && \
-  echo "$CALIBRE_RELEASE" > /CALIBRE_RELEASE
+  echo "$CALIBRE_RELEASE" > /app/CALIBRE_RELEASE
 
 # Add unrar from unrar stage
 COPY --from=unrar /usr/bin/unrar-ubuntu /usr/bin/unrar

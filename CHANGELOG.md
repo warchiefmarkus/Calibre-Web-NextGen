@@ -18,6 +18,154 @@ is for things you can see or feel when running the app.
 
 ### Fixed
 
+- **KOReader's plugin updater kept saying "no new release available" when a newer
+  sync plugin existed.** If you had pointed Updates Manager (or
+  appstore.koplugin) at the main Calibre-Web NextGen repository, it stopped
+  finding updates after v4.1.16 — nine releases in a row shipped no plugin
+  download for it to see, so it reported you were current while three plugin
+  fixes went out without reaching your device. Plugin-changing releases now
+  attach the plugin download automatically, so that setup updates itself again.
+  Releases that don't touch the plugin still publish nothing, so you won't be
+  prompted to reinstall an identical plugin.
+
+### Added
+
+- **The KOReader page now explains how to auto-update the sync plugin.** Visiting
+  `/kosync` only ever described the manual download-and-copy route, so the
+  in-place update path existed but was undiscoverable — the repository to point
+  an update manager at was written down nowhere a user would look. That page and
+  the README now name it, and spell out why the plugin's version can sit behind
+  your server version without anything being wrong.
+
+- **Every CWA settings page 404'd when the app was mounted under a subpath.** If
+  you run Calibre-Web NextGen behind a reverse proxy on a prefix that starts the
+  same way as its own pages — `/cwa` being the obvious one — then "CWA settings
+  (ingest/convert)", "Duplicate detection settings", the statistics dashboard,
+  and the library-refresh button all came back as Not Found, while the ordinary
+  Admin links right beside them worked. That mismatch was the tell: the mount
+  prefix was being removed from any address that merely *began* with the same
+  letters, so `/cwa-settings` was cut down to `-settings`, which is not a page.
+  All 37 CWA pages and actions were affected — settings, duplicate detection,
+  library refresh, log viewing and downloads, the EPUB fixer, library conversion,
+  scheduled tasks and the statistics screens. The prefix is now only removed at a
+  real path boundary, so both styles of proxy setup work: one that strips the
+  prefix before passing the request on, and one that leaves it in place. A prefix
+  written with a trailing slash (`PROXY_SCRIPT_NAME=/cwa/`) is also accepted now
+  — it used to break every page in a second, separate way. Reported by
+  [@chloeroform](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1248)
+  ([#1248](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1248)).
+
+## [v4.1.25] - 2026-07-30
+
+### Added
+
+- **You can give ComicVine your own API key.** ComicVine searches have always
+  gone out on a single key shipped inside the app that every install shares, so
+  one busy install can use up the allowance for everyone and searches quietly
+  come back empty. You can now put your own free key in the 🔑 Keys panel of the
+  metadata search window and get your own allowance. Nothing changes if you
+  don't: ComicVine keeps working out of the box on the shared key. If you prefer
+  to configure it at the container level, `COMICVINE_API_KEY` and
+  `COMICVINE_API_KEY_FILE` work too. When ComicVine does refuse a search, the log
+  now says so and tells you which key was used, instead of looking like the book
+  simply wasn't found. Reported by
+  [@tomaioo](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1242)
+  ([#1242](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1242)).
+
+- **Custom columns are editable in the new UI.** Your own calibre columns — page
+  counts, reading status, notes, shelf location — showed up on a book's page but
+  there was nowhere to change them, so setting one meant switching back to the
+  classic view. The edit screen now has a Custom columns section with the right
+  control for each column type: a number box for integers, a date picker, a
+  yes/no menu, a star rating, a text area for long notes, and a dropdown of the
+  allowed values for enumerated columns. Reported by @jasonxbergman (#997) and
+  by mx.meredith on Discord.
+
+### Fixed
+
+- **A mistyped API-key file path can no longer hang or crash the whole server.**
+  If you supply a provider token by pointing `HARDCOVER_TOKEN_FILE` or
+  `COMICVINE_API_KEY_FILE` at a file (the Docker-secrets style), the app reads
+  that file when it needs the token. Point it at something that isn't a plain
+  file — a named pipe nothing is writing to, or a device like `/dev/zero` — and
+  the read never finished: the whole app froze, or memory climbed until it was
+  killed. Both now fail cleanly with a log line naming the file, and the read is
+  size-limited. A correctly configured secret file behaves exactly as before.
+
+- **A custom column holding just the word "None" no longer erases itself when
+  you save.** Type `None` into a notes or comments column — on its own, as the
+  whole value — and the column came back empty, in both the new UI and the
+  classic editor, with the save reporting success. Anything already in the
+  column was lost. `None` is the value the yes/no dropdown uses behind the
+  scenes to mean "not set", and that meaning was being applied to every kind
+  of column, including free-text ones where it is ordinary writing. Number and
+  date columns are deliberately unchanged: there the word still empties the
+  field, as it always has
+  ([#1233](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1233)).
+
+- **Deleting a highlight in KOReader now actually removes it from the server.**
+  Creating highlights synced fine, but deleting one reported "Server push
+  failed" and the deletion never went anywhere — reopen the book on another
+  device and the highlight was still there. The push was failing inside the
+  plugin before it ever became a request, so nothing showed up in the server log
+  either, which is why this took several passes to find. The KOReader plugin is
+  updated to 4.1.25; open KOReader's Updates Manager to pick it up, or the plugin
+  page in its menu will show the new version. Reported by
+  [@iroQuai](https://github.com/new-usemame/Calibre-Web-NextGen/issues/920)
+  ([#920](https://github.com/new-usemame/Calibre-Web-NextGen/issues/920),
+  [#905](https://github.com/new-usemame/Calibre-Web-NextGen/issues/905),
+  [#699](https://github.com/new-usemame/Calibre-Web-NextGen/issues/699)).
+
+- **The version number on the admin page no longer links to a release that
+  doesn't exist.** On a build that was never stamped with a version — running
+  from a source checkout rather than one of the published Docker images — the
+  version read `v0.0.0`, and because that looks like an ordinary version it was
+  turned into a link to a release tag of that name, which 404s. It now renders
+  as plain text when there is nothing real to point at. The same page also
+  stopped showing a stray blank line after the version, and now agrees with the
+  version the app reports to other services. Contributed by
+  [@chloeroform](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1231)
+  ([#1231](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1231)).
+
+- **Brazilian Portuguese covers 120 more of the interface, and 57 phrases that
+  were holding the wrong text are corrected.** With the language set to
+  Brazilian Portuguese, the Hardcover match-review screens, the announcement
+  email form, backup and restore messages, the app-password help text and a
+  long tail of task and error messages still read in English. Some of those
+  were worse than untranslated: gettext had guessed them from a similar English
+  sentence and marked the guess provisional, so the file was holding Portuguese
+  that said something else entirely — "Hardcover ID applied successfully" was
+  carrying the text for "{} user(s) removed successfully", and "Email Your
+  Users" was carrying "Edit Users". A provisional entry is dropped when the
+  catalog is compiled, so those showed in English while the wrong Portuguese sat
+  in the file waiting for somebody to confirm it. All 57 are now written out
+  properly, which takes Brazilian Portuguese to 1,409 of 2,609 phrases.
+  Contributed by [@pedronora](https://github.com/pedronora)
+  ([#1227](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1227)).
+
+- **Ingest told you to install an ACSM plugin you already had.** When an `.acsm`
+  fulfillment ticket failed to convert, the log always said no ACSM-capable
+  plugin was installed — even when one was installed, had run, and had printed
+  the actual reason it gave up, such as `DeACSM v0.0.16: ADE auth is missing or
+  broken`. That sent people looking for a missing plugin instead of at the real
+  problem. The ingest log now repeats the plugin's own reason when a plugin ran,
+  and still suggests installing one only when nothing handled the file. Reported
+  by @auspex (#984).
+
+## [v4.1.24] - 2026-07-29
+
+### Fixed
+
+- **The "Browse languages" button on the What's New page now reads in Russian.** Russian is otherwise fully translated, so this one phrase sat in English on a screen that already said "Просмотр авторов" and "Просмотр тегов" right beside it. The new interface uses its English text as the lookup key, so a missing translation quietly renders the English rather than reporting anything — which is how a single gap like this survives until someone reading the page notices it. Russian is now complete at 2,606 of 2,606 phrases. Contributed by [@standhaftsohnsergius](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1220) ([#1220](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1220)).
+
+- **The new interface now speaks Dutch throughout, instead of showing most of its labels in English.** The sidebar, search, upload, book pages, shelves and settings were largely English even with the language set to Dutch, which is what "several labels are still in english, others in Dutch" meant when it was reported. Nothing was broken, which is why it lasted: the new interface uses its English text as the lookup key, so a missing translation quietly shows the English rather than reporting anything, and only someone reading the screens would notice. Of the 821 phrases the new interface can translate, Dutch had 84. It now has all of them — 737 added. Along the way the wording was lined up with the Dutch already used on the older screens, so tags read as "Labels" and shelves as "Boekenplanken" everywhere rather than changing name depending on which page you were looking at. The five built-in shelves ("Currently Reading", "Highly Rated" and the rest) were a separate problem found while checking the fix: they come from a different part of the code, so they sat in English in an otherwise Dutch sidebar even once everything else was translated, and they are now Dutch too. So were the sidebar's Appearance and theme settings, the sort fields, the whole list of search filter conditions ("contains", "is between", "is empty") and the What's New buttons: the check that was meant to catch missing Dutch could only see phrases written out at the point they are displayed, and those are assembled from a list, so 76 of them were never checked and stayed English while the check reported Dutch as complete. The check now works from the full set of phrases the app ships for translation, which is what the two earlier gaps had in common, so a phrase cannot go missing by virtue of how it happens to be written. Release notes stay in English on purpose. Other languages are still mostly untranslated in the new interface and are tracked separately. Reported by [@iroQuai](https://github.com/new-usemame/Calibre-Web-NextGen/issues/886) ([#886](https://github.com/new-usemame/Calibre-Web-NextGen/issues/886), [#1217](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1217)).
+
+- **Most of the new interface now speaks French instead of falling back to English.** Uploading a book, editing its metadata, the Files and convert-format panel, your profile page, the admin screens, the cover picker and the reader were largely in English even with the interface set to French. Nothing was broken, which is why it lasted: the new interface uses its English text as the lookup key, so a missing translation quietly shows the English rather than reporting anything, and only someone reading the screens would notice. Of the 821 phrases the new interface can translate, French had 276. It now has all of them — 545 added — so the pages in the report are covered along with the ones not yet reached, including the Appearance and theme settings, the sort fields and the full list of search filter conditions ("contains", "is between", "is empty"). Two checks were added so this cannot creep back unnoticed: one fails the build if a French phrase goes missing, and one covers all 28 languages, catching a translation that loses a placeholder like the name in "Reset password for {name}" — which would look translated while rendering wrong. Release notes stay in English on purpose. Other languages are still mostly untranslated in the new interface and are tracked separately. Reported by [@hayvan96](https://github.com/new-usemame/Calibre-Web-NextGen/issues/615) ([#615](https://github.com/new-usemame/Calibre-Web-NextGen/issues/615)).
+
+- **A KOReader sync that could not read the device's highlights no longer reports them as deleted.** To work out what you removed, the plugin compares the highlights on the device now against the ones it last sent, and anything missing is named to the server as a deletion. Whether it had actually managed to read the device was decided by a fixed property of the device type rather than by the read itself, so a read that came back with nothing was indistinguishable from a book you had cleared by hand — and every highlight in it was named for deletion. Coming back with nothing is not unusual: the plugin picks the source before asking the server for the book's highlights and reads it afterwards, so closing the book while that request is in flight is enough, as is the reader's own database being locked or an SD card being pulled. The server carries out the deletions it is given and does not bring a deleted highlight back, so the loss was permanent. A read that fails now says so, and a sync that cannot see your highlights leaves them alone; one that genuinely finds none still syncs the deletion, so removing your last highlight works as before. Found while investigating [#920](https://github.com/new-usemame/Calibre-Web-NextGen/issues/920), reported by [@iroQuai](https://github.com/new-usemame/Calibre-Web-NextGen/issues/699). Needs plugin 4.1.24 on the device.
+
+- **Adding a book no longer fills the log with "Permission denied" warnings, and the one-time database upgrades now actually record that they've run.** Every ingest printed five warnings about being unable to write to `/app/calibre-web-automated/.cwa_migrations`, a folder that doesn't exist and isn't writable. The upgrades themselves worked, so nothing was broken in a way you could see — but because they could never write down that they'd finished, they ran again from scratch on every single book that came in. The cause was that the app works out where to keep its own files from a setting that was only being handed to two of the eleven background services. The ingest service wasn't one of them, so it kept its notes in the program folder instead of your config folder, while everything else used the right one. That setting is now applied once for the whole container, so every service agrees on where state lives, including any added later. Reported by [@auspex](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1162) ([#1162](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1162)).
+
 - **When a highlight fails to sync, KOReader now tells you why instead of just "Server push failed".** The plugin knew the reason and threw it away: it was written to the debug log, which is off unless you have turned it on, and the part of the code that shows the message was handed a blank. So a sync that never left the device looked exactly like one the server had rejected, and neither the device nor the server had anything written down about it. The reason is now shown on screen and recorded in `crash.log`. This is a diagnostic change rather than a fix for the underlying failure, and it is what the remaining investigation into highlight deletions ([#920](https://github.com/new-usemame/Calibre-Web-NextGen/issues/920), reported by [@iroQuai](https://github.com/new-usemame/Calibre-Web-NextGen/issues/920)) has been waiting on.
 
 - **A running install is told about new releases again, instead of being stuck on whatever was newest the day its container started.** The admin page's "Update available" line compared your installed version against a value fetched once, at container start, and written to a file — so a container that had been up for a week was still comparing against the release list from a week earlier, and the notice for anything published since never appeared. Restarting the container was the only way to refresh it, which is the one thing someone who doesn't know an update exists has no reason to do. The latest release is now looked up when the page is actually rendered, cached for six hours so it costs at most a handful of requests a day, and run on a background thread so a slow lookup delays only that one page and never holds up anyone else's browsing. Two related mix-ups went with it: `--version` on the command line and the updater's own version report both named the newest *published* release rather than the one you were running, which made the updater tell some installs they were already current when they weren't. Reported by [@chloeroform](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1108) ([#1108](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1108)).
