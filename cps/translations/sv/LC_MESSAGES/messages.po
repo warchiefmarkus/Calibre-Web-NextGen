@@ -210,7 +210,7 @@ msgstr "Inget giltigt språk anges"
 msgid "No Valid Book Language Given"
 msgstr "Inget giltigt bokspråk anges"
 
-#: cps/admin.py:920 cps/editbooks.py:682
+#: cps/admin.py:920 cps/editbooks.py:683
 msgid "Parameter not found"
 msgstr "Parameter hittades inte"
 
@@ -435,8 +435,8 @@ msgid "Success! Gmail Account Verified."
 msgstr ""
 
 #: cps/admin.py:1915 cps/admin.py:1918 cps/admin.py:2527 cps/admin.py:2763
-#: cps/admin.py:2888 cps/admin.py:3149 cps/editbooks.py:1157
-#: cps/editbooks.py:2048 cps/shelf.py:148 cps/shelf.py:226 cps/shelf.py:297
+#: cps/admin.py:2888 cps/admin.py:3149 cps/editbooks.py:1169
+#: cps/editbooks.py:2060 cps/shelf.py:148 cps/shelf.py:226 cps/shelf.py:297
 #: cps/shelf.py:332 cps/shelf.py:389 cps/shelf.py:464 cps/shelf.py:547
 #: cps/shelf.py:672 cps/tasks/convert.py:145 cps/web.py:3106
 #, python-format
@@ -1324,100 +1324,100 @@ msgstr ""
 msgid "Invalid resolution strategy"
 msgstr "Ogiltig roll"
 
-#: cps/editbooks.py:121 cps/editbooks.py:178
+#: cps/editbooks.py:122 cps/editbooks.py:179
 msgid ""
 "Ingest folder is not writable. Check your /cwa-book-ingest volume "
 "permissions."
 msgstr ""
 
-#: cps/editbooks.py:130
+#: cps/editbooks.py:131
 msgid "Missing or invalid book id for format upload"
 msgstr ""
 
-#: cps/editbooks.py:136
+#: cps/editbooks.py:137
 msgid "Cannot upload format: Book no longer exists in library"
 msgstr ""
 
-#: cps/api/upload.py:75 cps/api/upload.py:117 cps/editbooks.py:161
-#: cps/editbooks.py:192 cps/templates/book_edit.html:94
+#: cps/api/upload.py:75 cps/api/upload.py:117 cps/editbooks.py:162
+#: cps/editbooks.py:193 cps/templates/book_edit.html:94
 #: cps/templates/layout.html:362
 msgid "Upload done, processing, please wait..."
 msgstr "Uppladdning klar, bearbetning, vänligen vänta ..."
 
-#: cps/editbooks.py:166 cps/editbooks.py:196
+#: cps/editbooks.py:167 cps/editbooks.py:197
 #, fuzzy
 msgid "Failed to queue upload for processing"
 msgstr "Det gick inte att skapa sökväg för omslag"
 
-#: cps/editbooks.py:212
+#: cps/editbooks.py:213
 msgid "Source or destination format for conversion missing"
 msgstr "Källa eller målformat för konvertering saknas"
 
-#: cps/editbooks.py:220
+#: cps/editbooks.py:221
 #, python-format
 msgid "Book successfully queued for converting to %(book_format)s"
 msgstr "Boken är i kö för konvertering till %(book_format)s"
 
-#: cps/editbooks.py:224
+#: cps/editbooks.py:225
 #, python-format
 msgid "There was an error converting this book: %(res)s"
 msgstr "Det gick inte att konvertera den här boken: %(res)s"
 
-#: cps/editbooks.py:377 cps/editbooks.py:1408 cps/editbooks.py:1995
+#: cps/editbooks.py:378 cps/editbooks.py:1420 cps/editbooks.py:2007
 #, fuzzy
 msgid "File type isn't allowed to be uploaded to this server"
 msgstr "Filändelsen '%(ext)s' får inte laddas upp till den här servern"
 
-#: cps/editbooks.py:382 cps/editbooks.py:1414 cps/editbooks.py:2006
+#: cps/editbooks.py:383 cps/editbooks.py:1426 cps/editbooks.py:2018
 #, python-format
 msgid "File extension '%(ext)s' is not allowed to be uploaded to this server"
 msgstr "Filändelsen '%(ext)s' får inte laddas upp till den här servern"
 
-#: cps/editbooks.py:386 cps/editbooks.py:1418 cps/editbooks.py:2011
+#: cps/editbooks.py:387 cps/editbooks.py:1430 cps/editbooks.py:2023
 msgid "File to be uploaded must have an extension"
 msgstr "Filen som ska laddas upp måste ha en ändelse"
 
-#: cps/editbooks.py:940 cps/editbooks.py:1679 cps/web.py:783 cps/web.py:3287
-#: cps/web.py:3468 cps/web.py:3618
+#: cps/editbooks.py:941 cps/editbooks.py:1691 cps/web.py:783 cps/web.py:3287
+#: cps/web.py:3468 cps/web.py:3614
 msgid ""
 "Oops! Selected book is unavailable. File does not exist or is not accessible"
 msgstr ""
 "Hoppsan! Vald boktitel är inte tillgänglig. Filen finns inte eller är inte "
 "tillgänglig"
 
-#: cps/editbooks.py:980 cps/editbooks.py:2078
+#: cps/editbooks.py:981 cps/editbooks.py:2090
 msgid "User has no rights to upload cover"
 msgstr ""
 
-#: cps/editbooks.py:988
+#: cps/editbooks.py:989
 msgid "Cover is locked. Unlock it on the cover-picker page first."
 msgstr ""
 
-#: cps/editbooks.py:1011 cps/editbooks.py:1396
+#: cps/editbooks.py:1023 cps/editbooks.py:1408
 msgid "Identifiers are not Case Sensitive, Overwriting Old Identifier"
 msgstr ""
 "Identifierare är inte skiftlägeskänsliga, skriver över gammal identifierare"
 
-#: cps/editbooks.py:1023 cps/editbooks.py:1370 cps/editbooks.py:1798
+#: cps/editbooks.py:1035 cps/editbooks.py:1382 cps/editbooks.py:1810
 #, fuzzy, python-format
 msgid "'%(langname)s' is not a valid language"
 msgstr "%(langname)s är inte ett giltigt språk"
 
-#: cps/editbooks.py:1142
+#: cps/editbooks.py:1154
 msgid "Metadata successfully updated"
 msgstr "Metadata uppdaterades"
 
-#: cps/editbooks.py:1162
+#: cps/editbooks.py:1174
 #, python-brace-format
 msgid "Error editing book: {}"
 msgstr ""
 
-#: cps/editbooks.py:1255 cps/editbooks.py:1305 cps/editbooks.py:2096
+#: cps/editbooks.py:1267 cps/editbooks.py:1317 cps/editbooks.py:2108
 #: cps/updater.py:685 cps/uploader.py:142 cps/uploader.py:151
 msgid "Unknown"
 msgstr "Okänd"
 
-#: cps/editbooks.py:1309
+#: cps/editbooks.py:1321
 msgid ""
 "Uploaded book probably exists in the library, consider to change before "
 "upload new: "
@@ -1425,92 +1425,92 @@ msgstr ""
 "Uppladdad bok finns förmodligen i biblioteket, överväg att ändra innan du "
 "laddar upp nya: "
 
-#: cps/editbooks.py:1426
+#: cps/editbooks.py:1438
 #, python-format
 msgid "File %(filename)s could not saved to temp dir"
 msgstr "Filen %(filename)s kunde inte sparas i temp dir"
 
-#: cps/editbooks.py:1446
+#: cps/editbooks.py:1458
 #, python-format
 msgid "Failed to Move Cover File %(file)s: %(error)s"
 msgstr "Det gick inte att flytta omslagsfil %(file)s: %(error)s"
 
-#: cps/editbooks.py:1534 cps/editbooks.py:1536
+#: cps/editbooks.py:1546 cps/editbooks.py:1548
 msgid "Book Format Successfully Deleted"
 msgstr "Bokformat har tagits bort"
 
-#: cps/editbooks.py:1543 cps/editbooks.py:1545
+#: cps/editbooks.py:1555 cps/editbooks.py:1557
 msgid "Book Successfully Deleted"
 msgstr "Boken har tagits bort"
 
-#: cps/editbooks.py:1660
+#: cps/editbooks.py:1672
 msgid "You are missing permissions to delete books"
 msgstr ""
 
-#: cps/editbooks.py:1703
+#: cps/editbooks.py:1715
 msgid "edit metadata"
 msgstr "redigera metadata"
 
-#: cps/editbooks.py:1757
+#: cps/editbooks.py:1769
 #, python-format
 msgid "Seriesindex: %(seriesindex)s is not a valid number, skipping"
 msgstr ""
 
-#: cps/editbooks.py:2000
+#: cps/editbooks.py:2012
 msgid "User has no rights to upload additional file formats"
 msgstr ""
 
-#: cps/editbooks.py:2024
+#: cps/editbooks.py:2036
 #, python-format
 msgid "Failed to create path %(path)s (Permission denied)."
 msgstr "Det gick inte att skapa sökväg %(path)s (behörighet nekad)."
 
-#: cps/editbooks.py:2031
+#: cps/editbooks.py:2043
 #, python-format
 msgid "Failed to store file %(file)s."
 msgstr "Det gick inte att lagra filen %(file)s."
 
-#: cps/editbooks.py:2055
+#: cps/editbooks.py:2067
 #, python-format
 msgid "File format %(ext)s added to %(book)s"
 msgstr "Filformatet %(ext)s lades till %(book)s"
 
-#: cps/editbooks.py:2357
+#: cps/editbooks.py:2369
 #, fuzzy
 msgid "Book not found"
 msgstr "Token hittades inte"
 
-#: cps/editbooks.py:2361
+#: cps/editbooks.py:2373
 msgid "Book has no file formats on disk to reload from"
 msgstr ""
 
-#: cps/editbooks.py:2382
+#: cps/editbooks.py:2394
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
 msgstr "%(format)s-format hittades inte på disken"
 
-#: cps/editbooks.py:2402
+#: cps/editbooks.py:2414
 #, python-format
 msgid "Could not parse metadata from %(format)s file: %(err)s"
 msgstr ""
 
-#: cps/editbooks.py:2523
+#: cps/editbooks.py:2535
 #, python-format
 msgid ""
 "Could not rename the book folder to match the reloaded metadata: %(err)s"
 msgstr ""
 
-#: cps/editbooks.py:2545
+#: cps/editbooks.py:2557
 #, python-format
 msgid "Could not save reloaded metadata: %(err)s"
 msgstr ""
 
-#: cps/editbooks.py:2551
+#: cps/editbooks.py:2563
 #, python-format
 msgid "Reloaded %(n)d field(s) from on-disk %(fmt)s"
 msgstr ""
 
-#: cps/editbooks.py:2554
+#: cps/editbooks.py:2566
 msgid "On-disk metadata matches current — no fields updated"
 msgstr ""
 
@@ -1607,12 +1607,12 @@ msgstr "Skicka till Kindle"
 msgid "The requested file could not be read. Maybe wrong permissions?"
 msgstr "Den begärda filen kunde inte läsas. Kanske fel behörigheter?"
 
-#: cps/helper.py:767
+#: cps/helper.py:837
 #, python-brace-format
 msgid "Read status could not set: {}"
 msgstr ""
 
-#: cps/helper.py:795
+#: cps/helper.py:865
 #, python-format
 msgid ""
 "Deleting bookfolder for book %(id)s failed, path has subfolders: %(path)s"
@@ -1620,19 +1620,19 @@ msgstr ""
 "Borttagning av bokmapp för boken %(id)s misslyckades, sökvägen har "
 "undermappar: %(path)s"
 
-#: cps/helper.py:807
+#: cps/helper.py:877
 #, python-format
 msgid "Deleting book %(id)s failed: %(message)s"
 msgstr "Borttagning av boken %(id)s misslyckades: %(message)s"
 
-#: cps/helper.py:818
+#: cps/helper.py:888
 #, fuzzy, python-format
 msgid ""
 "Deleting book %(id)s from database only, book path in database not valid: "
 "%(path)s"
 msgstr "Borttagning av boken %(id)s, boksökväg inte giltig: %(path)s"
 
-#: cps/helper.py:908
+#: cps/helper.py:978
 #, fuzzy, python-format
 msgid ""
 "Rename author from: '%(src)s' to '%(dest)s' failed with error: %(error)s"
@@ -1640,133 +1640,133 @@ msgstr ""
 "Byt namn på titel från: \"%(src)s\" till \"%(dest)s\" misslyckades med fel: "
 "%(error)s"
 
-#: cps/helper.py:977 cps/helper.py:986
+#: cps/helper.py:1047 cps/helper.py:1056
 #, python-format
 msgid "File %(file)s not found on Google Drive"
 msgstr "Filen %(file)s hittades inte på Google Drive"
 
-#: cps/helper.py:1076
+#: cps/helper.py:1146
 #, python-format
 msgid "Rename title from: '%(src)s' to '%(dest)s' failed with error: %(error)s"
 msgstr ""
 "Byt namn på titel från: \"%(src)s\" till \"%(dest)s\" misslyckades med fel: "
 "%(error)s"
 
-#: cps/helper.py:1115
+#: cps/helper.py:1185
 #, python-format
 msgid "Book path %(path)s not found on Google Drive"
 msgstr "Boksökvägen %(path)s hittades inte på Google Drive"
 
-#: cps/helper.py:1176
+#: cps/helper.py:1246
 msgid "Found an existing account for this Email address"
 msgstr ""
 
-#: cps/helper.py:1184
+#: cps/helper.py:1254
 msgid "This username is already taken"
 msgstr "Detta användarnamn är redan taget"
 
-#: cps/helper.py:1198
+#: cps/helper.py:1268
 #, fuzzy
 msgid "Invalid Email address format"
 msgstr "Ogiltigt e-postadressformat"
 
-#: cps/helper.py:1220
+#: cps/helper.py:1290
 msgid "Password doesn't comply with password validation rules"
 msgstr ""
 
-#: cps/helper.py:1564
+#: cps/helper.py:1634
 msgid ""
 "Python module 'advocate' is not installed but is needed for cover uploads"
 msgstr ""
 
-#: cps/helper.py:1572 cps/helper.py:1607
+#: cps/helper.py:1642 cps/helper.py:1677
 msgid "Error Downloading Cover"
 msgstr "Fel vid hämtning av omslaget"
 
-#: cps/helper.py:1576 cps/helper.py:1584
+#: cps/helper.py:1646 cps/helper.py:1654
 #, python-format
 msgid "Cover image exceeds maximum size of %(size)s MB"
 msgstr ""
 
-#: cps/helper.py:1593 cps/helper.py:1640 cps/helper.py:1653 cps/helper.py:1656
+#: cps/helper.py:1663 cps/helper.py:1710 cps/helper.py:1723 cps/helper.py:1726
 msgid "Cover-file is not a valid image file, or could not be stored"
 msgstr "Omslagsfilen är inte en giltig bildfil eller kunde inte lagras"
 
-#: cps/helper.py:1610
+#: cps/helper.py:1680
 msgid "Cover Format Error"
 msgstr "Fel på omslagsformat"
 
-#: cps/helper.py:1613
+#: cps/helper.py:1683
 msgid ""
 "You are not allowed to access localhost or the local network for cover "
 "uploads"
 msgstr ""
 
-#: cps/helper.py:1629
+#: cps/helper.py:1699
 msgid "Failed to create path for cover"
 msgstr "Det gick inte att skapa sökväg för omslag"
 
-#: cps/helper.py:1673
+#: cps/helper.py:1743
 msgid "Only jpg/jpeg/png/webp/bmp files are supported as coverfile"
 msgstr "Endast jpg/jpeg/png/webp/bmp-filer stöds som omslagsfil"
 
-#: cps/helper.py:1689 cps/helper.py:1694
+#: cps/helper.py:1759 cps/helper.py:1764
 msgid "Invalid cover file content"
 msgstr ""
 
-#: cps/helper.py:1698
+#: cps/helper.py:1768
 msgid "Only jpg/jpeg files are supported as coverfile"
 msgstr "Endast jpg/jpeg-filer stöds som omslagsfil"
 
-#: cps/helper.py:1920 cps/helper.py:2172 cps/spa_strings.py:184
+#: cps/helper.py:1990 cps/helper.py:2242 cps/spa_strings.py:184
 msgid "Cover"
 msgstr ""
 
-#: cps/helper.py:1937
+#: cps/helper.py:2007
 msgid "UnRar binary file not found"
 msgstr "UnRar binär fil hittades inte"
 
-#: cps/helper.py:1948
+#: cps/helper.py:2018
 #, fuzzy
 msgid "Error executing UnRar"
 msgstr "Fel vid körning av UnRar"
 
-#: cps/helper.py:1954
+#: cps/helper.py:2024
 #, python-format
 msgid ""
 "Unsupported architecture detected: %(arch)s. Calibre-Web NextGen is "
 "optimized for x86_64 and aarch64."
 msgstr ""
 
-#: cps/helper.py:1963
+#: cps/helper.py:2033
 msgid "Could not find the specified directory"
 msgstr ""
 
-#: cps/helper.py:1966
+#: cps/helper.py:2036
 msgid "Please specify a directory, not a file"
 msgstr ""
 
-#: cps/helper.py:1980
+#: cps/helper.py:2050
 #, fuzzy
 msgid "Calibre binaries not viable"
 msgstr "DB är inte skrivbar"
 
-#: cps/helper.py:1989
+#: cps/helper.py:2059
 #, python-format
 msgid "Missing calibre binaries: %(missing)s"
 msgstr ""
 
-#: cps/helper.py:1991
+#: cps/helper.py:2061
 #, fuzzy, python-format
 msgid "Missing executable permissions: %(missing)s"
 msgstr "Körningstillstånd saknas"
 
-#: cps/helper.py:1996
+#: cps/helper.py:2066
 #, fuzzy
 msgid "Error executing Calibre"
 msgstr "Fel vid körning av UnRar"
 
-#: cps/helper.py:2174 cps/templates/admin.html:242
+#: cps/helper.py:2244 cps/templates/admin.html:242
 msgid "Queue all books for metadata backup"
 msgstr ""
 

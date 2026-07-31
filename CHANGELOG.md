@@ -18,6 +18,38 @@ is for things you can see or feel when running the app.
 
 ### Fixed
 
+- **Marking a book unread left its "Started reading" and "Last synced" dates on
+  the page.** The percentage cleared, but the two dates stayed — and "Last
+  synced" jumped forward to the moment you pressed the button, so a book you had
+  just marked unread looked like it had synced seconds ago. The reading position
+  the device holds was also left behind, which meant a Kobo could quietly restore
+  the exact spot you had just cleared on its next sync. Marking a book unread now
+  clears the whole position: both dates and the device resume point. Books that
+  were already left in this state by an earlier version display correctly again
+  without any migration. Thanks to @uschi1 for catching it and following up.
+
+- **Saving a book from the edit-metadata screen, or switching on a metadata
+  source, made the server stop answering everyone.** Not only the tab doing the
+  work — every other person's page load hung for as long as the cover download
+  or the metadata lookup took, which on a slow cover host is up to 30 seconds.
+  Both actions now do their network work off the request handler, so the rest of
+  the site keeps responding while they run. Measured on a real server during a
+  1.5s cover download: other page loads went from 1 request served with a
+  1254ms worst-case wait, to 201 served with an 18ms worst case.
+
+## [v4.1.26] - 2026-07-31
+
+### Changed
+
+- **Ebook conversion and metadata reading now run on Calibre 9.11.0**, up from
+  9.1.0. Ten minor versions of Calibre fixes land in one step, covering format
+  conversion, metadata extraction and the ingest path — so books that previously
+  converted badly, imported with wrong or missing metadata, or failed to ingest
+  at all are worth retrying. Thanks to @chloeroform for the upgrade and
+  @darkmatterpelican for reporting it.
+
+### Fixed
+
 - **KOReader's plugin updater kept saying "no new release available" when a newer
   sync plugin existed.** If you had pointed Updates Manager (or
   appstore.koplugin) at the main Calibre-Web NextGen repository, it stopped
@@ -28,14 +60,33 @@ is for things you can see or feel when running the app.
   Releases that don't touch the plugin still publish nothing, so you won't be
   prompted to reinstall an identical plugin.
 
-### Added
+- **The interface now reads in Polish throughout, instead of leaving about two
+  thirds of its labels in English.** With the language set to Polish, the admin
+  screens, metadata editing, upload, shelves, the reader and a long tail of task
+  and error messages still showed in English. A further 273 phrases were worse
+  than untranslated: gettext had guessed them from a similar English sentence and
+  marked the guess provisional, and a provisional entry is dropped when the
+  catalog is compiled — so those rendered in English while Polish that said
+  something else sat in the file waiting for somebody to confirm it. Polish was
+  covering 950 of 2,609 phrases and now covers all 2,609, which makes it the most
+  complete translation the project ships. Contributed by
+  [@bywciu](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1249)
+  ([#1249](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1249)),
+  building on the original Polish translation by Radosław Kierznowski.
 
-- **The KOReader page now explains how to auto-update the sync plugin.** Visiting
-  `/kosync` only ever described the manual download-and-copy route, so the
-  in-place update path existed but was undiscoverable — the repository to point
-  an update manager at was written down nowhere a user would look. That page and
-  the README now name it, and spell out why the plugin's version can sit behind
-  your server version without anything being wrong.
+- **German now reads in German across several hundred more labels and
+  messages.** With the language set to German, a long tail of admin screens,
+  task and error messages, and much of the new interface still showed in
+  English. German was covering 1,584 of 2,609 phrases and now covers 1,891.
+  Two of those were previously worse than untranslated: the *Email Your Users*
+  admin heading said "Benutzer bearbeiten" ("edit user") and the warning for
+  sending mail with nobody chosen said "select a book" rather than "select a
+  recipient". Both are now correct, and both now actually appear — gettext had
+  them marked as unconfirmed guesses, and an unconfirmed entry is dropped when
+  the catalog is compiled, so the German sat in the file while the screen
+  showed English. Contributed by
+  [@monimkxl-web](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1264)
+  ([#1264](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1264)).
 
 - **Every CWA settings page 404'd when the app was mounted under a subpath.** If
   you run Calibre-Web NextGen behind a reverse proxy on a prefix that starts the
@@ -54,6 +105,15 @@ is for things you can see or feel when running the app.
   — it used to break every page in a second, separate way. Reported by
   [@chloeroform](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1248)
   ([#1248](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1248)).
+
+### Added
+
+- **The KOReader page now explains how to auto-update the sync plugin.** Visiting
+  `/kosync` only ever described the manual download-and-copy route, so the
+  in-place update path existed but was undiscoverable — the repository to point
+  an update manager at was written down nowhere a user would look. That page and
+  the README now name it, and spell out why the plugin's version can sit behind
+  your server version without anything being wrong.
 
 ## [v4.1.25] - 2026-07-30
 
