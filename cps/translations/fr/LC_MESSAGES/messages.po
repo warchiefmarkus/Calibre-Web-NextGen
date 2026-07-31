@@ -7238,7 +7238,7 @@ msgstr ""
 
 #: cps/templates/annotations_view.html:10
 msgid "Open book"
-msgstr ""
+msgstr "Ouvrir le livre"
 
 #: cps/templates/annotations_view.html:15
 #, python-format
@@ -11326,8 +11326,7 @@ msgstr ""
 
 #: cps/templates/read.html:189
 msgid "Note"
-msgstr ""
-
+msgstr "Note"
 
 #: cps/templates/read.html:190
 msgid "Add a note (optional)"
@@ -13145,3 +13144,320 @@ msgstr "Enregistrer la limite OCR"
 # OCR/RAG activity UI
 msgid "Document OCR"
 msgstr "OCR du document"
+
+#: cps/spa_strings.py
+msgid "AI search"
+msgstr "Recherche IA"
+
+#: cps/spa_strings.py
+msgid "AI search failed."
+msgstr "La recherche IA a échoué."
+
+#: cps/spa_strings.py
+msgid "AI search is not available for this account."
+msgstr "La recherche IA n’est pas disponible pour ce compte."
+
+#: cps/spa_strings.py
+msgid "Add bookmark"
+msgstr "Ajouter un signet"
+
+#: cps/spa_strings.py
+msgid "Add note"
+msgstr "Ajouter une note"
+
+#: cps/spa_strings.py
+msgid "After"
+msgstr "Après"
+
+#: cps/spa_strings.py
+msgid "Animated page turns"
+msgstr "Transitions de page animées"
+
+#: cps/spa_strings.py
+msgid "Before"
+msgstr "Avant"
+
+#: cps/spa_strings.py
+msgid "Book"
+msgstr "Livre"
+
+#: cps/spa_strings.py
+msgid "Bookmark"
+msgstr "Signet"
+
+#: cps/spa_strings.py
+msgid "Bookmarks"
+msgstr "Signets"
+
+#: cps/spa_strings.py
+msgid "Browser"
+msgstr "Navigateur"
+
+#: cps/spa_strings.py
+msgid "Comma-separated names"
+msgstr "Noms séparés par des virgules"
+
+#: cps/spa_strings.py
+msgid "Comma-separated tags"
+msgstr "Étiquettes séparées par des virgules"
+
+#: cps/spa_strings.py
+msgid "Continuous scroll"
+msgstr "Défilement continu"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Could not load the PDF file ({status})"
+msgstr "Impossible de charger le fichier PDF ({status})"
+
+#: cps/spa_strings.py
+msgid "Could not load the book."
+msgstr "Impossible de charger le livre."
+
+#: cps/spa_strings.py
+msgid "Could not load this PDF file."
+msgstr "Impossible de charger ce fichier PDF."
+
+#: cps/spa_strings.py
+msgid "Could not open this book."
+msgstr "Impossible d’ouvrir ce livre."
+
+#: cps/spa_strings.py
+msgid "Could not read the RAG status."
+msgstr "Impossible de lire l’état de l’index RAG."
+
+#: cps/spa_strings.py
+msgid "Could not save reading position. It will be retried automatically."
+msgstr "Impossible d’enregistrer la position de lecture. Une nouvelle tentative sera effectuée automatiquement."
+
+#: cps/spa_strings.py
+msgid "Describe an idea, scene, fact, quote, technology, or topic…"
+msgstr "Décrivez une idée, une scène, un fait, une citation, une technologie ou un sujet…"
+
+#: cps/spa_strings.py
+msgid "Download PDF"
+msgstr "Télécharger le PDF"
+
+#: cps/spa_strings.py
+msgid "Edit note"
+msgstr "Modifier la note"
+
+#: cps/spa_strings.py
+msgid "Embedding"
+msgstr "Vectorisation"
+
+#: cps/spa_strings.py
+msgid "Embedding model"
+msgstr "Modèle de vectorisation"
+
+#: cps/spa_strings.py
+msgid "Failed jobs"
+msgstr "Tâches échouées"
+
+#: cps/spa_strings.py
+msgid "Filters"
+msgstr "Filtres"
+
+#: cps/spa_strings.py
+msgid "Full screen"
+msgstr "Plein écran"
+
+#: cps/spa_strings.py
+msgid "Highlights and notes"
+msgstr "Surlignages et notes"
+
+#: cps/spa_strings.py
+msgid "Include neighboring text for context"
+msgstr "Inclure le texte voisin comme contexte"
+
+#: cps/spa_strings.py
+msgid "Indexed books"
+msgstr "Livres indexés"
+
+#: cps/spa_strings.py
+msgid "Location"
+msgstr "Emplacement"
+
+#: cps/spa_strings.py
+msgid "Matched"
+msgstr "Correspondance"
+
+#: cps/spa_strings.py
+msgid "No PDF annotations yet. Use the Annotate tools above the document."
+msgstr "Aucune annotation PDF pour le moment. Utilisez les outils d’annotation au-dessus du document."
+
+#: cps/spa_strings.py
+msgid "No bookmarks yet."
+msgstr "Aucun signet pour le moment."
+
+#: cps/spa_strings.py
+msgid "No excerpt available."
+msgstr "Aucun extrait disponible."
+
+#: cps/spa_strings.py
+msgid "No highlights yet."
+msgstr "Aucun surlignage pour le moment."
+
+#: cps/spa_strings.py
+msgid "No matching passages were found."
+msgstr "Aucun passage correspondant n’a été trouvé."
+
+#: cps/spa_strings.py
+msgid "No supported reader format is available."
+msgstr "Aucun format de lecture pris en charge n’est disponible."
+
+#: cps/spa_strings.py
+msgid "Not enabled"
+msgstr "Non activé"
+
+#: cps/spa_strings.py
+msgid "Not indexed"
+msgstr "Non indexé"
+
+#: cps/spa_strings.py
+msgid "Notes"
+msgstr "Notes"
+
+#: cps/spa_strings.py
+msgid "Open full annotations page"
+msgstr "Ouvrir la page complète des annotations"
+
+#: cps/spa_strings.py
+msgid "Open with browser PDF viewer"
+msgstr "Ouvrir avec le lecteur PDF du navigateur"
+
+#: cps/spa_strings.py
+msgid "PDF annotation changes could not be saved. Retry the edit."
+msgstr "Impossible d’enregistrer les modifications des annotations PDF. Réessayez la modification."
+
+#: cps/spa_strings.py
+msgid "Page"
+msgstr "Page"
+
+#: cps/spa_strings.py
+msgid "Page count changes with font, margins, and window size; progress remains stable."
+msgstr "Le nombre de pages varie selon la police, les marges et la taille de la fenêtre ; la progression reste stable."
+
+#: cps/spa_strings.py
+msgid "Pages"
+msgstr "Pages"
+
+#: cps/spa_strings.py
+msgid "Publisher / serif"
+msgstr "Éditeur / avec empattements"
+
+#: cps/spa_strings.py
+msgid "RAG index status"
+msgstr "État de l’index RAG"
+
+#: cps/spa_strings.py
+msgid "Read aloud"
+msgstr "Lecture à voix haute"
+
+#: cps/spa_strings.py
+msgid "Reader settings"
+msgstr "Paramètres du lecteur"
+
+#: cps/spa_strings.py
+msgid "Reader settings are saved to your account and follow you across devices."
+msgstr "Les paramètres du lecteur sont enregistrés dans votre compte et vous suivent sur tous vos appareils."
+
+#: cps/spa_strings.py
+msgid "Reader tools"
+msgstr "Outils du lecteur"
+
+#: cps/spa_strings.py
+msgid "Reading mode"
+msgstr "Mode de lecture"
+
+#: cps/spa_strings.py
+msgid "Reading position could not be saved. Retrying…"
+msgstr "Impossible d’enregistrer la position de lecture. Nouvelle tentative…"
+
+#: cps/spa_strings.py
+msgid "Reranker"
+msgstr "Reclassement"
+
+#: cps/spa_strings.py
+msgid "Reranker model"
+msgstr "Modèle de reclassement"
+
+#: cps/spa_strings.py
+msgid "Result limit"
+msgstr "Limite de résultats"
+
+#: cps/spa_strings.py
+msgid "Search book contents"
+msgstr "Rechercher dans le contenu des livres"
+
+#: cps/spa_strings.py
+msgid "Search in book"
+msgstr "Rechercher dans le livre"
+
+#: cps/spa_strings.py
+msgid "Search inside the full text of your indexed books, not only titles and metadata."
+msgstr "Recherchez dans le texte intégral de vos livres indexés, pas seulement dans les titres et les métadonnées."
+
+#: cps/spa_strings.py
+msgid "Search mode"
+msgstr "Mode de recherche"
+
+#: cps/spa_strings.py
+msgid "Selected text actions"
+msgstr "Actions sur le texte sélectionné"
+
+#: cps/spa_strings.py
+msgid "Show surrounding context"
+msgstr "Afficher le contexte environnant"
+
+#: cps/spa_strings.py
+msgid "Sources"
+msgstr "Sources"
+
+#: cps/spa_strings.py
+msgid "Stop reading aloud"
+msgstr "Arrêter la lecture à voix haute"
+
+#: cps/spa_strings.py
+msgid "Sync error"
+msgstr "Erreur de synchronisation"
+
+#: cps/spa_strings.py
+msgid "Synced"
+msgstr "Synchronisé"
+
+#: cps/spa_strings.py
+msgid "Text chunks"
+msgstr "Segments de texte"
+
+#: cps/spa_strings.py
+msgid "Text width"
+msgstr "Largeur du texte"
+
+#: cps/spa_strings.py
+msgid "The PDF reader could not initialize its navigation or annotation plugins."
+msgstr "Le lecteur PDF n’a pas pu initialiser ses modules de navigation ou d’annotation."
+
+#: cps/spa_strings.py
+msgid "Turn pages by clicking the left or right side"
+msgstr "Tourner les pages en cliquant sur le côté gauche ou droit"
+
+#: cps/spa_strings.py
+msgid "Unknown model"
+msgstr "Modèle inconnu"
+
+#: cps/spa_strings.py
+msgid "What do you want to find?"
+msgstr "Que souhaitez-vous trouver ?"
+
+#: cps/spa_strings.py
+msgid "books indexed"
+msgstr "livres indexés"
+
+#: cps/spa_strings.py
+msgid "pages"
+msgstr "pages"
+
+#: cps/spa_strings.py
+msgid "results"
+msgstr "résultats"

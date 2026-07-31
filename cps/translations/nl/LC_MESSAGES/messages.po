@@ -7124,7 +7124,7 @@ msgstr ""
 
 #: cps/templates/annotations_view.html:10
 msgid "Open book"
-msgstr ""
+msgstr "Boek openen"
 
 #: cps/templates/annotations_view.html:15
 #, python-format
@@ -11030,7 +11030,7 @@ msgstr "Tekstindeling automatisch aanpassen als het zijpaneel geopend is."
 
 #: cps/templates/read.html:189
 msgid "Note"
-msgstr ""
+msgstr "Notitie"
 
 #: cps/templates/read.html:190
 msgid "Add a note (optional)"
@@ -12682,3 +12682,320 @@ msgstr "OCR-limiet opslaan"
 # OCR/RAG activity UI
 msgid "Document OCR"
 msgstr "Document-OCR"
+
+#: cps/spa_strings.py
+msgid "AI search"
+msgstr "AI-zoeken"
+
+#: cps/spa_strings.py
+msgid "AI search failed."
+msgstr "AI-zoekopdracht mislukt."
+
+#: cps/spa_strings.py
+msgid "AI search is not available for this account."
+msgstr "AI-zoeken is niet beschikbaar voor dit account."
+
+#: cps/spa_strings.py
+msgid "Add bookmark"
+msgstr "Bladwijzer toevoegen"
+
+#: cps/spa_strings.py
+msgid "Add note"
+msgstr "Notitie toevoegen"
+
+#: cps/spa_strings.py
+msgid "After"
+msgstr "Na"
+
+#: cps/spa_strings.py
+msgid "Animated page turns"
+msgstr "Geanimeerde paginaovergangen"
+
+#: cps/spa_strings.py
+msgid "Before"
+msgstr "Voor"
+
+#: cps/spa_strings.py
+msgid "Book"
+msgstr "Boek"
+
+#: cps/spa_strings.py
+msgid "Bookmark"
+msgstr "Bladwijzer"
+
+#: cps/spa_strings.py
+msgid "Bookmarks"
+msgstr "Bladwijzers"
+
+#: cps/spa_strings.py
+msgid "Browser"
+msgstr "Browser"
+
+#: cps/spa_strings.py
+msgid "Comma-separated names"
+msgstr "Door komma’s gescheiden namen"
+
+#: cps/spa_strings.py
+msgid "Comma-separated tags"
+msgstr "Door komma’s gescheiden tags"
+
+#: cps/spa_strings.py
+msgid "Continuous scroll"
+msgstr "Doorlopend scrollen"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Could not load the PDF file ({status})"
+msgstr "Kon het PDF-bestand niet laden ({status})"
+
+#: cps/spa_strings.py
+msgid "Could not load the book."
+msgstr "Kon het boek niet laden."
+
+#: cps/spa_strings.py
+msgid "Could not load this PDF file."
+msgstr "Kon dit PDF-bestand niet laden."
+
+#: cps/spa_strings.py
+msgid "Could not open this book."
+msgstr "Kon dit boek niet openen."
+
+#: cps/spa_strings.py
+msgid "Could not read the RAG status."
+msgstr "Kon de RAG-indexstatus niet lezen."
+
+#: cps/spa_strings.py
+msgid "Could not save reading position. It will be retried automatically."
+msgstr "Kon de leespositie niet opslaan. Er wordt automatisch opnieuw geprobeerd."
+
+#: cps/spa_strings.py
+msgid "Describe an idea, scene, fact, quote, technology, or topic…"
+msgstr "Beschrijf een idee, scène, feit, citaat, technologie of onderwerp…"
+
+#: cps/spa_strings.py
+msgid "Download PDF"
+msgstr "PDF downloaden"
+
+#: cps/spa_strings.py
+msgid "Edit note"
+msgstr "Notitie bewerken"
+
+#: cps/spa_strings.py
+msgid "Embedding"
+msgstr "Inbedding"
+
+#: cps/spa_strings.py
+msgid "Embedding model"
+msgstr "Inbeddingsmodel"
+
+#: cps/spa_strings.py
+msgid "Failed jobs"
+msgstr "Mislukte taken"
+
+#: cps/spa_strings.py
+msgid "Filters"
+msgstr "Filters"
+
+#: cps/spa_strings.py
+msgid "Full screen"
+msgstr "Volledig scherm"
+
+#: cps/spa_strings.py
+msgid "Highlights and notes"
+msgstr "Markeringen en notities"
+
+#: cps/spa_strings.py
+msgid "Include neighboring text for context"
+msgstr "Naburige tekst opnemen als context"
+
+#: cps/spa_strings.py
+msgid "Indexed books"
+msgstr "Geïndexeerde boeken"
+
+#: cps/spa_strings.py
+msgid "Location"
+msgstr "Locatie"
+
+#: cps/spa_strings.py
+msgid "Matched"
+msgstr "Overeenkomst"
+
+#: cps/spa_strings.py
+msgid "No PDF annotations yet. Use the Annotate tools above the document."
+msgstr "Nog geen PDF-annotaties. Gebruik de annotatiehulpmiddelen boven het document."
+
+#: cps/spa_strings.py
+msgid "No bookmarks yet."
+msgstr "Nog geen bladwijzers."
+
+#: cps/spa_strings.py
+msgid "No excerpt available."
+msgstr "Geen fragment beschikbaar."
+
+#: cps/spa_strings.py
+msgid "No highlights yet."
+msgstr "Nog geen markeringen."
+
+#: cps/spa_strings.py
+msgid "No matching passages were found."
+msgstr "Geen overeenkomende passages gevonden."
+
+#: cps/spa_strings.py
+msgid "No supported reader format is available."
+msgstr "Er is geen ondersteund leesformaat beschikbaar."
+
+#: cps/spa_strings.py
+msgid "Not enabled"
+msgstr "Niet ingeschakeld"
+
+#: cps/spa_strings.py
+msgid "Not indexed"
+msgstr "Niet geïndexeerd"
+
+#: cps/spa_strings.py
+msgid "Notes"
+msgstr "Notities"
+
+#: cps/spa_strings.py
+msgid "Open full annotations page"
+msgstr "Volledige annotatiepagina openen"
+
+#: cps/spa_strings.py
+msgid "Open with browser PDF viewer"
+msgstr "Openen met de PDF-viewer van de browser"
+
+#: cps/spa_strings.py
+msgid "PDF annotation changes could not be saved. Retry the edit."
+msgstr "Wijzigingen aan PDF-annotaties konden niet worden opgeslagen. Probeer de bewerking opnieuw."
+
+#: cps/spa_strings.py
+msgid "Page"
+msgstr "Pagina"
+
+#: cps/spa_strings.py
+msgid "Page count changes with font, margins, and window size; progress remains stable."
+msgstr "Het aantal pagina’s verandert met het lettertype, de marges en de venstergrootte; de voortgang blijft stabiel."
+
+#: cps/spa_strings.py
+msgid "Pages"
+msgstr "Pagina’s"
+
+#: cps/spa_strings.py
+msgid "Publisher / serif"
+msgstr "Uitgever / schreefletter"
+
+#: cps/spa_strings.py
+msgid "RAG index status"
+msgstr "RAG-indexstatus"
+
+#: cps/spa_strings.py
+msgid "Read aloud"
+msgstr "Voorlezen"
+
+#: cps/spa_strings.py
+msgid "Reader settings"
+msgstr "Lezerinstellingen"
+
+#: cps/spa_strings.py
+msgid "Reader settings are saved to your account and follow you across devices."
+msgstr "Lezerinstellingen worden in uw account opgeslagen en zijn op al uw apparaten beschikbaar."
+
+#: cps/spa_strings.py
+msgid "Reader tools"
+msgstr "Lezerhulpmiddelen"
+
+#: cps/spa_strings.py
+msgid "Reading mode"
+msgstr "Leesmodus"
+
+#: cps/spa_strings.py
+msgid "Reading position could not be saved. Retrying…"
+msgstr "Leespositie kon niet worden opgeslagen. Opnieuw proberen…"
+
+#: cps/spa_strings.py
+msgid "Reranker"
+msgstr "Herschikker"
+
+#: cps/spa_strings.py
+msgid "Reranker model"
+msgstr "Herschikkingsmodel"
+
+#: cps/spa_strings.py
+msgid "Result limit"
+msgstr "Resultaatlimiet"
+
+#: cps/spa_strings.py
+msgid "Search book contents"
+msgstr "Boekinhoud doorzoeken"
+
+#: cps/spa_strings.py
+msgid "Search in book"
+msgstr "Zoeken in boek"
+
+#: cps/spa_strings.py
+msgid "Search inside the full text of your indexed books, not only titles and metadata."
+msgstr "Doorzoek de volledige tekst van uw geïndexeerde boeken, niet alleen titels en metadata."
+
+#: cps/spa_strings.py
+msgid "Search mode"
+msgstr "Zoekmodus"
+
+#: cps/spa_strings.py
+msgid "Selected text actions"
+msgstr "Acties voor geselecteerde tekst"
+
+#: cps/spa_strings.py
+msgid "Show surrounding context"
+msgstr "Omliggende context tonen"
+
+#: cps/spa_strings.py
+msgid "Sources"
+msgstr "Bronnen"
+
+#: cps/spa_strings.py
+msgid "Stop reading aloud"
+msgstr "Voorlezen stoppen"
+
+#: cps/spa_strings.py
+msgid "Sync error"
+msgstr "Synchronisatiefout"
+
+#: cps/spa_strings.py
+msgid "Synced"
+msgstr "Gesynchroniseerd"
+
+#: cps/spa_strings.py
+msgid "Text chunks"
+msgstr "Tekstsegmenten"
+
+#: cps/spa_strings.py
+msgid "Text width"
+msgstr "Tekstbreedte"
+
+#: cps/spa_strings.py
+msgid "The PDF reader could not initialize its navigation or annotation plugins."
+msgstr "De PDF-lezer kon de navigatie- of annotatieplug-ins niet initialiseren."
+
+#: cps/spa_strings.py
+msgid "Turn pages by clicking the left or right side"
+msgstr "Sla pagina’s om door op de linker- of rechterkant te klikken"
+
+#: cps/spa_strings.py
+msgid "Unknown model"
+msgstr "Onbekend model"
+
+#: cps/spa_strings.py
+msgid "What do you want to find?"
+msgstr "Wat wilt u vinden?"
+
+#: cps/spa_strings.py
+msgid "books indexed"
+msgstr "boeken geïndexeerd"
+
+#: cps/spa_strings.py
+msgid "pages"
+msgstr "pagina’s"
+
+#: cps/spa_strings.py
+msgid "results"
+msgstr "resultaten"

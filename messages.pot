@@ -11587,3 +11587,462 @@ msgstr ""
 msgid "Show Read/Unread Section"
 msgstr ""
 
+#: cps/spa_strings.py
+msgid "AI search"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "AI search failed."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "AI search is not available for this account."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Add bookmark"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Add note"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "After"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Animated page turns"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Approve long OCR job"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Automatic OCR page limit"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Background processing"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Before"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Book"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Bookmark"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Bookmarks"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Browser"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Comma-separated names"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Comma-separated tags"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Continuous scroll"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Could not load the PDF file ({status})"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not load the book."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not load this PDF file."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not open this book."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not read OCR status."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not read the RAG status."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not save OCR settings."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not save reading position. It will be retried automatically."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not start OCR."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Describe an idea, scene, fact, quote, technology, or topic…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Document OCR"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Documents above this limit require explicit confirmation and are not started automatically."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Download PDF"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Edit note"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Embedding"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Embedding model"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Failed jobs"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Filters"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Full screen"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Highlights and notes"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Idle"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Include neighboring text for context"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Indexed books"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Location"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Matched"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No PDF annotations yet. Use the Annotate tools above the document."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No bookmarks yet."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No excerpt available."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No highlights yet."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No matching passages were found."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No supported reader format is available."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Not enabled"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Not indexed"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Notes"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR and RAG indexing completed."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR completed; RAG indexing is running."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR failed."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR is processing the PDF."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR is queued."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR job queued. You can leave this page; processing continues in the background."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR page limit saved."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR processing…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR queued"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR running"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR settings"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OCR was not started."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Open full annotations page"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Open with browser PDF viewer"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "PDF annotation changes could not be saved. Retry the edit."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Page"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Page count changes with font, margins, and window size; progress remains stable."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Pages"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Pending"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Publisher / serif"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "RAG index status"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "RAG indexing"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "RAG queued"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Read aloud"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Reader settings"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Reader settings are saved to your account and follow you across devices."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Reader tools"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Reading mode"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Reading position could not be saved. Retrying…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Reranker"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Reranker model"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Result limit"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Run OCR"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Run OCR again"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Save OCR limit"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Search book contents"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Search in book"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Search inside the full text of your indexed books, not only titles and metadata."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Search mode"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Selected text actions"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Show surrounding context"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Sources"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Starting…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Stop reading aloud"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Sync error"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Synced"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Tasks remaining"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Text chunks"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Text width"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "The PDF reader could not initialize its navigation or annotation plugins."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "The page refreshes processing status automatically."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "This PDF has {pages} pages, above the automatic OCR limit of {limit}. Processing may take a long time and use significant CPU."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Turn pages by clicking the left or right side"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Unknown model"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Vector sync"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "What do you want to find?"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Working"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "books indexed"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "pages"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "results"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} characters"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} pages"
+msgstr ""
