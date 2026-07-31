@@ -973,7 +973,8 @@ class Annotation(Base):
     # NULL on legacy rows means EPUB CFI (backward compatible).
     position_type = Column(String, nullable=True)
     pdf_page = Column(Integer, nullable=True)         # 1-indexed PDF page number
-    pdf_quad_json = Column(Text, nullable=True)       # JSON: [[x,y,w,h], ...] in PDF user-space coords
+    # Full EmbedPDF transfer item; legacy normalized rectangle arrays remain readable.
+    pdf_quad_json = Column(Text, nullable=True)
     comic_page = Column(Integer, nullable=True)       # 1-indexed comic page (CBR/CBZ)
     # KOReader's native reflowable locator.  This is intentionally kept
     # separate from EPUB CFI: KOReader xpointers are engine-private and are

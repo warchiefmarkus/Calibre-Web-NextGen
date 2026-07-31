@@ -13,8 +13,12 @@ from .. import calibre_db, db, deployment_profile, limiter
 from ..cw_login import current_user
 from ..services.calibremcp_client import (
     CalibreMCPClientError,
+    get_book_ocr_status,
+    get_rag_ocr_config,
     get_rag_status,
+    queue_book_ocr,
     search_rag,
+    update_rag_ocr_config,
 )
 
 
@@ -28,6 +32,65 @@ def _guard():
     if not current_user.is_authenticated or current_user.is_anonymous:
         return _err("forbidden", "AI search requires a signed-in user", 403)
     return None
+
+
+def _rag_edit_guard():
+    guard = _guard()
+    if guard:
+        return guard
+    if not current_user.role_edit():
+        return _err("forbidden", "RAG configuration requires edit permission", 403)
+    return None
+
+
+def _ocr_guard(book_id: int):
+    guard = _guard()
+    if guard:
+        return guard
+    if not current_user.role_edit():
+        return _err("forbidden", "OCR requires edit permission", 403)
+    if int(book_id) not in _visible_book_ids():
+        return _err("not_found", "Book not found", 404)
+    return None
+
+
+def _ocr_response(raw: dict[str, Any]) -> dict[str, Any]:
+    result = raw.get("result") if isinstance(raw.get("result"), dict) else None
+    safe_result = None
+    if result is not None:
+        safe_result = {
+            key: result.get(key)
+            for key in (
+                "status", "book_id", "source_format", "page_count", "text_pages", "extracted_chars",
+                "output_size", "cached", "duration_seconds", "engine",
+                "engine_version", "languages", "reindex_job_id",
+            )
+            if key in result
+        }
+    reindex = raw.get("reindex_job") if isinstance(raw.get("reindex_job"), dict) else None
+    safe_reindex = None
+    if reindex is not None:
+        safe_reindex = {
+            key: reindex.get(key)
+            for key in (
+                "job_id", "book_id", "operation", "status", "attempts",
+                "queued_at", "started_at", "finished_at", "error", "result",
+            )
+            if key in reindex
+        }
+    return {
+        key: raw.get(key)
+        for key in (
+            "success", "accepted", "created", "job_id", "book_id", "title",
+            "status", "ocr_job_status", "stage", "attempts", "queued_at",
+            "started_at", "finished_at", "error", "terminal", "page_count",
+            "max_pages", "force", "retry", "status_operation",
+        )
+        if key in raw
+    } | {
+        "result": safe_result,
+        "reindex_job": safe_reindex,
+    }
 
 
 def _user_name() -> str:
@@ -117,6 +180,19 @@ def rag_status():
         return _err("rag_backend_error", str(exc), exc.status_code)
     statuses = raw.get("statuses") if isinstance(raw.get("statuses"), dict) else {}
     vector = raw.get("vector_store") if isinstance(raw.get("vector_store"), dict) else {}
+    raw_activity = raw.get("activity") if isinstance(raw.get("activity"), dict) else {}
+    visible_ids = _visible_book_ids()
+    active_jobs = [
+        {
+            key: item.get(key)
+            for key in (
+                "job_id", "book_id", "title", "operation", "status", "stage",
+                "selected_format", "queued_at", "started_at", "page_count", "max_pages",
+            )
+        }
+        for item in (raw_activity.get("active_jobs") or [])[:20]
+        if isinstance(item, dict) and int(item.get("book_id") or 0) in visible_ids
+    ]
     return jsonify({
         "enabled": bool(raw.get("enabled")),
         "ready": bool(
@@ -143,7 +219,50 @@ def rag_status():
             for key, value in statuses.items()
             if isinstance(value, dict)
         },
+        "activity": {
+            **{
+                key: raw_activity.get(key, 0)
+                for key in (
+                    "ocr_running", "ocr_queued", "rag_running", "rag_queued",
+                    "jobs_remaining", "total_remaining", "vector_sync_pending", "busy",
+                )
+            },
+            "active_jobs": active_jobs,
+        },
+        "ocr": {
+            "enabled": bool((raw.get("ocr") or {}).get("enabled")),
+            "available": bool((raw.get("ocr") or {}).get("available")),
+            "max_pages": int((raw.get("ocr") or {}).get("max_pages") or 0),
+            "max_pages_source": (raw.get("ocr") or {}).get("max_pages_source"),
+            "supported_formats": (raw.get("ocr") or {}).get("supported_formats") or [],
+            "adapters": (raw.get("ocr") or {}).get("adapters") or {},
+        },
     })
+
+
+@api_v1.route("/rag/ocr-config", methods=["GET", "POST"])
+def rag_ocr_config():
+    guard = _rag_edit_guard()
+    if guard:
+        return guard
+    try:
+        if request.method == "GET":
+            return jsonify(get_rag_ocr_config(_user_name()))
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return _err("invalid_request", "Request body must be an object", 400)
+        value = int(body.get("ocr_max_pages"))
+        if not 1 <= value <= 10000:
+            raise ValueError
+        return jsonify(update_rag_ocr_config(_user_name(), value))
+    except (TypeError, ValueError):
+        return _err(
+            "invalid_ocr_max_pages",
+            "ocr_max_pages must be an integer between 1 and 10000",
+            400,
+        )
+    except CalibreMCPClientError as exc:
+        return _err("rag_backend_error", str(exc), exc.status_code)
 
 
 @api_v1.route("/rag/search", methods=["POST"])
@@ -233,3 +352,56 @@ def rag_search():
             _result_item(item) for item in results if isinstance(item, dict)
         ],
     })
+
+
+@api_v1.route("/books/<int:book_id>/ocr", methods=["POST"])
+@limiter.limit(
+    "10/minute",
+    key_func=lambda: "ocr-user:" + str(getattr(current_user, "id", "anonymous")),
+)
+def book_ocr_start(book_id: int):
+    guard = _ocr_guard(book_id)
+    if guard:
+        return guard
+    body = request.get_json(silent=True)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return _err("invalid_request", "Request body must be an object", 400)
+    raw_max_pages = body.get("max_pages")
+    try:
+        max_pages = None if raw_max_pages is None else max(1, int(raw_max_pages))
+    except (TypeError, ValueError):
+        return _err("invalid_max_pages", "max_pages must be a positive integer", 400)
+    try:
+        raw = queue_book_ocr(
+            _user_name(),
+            book_id,
+            force=bool(body.get("force", False)),
+            max_pages=max_pages,
+        )
+    except CalibreMCPClientError as exc:
+        return _err("ocr_backend_error", str(exc), exc.status_code)
+    payload = _ocr_response(raw)
+    return jsonify(payload), 202 if payload.get("accepted") else 200
+
+
+@api_v1.route("/books/<int:book_id>/ocr", methods=["GET"])
+def book_ocr_status(book_id: int):
+    guard = _ocr_guard(book_id)
+    if guard:
+        return guard
+    raw_job_id = request.args.get("job_id")
+    try:
+        job_id = None if raw_job_id in {None, ""} else int(raw_job_id)
+    except (TypeError, ValueError):
+        return _err("invalid_job_id", "job_id must be an integer", 400)
+    if job_id is not None and job_id <= 0:
+        return _err("invalid_job_id", "job_id must be positive", 400)
+    try:
+        raw = get_book_ocr_status(_user_name(), book_id, job_id=job_id)
+    except CalibreMCPClientError as exc:
+        if exc.status_code == 404 and job_id is None:
+            return jsonify(None)
+        return _err("ocr_backend_error", str(exc), exc.status_code)
+    return jsonify(_ocr_response(raw))

@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+import json
+import math
 import uuid
 
 from .calibremcp_client import (
@@ -17,6 +19,61 @@ from .calibremcp_client import (
 )
 
 SUPPORTED_COLORS = {"yellow", "red", "green", "blue"}
+
+
+def normalize_pdf_locator(payload: dict[str, Any]) -> tuple[int, str]:
+    """Validate a PDF locator (legacy normalized rectangles or EmbedPDF envelope)."""
+    try:
+        page = int(payload.get("pdf_page") or payload.get("page"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("pdf_page must be a 1-based page number") from exc
+    raw = payload.get("pdf_quad")
+    if raw is None:
+        raw = payload.get("pdf_quad_json")
+    if raw is None:
+        raw = payload.get("quads")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("pdf_quad must be valid JSON") from exc
+    if page < 1 or not isinstance(raw, (list, dict)) or not raw:
+        raise ValueError("PDF annotation requires pdf_page and pdf_quad")
+    if isinstance(raw, dict):
+        annotation = raw.get("annotation")
+        if not isinstance(annotation, dict) or not str(annotation.get("id") or "").strip():
+            raise ValueError("EmbedPDF locator requires an annotation object with id")
+        page_index = annotation.get("pageIndex")
+        if page_index is not None:
+            try:
+                normalized_page_index = int(page_index)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("EmbedPDF annotation pageIndex must be an integer") from exc
+            if normalized_page_index != page - 1:
+                raise ValueError("EmbedPDF annotation page does not match pdf_page")
+        requested_id = str(payload.get("annotation_id") or payload.get("uuid") or "").strip()
+        if requested_id and requested_id != str(annotation.get("id")):
+            raise ValueError("EmbedPDF annotation id does not match annotation_id")
+        normalized = raw
+    else:
+        normalized = []
+        for rect in raw:
+            if not isinstance(rect, (list, tuple)) or len(rect) != 4:
+                raise ValueError("each pdf_quad rectangle must contain x, y, width, height")
+            try:
+                values = [float(value) for value in rect]
+            except (TypeError, ValueError) as exc:
+                raise ValueError("pdf_quad values must be numbers") from exc
+            x, y, width, height = values
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError("pdf_quad values must be finite")
+            if (
+                x < 0 or y < 0 or width <= 0 or height <= 0
+                or x + width > 1.000001 or y + height > 1.000001
+            ):
+                raise ValueError("pdf_quad rectangles must be normalized to the page")
+            normalized.append([round(value, 8) for value in values])
+    return page, json.dumps(normalized, separators=(",", ":"), sort_keys=True)
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -140,6 +197,17 @@ def native_to_row(item: dict[str, Any], book_id: int) -> NativeAnnotationRow:
         source=str(item.get("source") or "calibre-native"),
         created_at=created,
         last_synced=created,
+        position_type=item.get("position_type") or item.get("pos_type") or ("pdf_quad" if item.get("pdf_page") or item.get("page") else "cfi"),
+        pdf_page=item.get("pdf_page") or item.get("page"),
+        pdf_quad_json=(
+            item.get("pdf_quad_json")
+            if isinstance(item.get("pdf_quad_json"), str)
+            else json.dumps(item.get("pdf_quad_json"), separators=(",", ":"), sort_keys=True)
+            if item.get("pdf_quad_json") is not None
+            else json.dumps(item.get("quads"), separators=(",", ":"), sort_keys=True)
+            if item.get("quads") is not None
+            else None
+        ),
     )
 
 
@@ -167,31 +235,46 @@ def create_annotation(
     payload: dict[str, Any],
     fmt: str = "EPUB",
 ) -> NativeAnnotationRow:
-    cfi_range = str(payload.get("cfi_range") or "").strip()
-    native_cfi = epubcfi_to_native(cfi_range)
+    normalized_format = fmt.upper()
     color = str(payload.get("highlight_color") or "yellow").strip().lower()
     if color not in SUPPORTED_COLORS:
         color = "yellow"
     annotation_id = str(payload.get("annotation_id") or "cwn-web-" + uuid.uuid4().hex)
-    spine_index = payload.get("spine_index", native_cfi["spine_index"])
-    try:
-        spine_index = max(0, int(spine_index))
-    except (TypeError, ValueError):
-        spine_index = native_cfi["spine_index"]
     native_payload: dict[str, Any] = {
-        "format": fmt.upper(),
+        "format": normalized_format,
         "type": "highlight",
         "uuid": annotation_id,
-        "start_cfi": native_cfi["start_cfi"],
-        "end_cfi": native_cfi["end_cfi"],
-        "spine_index": spine_index,
-        "spine_name": str(payload.get("spine_name") or ""),
-        "cfi_range": cfi_range,
         "highlighted_text": payload.get("highlighted_text"),
         "notes": payload.get("note_text"),
         "style": {"kind": "color", "which": color},
         "source": "cwng-web",
     }
+    if normalized_format == "PDF":
+        page, quad_json = normalize_pdf_locator(payload)
+        locator = json.loads(quad_json)
+        native_payload.update({
+            "pos_type": "pdf_quad",
+            "position_type": "pdf_quad",
+            "page": page,
+            "pdf_page": page,
+            "quads": locator,
+            "pdf_quad_json": quad_json,
+        })
+    else:
+        cfi_range = str(payload.get("cfi_range") or "").strip()
+        native_cfi = epubcfi_to_native(cfi_range)
+        spine_index = payload.get("spine_index", native_cfi["spine_index"])
+        try:
+            spine_index = max(0, int(spine_index))
+        except (TypeError, ValueError):
+            spine_index = native_cfi["spine_index"]
+        native_payload.update({
+            "start_cfi": native_cfi["start_cfi"],
+            "end_cfi": native_cfi["end_cfi"],
+            "spine_index": spine_index,
+            "spine_name": str(payload.get("spine_name") or ""),
+            "cfi_range": cfi_range,
+        })
     for key in ("chapter_progress", "context_string", "content_id"):
         if payload.get(key) is not None:
             native_payload[key] = payload.get(key)
@@ -214,6 +297,19 @@ def update_annotation(
         changes["style"] = {"kind": "color", "which": color}
     if "note_text" in payload:
         changes["notes"] = payload.get("note_text")
+    if "highlighted_text" in payload:
+        changes["highlighted_text"] = payload.get("highlighted_text")
+    if fmt.upper() == "PDF" and any(key in payload for key in ("pdf_page", "page", "pdf_quad", "pdf_quad_json", "quads")):
+        page, quad_json = normalize_pdf_locator(payload)
+        locator = json.loads(quad_json)
+        changes.update({
+            "pos_type": "pdf_quad",
+            "position_type": "pdf_quad",
+            "page": page,
+            "pdf_page": page,
+            "quads": locator,
+            "pdf_quad_json": quad_json,
+        })
     updated = update_reader_annotation(cwng_user, book_id, annotation_id, changes)
     return native_to_row(updated, book_id)
 

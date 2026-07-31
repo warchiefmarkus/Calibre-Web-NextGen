@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import pytest
 
-from cps.services.calibre_annotations import epubcfi_to_native
+from cps.services.calibre_annotations import epubcfi_to_native, normalize_pdf_locator
 
 
 @pytest.mark.unit
@@ -65,10 +66,58 @@ def test_reader_annotation_format_preserves_fb2_namespace():
 
 
 @pytest.mark.unit
-def test_reader_annotation_format_rejects_unknown_namespace():
+def test_reader_annotation_format_accepts_pdf_namespace():
     from flask import Flask
     from cps import annotations
     app = Flask(__name__)
     with app.test_request_context('/annotations/1/data.json?format=pdf'):
+        assert annotations._reader_annotation_format() == 'PDF'
+
+
+@pytest.mark.unit
+def test_reader_annotation_format_rejects_unknown_namespace():
+    from flask import Flask
+    from cps import annotations
+    app = Flask(__name__)
+    with app.test_request_context('/annotations/1/data.json?format=djvu'):
         with pytest.raises(ValueError):
             annotations._reader_annotation_format()
+
+
+@pytest.mark.unit
+def test_normalize_pdf_locator_preserves_embedpdf_transfer_item():
+    locator = {
+        "annotation": {
+            "id": "embed-1",
+            "pageIndex": 2,
+            "type": 9,
+            "rect": {"origin": {"x": 10, "y": 20}, "size": {"width": 30, "height": 4}},
+            "contents": "note",
+        },
+        "ctx": {"mimeType": "image/png", "data": {"__embedpdfBinary": True, "data": "AA=="}},
+    }
+    page, serialized = normalize_pdf_locator({
+        "pdf_page": 3,
+        "pdf_quad": locator,
+    })
+    assert page == 3
+    assert json.loads(serialized) == locator
+
+
+@pytest.mark.unit
+def test_normalize_pdf_locator_rejects_page_mismatch():
+    with pytest.raises(ValueError, match="does not match"):
+        normalize_pdf_locator({
+            "pdf_page": 3,
+            "pdf_quad": {"annotation": {"id": "embed-1", "pageIndex": 3}},
+        })
+
+
+@pytest.mark.unit
+def test_normalize_pdf_locator_rejects_uid_mismatch():
+    with pytest.raises(ValueError, match="does not match annotation_id"):
+        normalize_pdf_locator({
+            "annotation_id": "server-id",
+            "pdf_page": 1,
+            "pdf_quad": {"annotation": {"id": "other-id", "pageIndex": 0}},
+        })

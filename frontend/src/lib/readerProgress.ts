@@ -63,6 +63,7 @@ export function useReadingPositionSaver(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const [saveError, setSaveError] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
 
   const flush = useCallback(async (keepalive = false): Promise<void> => {
     const pending = pendingRef.current;
@@ -72,6 +73,7 @@ export function useReadingPositionSaver(
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    if (mountedRef.current) setSaveState('saving');
     try {
       await apiPost(`/api/v1/books/${bookId}/bookmark`, {
         format,
@@ -79,12 +81,16 @@ export function useReadingPositionSaver(
         position_fraction: clampReadingFraction(pending.positionFraction),
         device: readerDevice(),
       }, { keepalive });
-      if (mountedRef.current) setSaveError(false);
+      if (mountedRef.current) {
+        setSaveError(false);
+        setSaveState('saved');
+      }
     } catch {
       // Preserve the newest unsaved value. A newer scroll/page-turn always wins.
       if (pendingRef.current === null) pendingRef.current = pending;
       if (mountedRef.current) {
         setSaveError(true);
+        setSaveState('error');
         if (timerRef.current === null) {
           timerRef.current = setTimeout(() => {
             timerRef.current = null;
@@ -96,6 +102,7 @@ export function useReadingPositionSaver(
   }, [bookId, format]);
 
   const schedule = useCallback((bookmark: string, positionFraction: number) => {
+    setSaveState('pending');
     pendingRef.current = {
       bookmark,
       positionFraction: clampReadingFraction(positionFraction),
@@ -123,5 +130,5 @@ export function useReadingPositionSaver(
     };
   }, [flush]);
 
-  return { schedule, flush, saveError };
+  return { schedule, flush, saveError, saveState };
 }

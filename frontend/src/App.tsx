@@ -37,7 +37,9 @@ import { AUTH_ROUTES, SPA_ROUTES } from './lib/routes';
 
 // The unified foliate-js reader is lazy so parsers/renderers stay out of the initial bundle.
 const Reader = lazy(() => import('./pages/Reader').then((m) => ({ default: m.Reader })));
-// Native fallback for PDF/audio/text/CBR/CBT — also lazy, full-screen.
+// EmbedPDF/PDFium reader is isolated from foliate-js and loaded only for PDF books.
+const PdfReader = lazy(() => import('./pages/PdfReader').then((m) => ({ default: m.PdfReader })));
+// Native fallback for audio/text/CBR/CBT — also lazy, full-screen.
 const NativeReader = lazy(() => import('./pages/NativeReader').then((m) => ({ default: m.NativeReader })));
 const FOLIATE_FORMATS = new Set(['epub', 'kepub', 'fb2', 'fbz', 'mobi', 'azw', 'azw3', 'cbz']);
 
@@ -154,16 +156,21 @@ export function App() {
           )}
         </Route>
 
-        {/* Exact-format reader route. foliate-js handles reflowable books and CBZ;
-            the existing native fallback keeps PDF/audio/text/CBR/CBT. */}
+        {/* Exact-format reader route. PDF uses EmbedPDF/PDFium, reflowable
+            books and CBZ use foliate-js, and remaining formats use fallback. */}
         <Route path={SPA_ROUTES.nativeReader}>
-          {(p) => (
-            <Suspense fallback={<SpinnerCentered size={40} />}>
-              {FOLIATE_FORMATS.has(p.format.toLowerCase())
-                ? <Reader id={p.id} format={p.format} />
-                : <NativeReader id={p.id} format={p.format} />}
-            </Suspense>
-          )}
+          {(p) => {
+            const format = p.format.toLowerCase();
+            return (
+              <Suspense fallback={<SpinnerCentered size={40} />}>
+                {format === 'pdf'
+                  ? <PdfReader key={`${p.id}:${format}`} id={p.id} format={p.format} />
+                  : FOLIATE_FORMATS.has(format)
+                    ? <Reader id={p.id} format={p.format} />
+                    : <NativeReader id={p.id} format={p.format} />}
+              </Suspense>
+            );
+          }}
         </Route>
 
         {/* Everything else lives inside the shell. */}

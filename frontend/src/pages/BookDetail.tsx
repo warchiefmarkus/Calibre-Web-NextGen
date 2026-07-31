@@ -4,6 +4,7 @@ import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image 
 import {
   useBook, useToggleRead, useToggleFavorite, useToggleArchived, useToggleHidden,
   useSendToEreader, useMe, useAccount, useUpdateMetadata, useDeleteBook, useReloadMetadata,
+  useBookOcrStatus, useStartBookOcr,
 } from '../lib/queries';
 import { MetadataTypeahead } from '../components/MetadataTypeahead';
 import { Pill } from '../components/Pill';
@@ -13,7 +14,7 @@ import { MoreByAuthor } from '../components/MoreByAuthor';
 import { AUTHOR_SEPARATOR } from '../lib/authors';
 import { SpinnerCentered, Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
-import type { CustomColumn, CustomColumnValue, EntityRef } from '../lib/api';
+import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef } from '../lib/api';
 import { ApiError, resourceUrl } from '../lib/api';
 import { useT } from '../lib/i18n';
 import { getPrimaryReadTarget } from '../lib/readerTarget';
@@ -258,6 +259,13 @@ export function BookDetail() {
   const [sendBanner, setSendBanner] = useState<{ ok: boolean; text: string } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reloadMessage, setReloadMessage] = useState('');
+  const [ocrMessage, setOcrMessage] = useState('');
+  const [ocrDeferred, setOcrDeferred] = useState<BookOcrResponse | null>(null);
+  const canRunOcr = !!me?.role?.edit && !!book?.formats.some(
+    (format) => ['PDF', 'DJVU', 'DJV'].includes(format.format.toUpperCase()),
+  );
+  const ocrStatus = useBookOcrStatus(id, canRunOcr);
+  const startOcr = useStartBookOcr(id);
 
   if (isLoading) return <SpinnerCentered size={40} />;
   if (error || !book) {
@@ -270,6 +278,33 @@ export function BookDetail() {
   }
 
   const primaryReadTarget = getPrimaryReadTarget(book.id, book.formats.map((f) => f.format));
+  const currentOcr = ocrStatus.data;
+  const ocrBusy = startOcr.isPending || (
+    !!currentOcr && !currentOcr.terminal &&
+    ['pending', 'running', 'indexing'].includes(currentOcr.status)
+  );
+  const runOcr = (force = false) => {
+    setOcrMessage('');
+    startOcr.mutate(
+      { force },
+      {
+        onSuccess: (result) => {
+          if (result.accepted) {
+            setOcrDeferred(null);
+            setOcrMessage(t('OCR job queued. You can leave this page; processing continues in the background.'));
+          } else if (result.status === 'ocr_deferred') {
+            setOcrDeferred(result);
+            setOcrMessage('');
+          } else {
+            setOcrMessage(result.error || t('OCR was not started.'));
+          }
+        },
+        onError: (err) => setOcrMessage(
+          err instanceof ApiError ? err.message : t('Could not start OCR.'),
+        ),
+      },
+    );
+  };
 
   return (
     <main className={styles.container}>
@@ -463,6 +498,22 @@ export function BookDetail() {
                   <RefreshCw size={14} aria-hidden="true" focusable={false} />
                   {reloadMetadata.isPending ? t('Reloading…') : t('Reload metadata from disk')}
                 </button>
+                {canRunOcr && (
+                  <button
+                    type="button"
+                    className={styles.downloadBtn}
+                    disabled={ocrBusy}
+                    onClick={() => runOcr(currentOcr?.status === 'completed')}
+                    data-testid="book-ocr-start"
+                  >
+                    {ocrBusy ? <Spinner size={14} /> : <RefreshCw size={14} aria-hidden="true" focusable={false} />}
+                    {ocrBusy
+                      ? t('OCR processing…')
+                      : currentOcr?.status === 'completed'
+                        ? t('Run OCR again')
+                        : t('Run OCR')}
+                  </button>
+                )}
               </>
             )}
 
@@ -521,6 +572,67 @@ export function BookDetail() {
               </button>
             )}
           </div>
+
+          {canRunOcr && (currentOcr || ocrMessage || ocrDeferred || ocrStatus.error) && (
+            <section className={styles.ocrStatus} aria-live="polite" data-testid="book-ocr-status">
+              <div className={styles.ocrStatusHeader}>
+                <strong>{t('Document OCR')}</strong>
+                {ocrBusy && <Spinner size={15} />}
+              </div>
+              {currentOcr && (
+                <p className={styles.ocrStatusText}>
+                  {currentOcr.status === 'completed' && t('OCR and RAG indexing completed.')}
+                  {currentOcr.status === 'indexing' && t('OCR completed; RAG indexing is running.')}
+                  {currentOcr.status === 'pending' && t('OCR is queued.')}
+                  {currentOcr.status === 'running' && t('OCR is processing the PDF.')}
+                  {currentOcr.status === 'failed' && (currentOcr.error || t('OCR failed.'))}
+                </p>
+              )}
+              {currentOcr?.result && (
+                <div className={styles.ocrMeta}>
+                  {currentOcr.result.page_count != null && <span>{t('{count} pages', { count: currentOcr.result.page_count })}</span>}
+                  {currentOcr.result.extracted_chars != null && <span>{t('{count} characters', { count: currentOcr.result.extracted_chars.toLocaleString() })}</span>}
+                  {currentOcr.result.engine && <span>{currentOcr.result.engine} {currentOcr.result.engine_version ?? ''}</span>}
+                  {currentOcr.result.languages?.length ? <span>{currentOcr.result.languages.join(' + ')}</span> : null}
+                </div>
+              )}
+              {ocrMessage && <p className={styles.ocrStatusText}>{ocrMessage}</p>}
+              {ocrStatus.error && (
+                <p className={styles.ocrError} role="alert">
+                  {ocrStatus.error instanceof Error ? ocrStatus.error.message : t('Could not read OCR status.')}
+                </p>
+              )}
+              {ocrDeferred && (
+                <div className={styles.ocrConfirm} role="alert">
+                  <p>
+                    {t(
+                      'This PDF has {pages} pages, above the automatic OCR limit of {limit}. Processing may take a long time and use significant CPU.',
+                      { pages: ocrDeferred.page_count ?? 0, limit: ocrDeferred.max_pages ?? 0 },
+                    )}
+                  </p>
+                  <div className={styles.ocrConfirmActions}>
+                    <button
+                      type="button"
+                      className={styles.actionPrimary}
+                      disabled={startOcr.isPending}
+                      onClick={() => runOcr(true)}
+                    >
+                      {startOcr.isPending ? t('Starting…') : t('Approve long OCR job')}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.readToggleGhost}
+                      disabled={startOcr.isPending}
+                      onClick={() => setOcrDeferred(null)}
+                    >
+                      {t('Cancel')}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
           <p className={reloadMessage ? styles.actionStatus : undefined} role="status">{reloadMessage}</p>
 
           {deleteError && (

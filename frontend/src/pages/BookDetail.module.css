@@ -650,3 +650,68 @@
 .sendOk { color: var(--success); font-size: var(--fs-sm); }
 .sendErr { color: var(--danger); font-size: var(--fs-sm); }
 .sendHint { color: var(--text-muted); font-size: var(--fs-xs); }
+
+
+/* Asynchronous PDF OCR status and explicit approval for long documents. */
+.ocrStatus {
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+}
+
+.ocrStatusHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: var(--text);
+}
+
+.ocrStatusText {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.ocrMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+
+.ocrMeta span {
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+}
+
+.ocrError {
+  margin: var(--sp-2) 0 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.ocrConfirm {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--warning, var(--accent));
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.ocrConfirm p {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.ocrConfirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}

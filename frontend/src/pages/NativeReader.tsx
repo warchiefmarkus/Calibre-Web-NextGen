@@ -11,8 +11,8 @@ import styles from './NativeReader.module.css';
 const AUDIO = new Set(['mp3', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav', 'aac']);
 const COMIC = new Set(['cbr', 'cbt', 'cb7']);
 
-/** Native fallback for formats outside foliate-js: PDF, audio, TXT, and
- * archive comics that require server-side extraction. */
+/** Native fallback for formats outside foliate-js and EmbedPDF: audio, TXT,
+ * and archive comics that require server-side extraction. */
 export function NativeReader({ id, format }: { id: string; format: string }) {
   const t = useT();
   const fmt = format.toLowerCase();
@@ -40,8 +40,6 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
       </div>
 
       <div className={styles.body}>
-        {fmt === 'pdf' && <iframe className={styles.pdf} src={src} title={t('PDF reader')} />}
-
         {AUDIO.has(fmt) && (
           <div className={styles.audioWrap}>
             <audio className={styles.audio} controls preload="metadata" src={src}>
@@ -58,7 +56,7 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
 
         {COMIC.has(fmt) && <ComicViewer id={id} />}
 
-        {!['pdf', 'txt'].includes(fmt) && !AUDIO.has(fmt) && !COMIC.has(fmt) && (
+        {fmt !== 'txt' && !AUDIO.has(fmt) && !COMIC.has(fmt) && (
           <EmptyState message={t('No supported reader format is available.')} />
         )}
       </div>

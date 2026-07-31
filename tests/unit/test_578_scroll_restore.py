@@ -70,6 +70,24 @@ def test_deleted_book_evicted_from_scroll_cache():
     assert "export function removeBookFromCache" in cache
     queries = (_FE / "lib" / "queries.ts").read_text()
     assert "removeBookFromCache" in queries
+    # Invalidation alone retains the stale page until its refetch completes. The
+    # accumulating Catalog then merges that page and cannot infer deletion from
+    # the id being absent in the fresh response. List caches must be removed
+    # synchronously before BookDetail redirects to the library.
+    delete_hook = queries[queries.index("export function useDeleteBook"):]
+    assert "qc.removeQueries({ queryKey: ['books'] })" in delete_hook
+    assert "qc.removeQueries({ queryKey: ['adv-search'] })" in delete_hook
+    assert "qc.removeQueries({ queryKey: ['discover-strip'] })" in delete_hook
+
+
+@pytest.mark.unit
+def test_missing_book_detail_does_not_retry_404():
+    """A deleted ghost-card target must resolve to the not-found state immediately,
+    not spend the default react-query retry backoff behind a full-page spinner."""
+    queries = (_FE / "lib" / "queries.ts").read_text()
+    use_book = queries[queries.index("export function useBook"):queries.index("export function useToggleRead")]
+    assert "error.status === 404" in use_book
+    assert "retry:" in use_book
 
 
 @pytest.mark.unit

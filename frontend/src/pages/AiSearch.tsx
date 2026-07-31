@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'wouter';
 import {
   BookOpen, Clock3, Database, Search, SlidersHorizontal, Sparkles,
@@ -6,7 +6,10 @@ import {
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { Spinner, SpinnerCentered } from '../components/Spinner';
-import { useMe, useRagSearch, useRagStatus, useSearchOptions } from '../lib/queries';
+import {
+  useMe, useRagOcrConfig, useRagSearch, useRagStatus,
+  useSearchOptions, useUpdateRagOcrConfig,
+} from '../lib/queries';
 import type { RagSearchMode, RagSearchResult } from '../lib/api';
 import { useT } from '../lib/i18n';
 import { formatAuthors } from '../lib/authors';
@@ -49,6 +52,9 @@ export function AiSearch() {
   const status = useRagStatus(enabled);
   const search = useRagSearch();
   const options = useSearchOptions();
+  const canConfigureOcr = enabled && !!me?.role?.edit;
+  const ocrConfig = useRagOcrConfig(canConfigureOcr);
+  const updateOcrConfig = useUpdateRagOcrConfig();
 
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<RagSearchMode>('hybrid');
@@ -57,6 +63,14 @@ export function AiSearch() {
   const [authors, setAuthors] = useState('');
   const [tags, setTags] = useState('');
   const [includeAdjacent, setIncludeAdjacent] = useState(true);
+  const [ocrMaxPages, setOcrMaxPages] = useState(200);
+  const [ocrConfigMessage, setOcrConfigMessage] = useState('');
+
+  useEffect(() => {
+    if (ocrConfig.data?.ocr_max_pages) {
+      setOcrMaxPages(ocrConfig.data.ocr_max_pages);
+    }
+  }, [ocrConfig.data?.ocr_max_pages]);
 
   if (!enabled) {
     return (
@@ -152,6 +166,85 @@ export function AiSearch() {
             )}
           </div>
         </div>
+      )}
+
+      {ragStatus && (
+        <section className={styles.activityPanel} aria-live="polite" data-testid="rag-activity">
+          <div className={styles.activityHeader}>
+            <h2>{t('Background processing')}</h2>
+            <span className={ragStatus.activity.busy ? styles.activityBusy : styles.activityIdle}>
+              {ragStatus.activity.busy ? t('Working') : t('Idle')}
+            </span>
+          </div>
+          <div className={styles.activityGrid}>
+            <div><strong>{ragStatus.activity.ocr_running}</strong><span>{t('OCR running')}</span></div>
+            <div><strong>{ragStatus.activity.ocr_queued}</strong><span>{t('OCR queued')}</span></div>
+            <div><strong>{ragStatus.activity.rag_running}</strong><span>{t('RAG indexing')}</span></div>
+            <div><strong>{ragStatus.activity.rag_queued}</strong><span>{t('RAG queued')}</span></div>
+            <div><strong>{ragStatus.activity.total_remaining}</strong><span>{t('Tasks remaining')}</span></div>
+            <div><strong>{ragStatus.activity.vector_sync_pending ? t('Pending') : t('Current')}</strong><span>{t('Vector sync')}</span></div>
+          </div>
+          {ragStatus.activity.active_jobs.length > 0 && (
+            <div className={styles.activeJobs}>
+              {ragStatus.activity.active_jobs.slice(0, 6).map((job) => (
+                <Link key={job.job_id} href={`/book/${job.book_id}`} className={styles.activeJob}>
+                  <span className={styles.activeJobTitle}>{job.title}</span>
+                  <span>{job.selected_format || '—'} · {job.operation} · {job.stage || job.status}</span>
+                  {job.page_count != null && <span>{job.page_count} {t('pages')}</span>}
+                </Link>
+              ))}
+            </div>
+          )}
+          <p className={styles.activityHint}>
+            {t('The page refreshes processing status automatically.')}
+          </p>
+        </section>
+      )}
+
+      {canConfigureOcr && (
+        <details className={styles.ocrSettings} data-testid="rag-ocr-settings">
+          <summary>
+            <SlidersHorizontal size={16} aria-hidden="true" focusable={false} />
+            {t('OCR settings')}
+          </summary>
+          <form
+            className={styles.ocrSettingsForm}
+            onSubmit={(event) => {
+              event.preventDefault();
+              setOcrConfigMessage('');
+              updateOcrConfig.mutate(ocrMaxPages, {
+                onSuccess: (result) => {
+                  setOcrMaxPages(result.ocr_max_pages);
+                  setOcrConfigMessage(t('OCR page limit saved.'));
+                },
+                onError: (error) => setOcrConfigMessage(
+                  error instanceof Error ? error.message : t('Could not save OCR settings.'),
+                ),
+              });
+            }}
+          >
+            <label className={styles.field}>
+              <span>{t('Automatic OCR page limit')}</span>
+              <input
+                className={styles.input}
+                data-testid="rag-ocr-max-pages"
+                type="number"
+                min={ocrConfig.data?.minimum ?? 1}
+                max={ocrConfig.data?.maximum ?? 10000}
+                value={ocrMaxPages}
+                onChange={(event) => setOcrMaxPages(Number(event.target.value))}
+              />
+            </label>
+            <p className={styles.ocrSettingsHint}>
+              {t('Documents above this limit require explicit confirmation and are not started automatically.')}
+            </p>
+            <Button type="submit" disabled={updateOcrConfig.isPending || ocrMaxPages < 1}>
+              {updateOcrConfig.isPending ? <Spinner size={16} /> : null}
+              {updateOcrConfig.isPending ? t('Saving…') : t('Save OCR limit')}
+            </Button>
+            {ocrConfigMessage && <p className={styles.ocrConfigMessage} role="status">{ocrConfigMessage}</p>}
+          </form>
+        </details>
       )}
 
       <form className={styles.form} onSubmit={submit}>

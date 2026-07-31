@@ -108,3 +108,31 @@ def test_comic_annotation_roundtrip():
     assert got.position_type == "comic_page"
     assert got.comic_page == 12
     assert got.note_text == "great splash page"
+
+
+@pytest.mark.unit
+def test_local_annotation_load_is_scoped_by_locator_namespace(monkeypatch):
+    from cps import annotations, deployment_profile
+
+    engine = create_engine("sqlite:///:memory:")
+    ub.Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    monkeypatch.setattr(ub, "session", session)
+    monkeypatch.setattr(deployment_profile, "use_calibre_native_reader_data", lambda: False)
+    session.add_all([
+        ub.Annotation(user_id=7, book_id=1, annotation_id="epub-1",
+                      position_type="cfi", cfi_range="epubcfi(/6/2!/4/2)"),
+        ub.Annotation(user_id=7, book_id=1, annotation_id="pdf-1",
+                      position_type="pdf_quad", pdf_page=1,
+                      pdf_quad_json=json.dumps({"annotation": {"id": "pdf-1", "pageIndex": 0}})),
+        ub.Annotation(user_id=7, book_id=1, annotation_id="comic-1",
+                      position_type="comic_page", comic_page=1),
+    ])
+    session.commit()
+
+    assert [row.annotation_id for row in annotations._load_user_annotations(7, 1, "PDF")] == ["pdf-1"]
+    assert [row.annotation_id for row in annotations._load_user_annotations(7, 1, "EPUB")] == ["epub-1"]
+    assert {row.annotation_id for row in annotations._load_user_annotations(7, 1)} == {
+        "epub-1", "pdf-1", "comic-1",
+    }

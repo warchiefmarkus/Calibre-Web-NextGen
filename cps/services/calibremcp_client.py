@@ -177,6 +177,22 @@ def search_rag(cwng_user: str, payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def get_rag_ocr_config(cwng_user: str) -> dict[str, Any]:
+    return _request(
+        "GET", "/api/v1/rag/ocr-config", cwng_user, timeout_seconds=20.0
+    )
+
+
+def update_rag_ocr_config(cwng_user: str, max_pages: int) -> dict[str, Any]:
+    return _request(
+        "POST",
+        "/api/v1/rag/ocr-config",
+        cwng_user,
+        payload={"ocr_max_pages": int(max_pages)},
+        timeout_seconds=20.0,
+    )
+
+
 def get_reader_position(cwng_user: str, book_id: int, fmt: str) -> dict[str, Any]:
     return _request(
         "GET",
@@ -250,4 +266,39 @@ def delete_reader_annotation(
         f"/api/v1/reader/books/{book_id}/annotations/{annotation_id}",
         cwng_user,
         params={"format": fmt.upper()},
+    )
+
+
+def queue_book_ocr(
+    cwng_user: str,
+    book_id: int,
+    *,
+    force: bool = False,
+    max_pages: int | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"force": bool(force)}
+    if max_pages is not None:
+        payload["max_pages"] = int(max_pages)
+    return _request(
+        "POST",
+        f"/api/v1/books/{book_id}/ocr",
+        cwng_user,
+        payload=payload,
+        timeout_seconds=20.0,
+    )
+
+
+def get_book_ocr_status(
+    cwng_user: str,
+    book_id: int,
+    *,
+    job_id: int | None = None,
+) -> dict[str, Any]:
+    params = {"job_id": int(job_id)} if job_id is not None else None
+    return _request(
+        "GET",
+        f"/api/v1/books/{book_id}/ocr",
+        cwng_user,
+        params=params,
+        timeout_seconds=20.0,
     )

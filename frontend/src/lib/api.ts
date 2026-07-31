@@ -226,6 +226,41 @@ export interface SearchOptions {
 
 export type RagSearchMode = 'hybrid' | 'semantic' | 'lexical';
 
+export interface RagActiveJob {
+  job_id: number;
+  book_id: number;
+  title: string;
+  operation: string;
+  status: string;
+  stage: string | null;
+  selected_format: string | null;
+  queued_at: string | null;
+  started_at: string | null;
+  page_count: number | null;
+  max_pages: number | null;
+}
+
+export interface RagActivity {
+  active_jobs: RagActiveJob[];
+  ocr_running: number;
+  ocr_queued: number;
+  rag_running: number;
+  rag_queued: number;
+  jobs_remaining: number;
+  total_remaining: number;
+  vector_sync_pending: boolean;
+  busy: boolean;
+}
+
+export interface RagOcrStatus {
+  enabled: boolean;
+  available: boolean;
+  max_pages: number;
+  max_pages_source: string | null;
+  supported_formats: string[];
+  adapters: Record<string, boolean>;
+}
+
 export interface RagStatus {
   enabled: boolean;
   ready: boolean;
@@ -240,7 +275,71 @@ export interface RagStatus {
   reranker_ready: boolean;
   reranker_model: string | null;
   statuses: Record<string, { books: number; chunks: number }>;
+  activity: RagActivity;
+  ocr: RagOcrStatus;
 }
+
+export interface RagOcrConfig {
+  ocr_max_pages: number;
+  source: string;
+  minimum: number;
+  maximum: number;
+  confirmation_required_above_limit: boolean;
+}
+
+export interface BookOcrResult {
+  status?: string;
+  book_id?: number;
+  source_format?: string;
+  page_count?: number;
+  text_pages?: number;
+  extracted_chars?: number;
+  output_size?: number;
+  cached?: boolean;
+  duration_seconds?: number;
+  engine?: string;
+  engine_version?: string;
+  languages?: string[];
+  reindex_job_id?: number;
+}
+
+export interface BookOcrJob {
+  job_id: number;
+  book_id: number;
+  operation: string;
+  status: string;
+  attempts?: number;
+  queued_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  result?: Record<string, unknown> | null;
+}
+
+export interface BookOcrResponse {
+  success: boolean;
+  accepted?: boolean;
+  created?: boolean;
+  job_id?: number;
+  book_id: number;
+  title?: string;
+  status: string;
+  ocr_job_status?: string;
+  stage?: string | null;
+  attempts?: number;
+  queued_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  terminal?: boolean;
+  page_count?: number;
+  max_pages?: number;
+  force?: boolean;
+  retry?: { operation: 'ocr'; book_id: number; force: true };
+  result?: BookOcrResult | null;
+  reindex_job?: BookOcrJob | null;
+}
+
 
 export interface RagSearchRequest {
   query: string;

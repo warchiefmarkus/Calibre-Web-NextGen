@@ -374,3 +374,32 @@
   .searchActions { justify-content: stretch; }
   .searchActions > * { width: 100%; justify-content: center; }
 }
+
+.activityPanel, .ocrSettings {
+  margin-bottom: var(--sp-5);
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.activityHeader { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); }
+.activityHeader h2 { margin:0; font-family:var(--font-display); font-size:var(--fs-md); }
+.activityBusy, .activityIdle { padding:var(--sp-1) var(--sp-2); border-radius:var(--r-full); font-size:var(--fs-xs); }
+.activityBusy { background:var(--accent-soft); color:var(--accent-text); }
+.activityIdle { background:var(--surface-3); color:var(--text-muted); }
+.activityGrid { display:grid; grid-template-columns:repeat(6,minmax(90px,1fr)); gap:var(--sp-3); margin-top:var(--sp-3); }
+.activityGrid div { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.activityGrid strong { font-size:var(--fs-lg); color:var(--text); overflow-wrap:anywhere; }
+.activityGrid span, .activityHint, .ocrSettingsHint { color:var(--text-muted); font-size:var(--fs-xs); }
+.activityHint, .ocrSettingsHint { margin:var(--sp-3) 0 0; }
+.ocrSettings summary { display:inline-flex; align-items:center; gap:var(--sp-2); cursor:pointer; color:var(--text); font-weight:var(--fw-medium); }
+.ocrSettingsForm { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--sp-3); margin-top:var(--sp-4); }
+.ocrSettingsForm .field { width:min(260px,100%); }
+.ocrSettingsHint { flex:1 1 300px; margin:0 0 var(--sp-2); }
+.ocrConfigMessage { flex-basis:100%; margin:0; color:var(--text-muted); font-size:var(--fs-sm); }
+@media (max-width: 760px) { .activityGrid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ocrSettingsForm { align-items:stretch; flex-direction:column; } }
+.activeJobs { display:grid; gap:var(--sp-2); margin-top:var(--sp-4); padding-top:var(--sp-3); border-top:1px solid var(--border); }
+.activeJob { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:var(--sp-3); align-items:center; color:var(--text-muted); font-size:var(--fs-xs); text-decoration:none; }
+.activeJob:hover .activeJobTitle { color:var(--accent); }
+.activeJobTitle { color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (max-width:760px) { .activeJob { grid-template-columns:1fr; gap:2px; } }

@@ -10,7 +10,7 @@ import type {
   Me, Book, BooksPage, BookDetail, EntityList, Shelf, ShelfDetail,
   SearchOptions, AdvancedSearchParams, AdvSearchResult, Account, ProfileUpdate,
   BookMetadata, MetadataUpdate, UploadResult, AdminUser, AboutInfo, TaskItem, AuthConfig,
-  RagSearchRequest, RagSearchResponse, RagStatus,
+  RagOcrConfig, RagSearchRequest, RagSearchResponse, RagStatus, BookOcrResponse,
 } from './api';
 
 /** Entity kinds the catalog can be filtered by. Singular here; the browse-list
@@ -253,6 +253,12 @@ export function useBook(id: string | number) {
   return useQuery<BookDetail>({
     queryKey: ['book', String(id)],
     queryFn: () => apiGet<BookDetail>(`/api/v1/books/${id}`),
+    // A missing book is a final server answer, not a transient transport error.
+    // Retrying the 404 keeps the detail page on its full-screen spinner for the
+    // whole react-query backoff and makes a deleted ghost card look hung.
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && (error.status === 401 || error.status === 404))
+      && failureCount < 3,
   });
 }
 
@@ -714,17 +720,38 @@ export function useDeleteBook(id: string | number) {
   return useMutation({
     mutationFn: () => apiPost(`/api/v1/books/${id}/delete`),
     onSuccess: () => {
+      const bookId = String(id);
       removeBookFromCache(Number(id));
-      // Drop the deleted book's own detail cache, and refetch every surface that
-      // could still list it: the catalog, the home discover strip (we redirect
-      // there), and shelf views/counts. Otherwise the book lingers as a ghost
-      // card that 404s on click (#578).
-      qc.removeQueries({ queryKey: ['book', String(id)] });
-      void qc.invalidateQueries({ queryKey: ['books'] });
-      void qc.invalidateQueries({ queryKey: ['discover-strip'] });
+
+      // The catalog is an accumulating list. Invalidating a retained page is not
+      // enough: it is rendered immediately after the redirect, and when the fresh
+      // response arrives without the deleted id, dedupAppend cannot infer that an
+      // absent row must be removed. Drop every list payload synchronously before
+      // the caller's onSuccess redirects to the library.
+      qc.removeQueries({ queryKey: ['books'] });
+      qc.removeQueries({ queryKey: ['adv-search'] });
+      qc.removeQueries({ queryKey: ['discover-strip'] });
+      qc.removeQueries({ queryKey: ['shelf'] });
+      qc.removeQueries({ queryKey: ['magicshelf'] });
+
+      // Purge book-scoped data as well. Apart from avoiding stale state, this
+      // prevents a direct revisit from briefly rendering the deleted detail while
+      // its definitive 404 is in flight.
+      qc.removeQueries({ queryKey: ['book', bookId] });
+      qc.removeQueries({ queryKey: ['metadata', bookId] });
+      qc.removeQueries({ queryKey: ['book-shelves', bookId] });
+      qc.removeQueries({ queryKey: ['book-ocr', bookId] });
+      qc.removeQueries({ queryKey: ['bookmark', bookId] });
+      qc.removeQueries({ queryKey: ['reader-bookmarks', bookId] });
+      qc.removeQueries({ queryKey: ['annotations', bookId] });
+
+      // Counts and navigation summaries do not contain cards, so a normal
+      // refetch is sufficient and preserves their current UI while it completes.
       void qc.invalidateQueries({ queryKey: ['shelves'] });
-      void qc.invalidateQueries({ queryKey: ['shelf'] });
-      void qc.invalidateQueries({ queryKey: ['magicshelf'] });
+      void qc.invalidateQueries({ queryKey: ['magicshelves'] });
+      void qc.invalidateQueries({ queryKey: ['entities'] });
+      void qc.invalidateQueries({ queryKey: ['duplicates'] });
+      void qc.invalidateQueries({ queryKey: ['about'] });
     },
   });
 }
@@ -1000,8 +1027,31 @@ export function useRagStatus(enabled = true) {
     queryKey: ['rag-status'],
     queryFn: () => apiGet<RagStatus>('/api/v1/rag/status'),
     enabled,
+    staleTime: 5_000,
+    retry: 1,
+    refetchInterval: (query) => query.state.data?.activity?.busy ? 2_000 : 15_000,
+  });
+}
+
+export function useRagOcrConfig(enabled = true) {
+  return useQuery<RagOcrConfig>({
+    queryKey: ['rag-ocr-config'],
+    queryFn: () => apiGet<RagOcrConfig>('/api/v1/rag/ocr-config'),
+    enabled,
     staleTime: 30_000,
     retry: 1,
+  });
+}
+
+export function useUpdateRagOcrConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ocrMaxPages: number) =>
+      apiPost<RagOcrConfig>('/api/v1/rag/ocr-config', { ocr_max_pages: ocrMaxPages }),
+    onSuccess: (data) => {
+      qc.setQueryData(['rag-ocr-config'], data);
+      void qc.invalidateQueries({ queryKey: ['rag-status'] });
+    },
   });
 }
 
@@ -1009,6 +1059,40 @@ export function useRagSearch() {
   return useMutation({
     mutationFn: (vars: RagSearchRequest) =>
       apiPost<RagSearchResponse>('/api/v1/rag/search', vars),
+  });
+}
+
+export function useBookOcrStatus(bookId: string, enabled = true) {
+  return useQuery<BookOcrResponse | null>({
+    queryKey: ['book-ocr', bookId],
+    queryFn: async () => {
+      try {
+        return await apiGet<BookOcrResponse>(`/api/v1/books/${bookId}/ocr`);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
+      }
+    },
+    enabled,
+    retry: 1,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data && ['pending', 'running', 'indexing'].includes(data.status) ? 2000 : false;
+    },
+  });
+}
+
+export function useStartBookOcr(bookId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { force?: boolean; max_pages?: number }) =>
+      apiPost<BookOcrResponse>(`/api/v1/books/${bookId}/ocr`, vars),
+    onSuccess: (data) => {
+      queryClient.setQueryData<BookOcrResponse | null>(['book-ocr', bookId], data);
+      if (data.accepted) {
+        void queryClient.invalidateQueries({ queryKey: ['book-ocr', bookId] });
+      }
+    },
   });
 }
 

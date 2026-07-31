@@ -17,6 +17,7 @@ Rules under test:
 
 from __future__ import annotations
 
+import json
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -181,3 +182,29 @@ class TestDeleteAnnotation:
             user_id=7, annotation_id="cwn-web-abc"
         ).one()
         assert owner_row.hidden is False
+
+
+@pytest.mark.unit
+def test_edit_pdf_annotation_updates_full_locator(memory_db):
+    from cps import annotations as ann_mod
+    row = _seed(memory_db, annotation_id="embedpdf-1")
+    row.position_type = "pdf_quad"
+    row.pdf_page = 1
+    row.pdf_quad_json = json.dumps({"annotation": {"id": "embedpdf-1", "pageIndex": 0}})
+    memory_db.commit()
+    locator = {
+        "annotation": {
+            "id": "embedpdf-1", "pageIndex": 2, "type": 9,
+            "rect": {"origin": {"x": 4, "y": 8}, "size": {"width": 20, "height": 3}},
+            "contents": "updated note",
+        },
+    }
+    updated = ann_mod.edit_annotation(
+        "embedpdf-1", user_id=7, book_id=1, session=memory_db,
+        commit=memory_db.commit, highlighted_text="updated text",
+        pdf_locator={"pdf_page": 3, "pdf_quad": locator},
+    )
+    assert updated is not None
+    assert updated.highlighted_text == "updated text"
+    assert updated.pdf_page == 3
+    assert json.loads(updated.pdf_quad_json) == locator

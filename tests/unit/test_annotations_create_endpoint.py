@@ -21,6 +21,7 @@ A web-created highlight must:
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -220,3 +221,43 @@ def test_create_requires_kobospan_or_cfi(memory_db, tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         ann_mod.create_annotation({"highlighted_text": "x"}, user_id=7, book=book,
                                   session=memory_db, commit=memory_db.commit)
+
+
+@pytest.mark.unit
+def test_create_pdf_annotation_preserves_embedpdf_uid_and_locator(memory_db, tmp_path):
+    from cps import annotations as ann_mod
+    book = _make_book(tmp_path, with_epub=False)
+    locator = {
+        "annotation": {
+            "id": "embedpdf-1", "pageIndex": 4, "type": 9,
+            "rect": {"origin": {"x": 10, "y": 20}, "size": {"width": 30, "height": 4}},
+        },
+    }
+    row = ann_mod.create_annotation(
+        {"format": "pdf", "annotation_id": "embedpdf-1", "pdf_page": 5,
+         "pdf_quad": locator, "highlight_color": "yellow"},
+        user_id=7, book=book, session=memory_db, commit=memory_db.commit,
+    )
+    assert row.annotation_id == "embedpdf-1"
+    assert row.position_type == "pdf_quad"
+    assert row.pdf_page == 5
+    assert json.loads(row.pdf_quad_json) == locator
+
+
+@pytest.mark.unit
+def test_create_pdf_annotation_is_idempotent_by_uid(memory_db, tmp_path):
+    from cps import annotations as ann_mod, ub
+    book = _make_book(tmp_path, with_epub=False)
+    first = {"annotation": {"id": "embedpdf-1", "pageIndex": 0}}
+    second = {"annotation": {"id": "embedpdf-1", "pageIndex": 1, "contents": "updated"}}
+    ann_mod.create_annotation(
+        {"format": "pdf", "annotation_id": "embedpdf-1", "pdf_page": 1, "pdf_quad": first},
+        user_id=7, book=book, session=memory_db, commit=memory_db.commit,
+    )
+    row = ann_mod.create_annotation(
+        {"format": "pdf", "annotation_id": "embedpdf-1", "pdf_page": 2, "pdf_quad": second},
+        user_id=7, book=book, session=memory_db, commit=memory_db.commit,
+    )
+    assert memory_db.query(ub.Annotation).filter_by(annotation_id="embedpdf-1").count() == 1
+    assert row.pdf_page == 2
+    assert json.loads(row.pdf_quad_json) == second

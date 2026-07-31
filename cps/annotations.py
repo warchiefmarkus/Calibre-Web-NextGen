@@ -296,17 +296,17 @@ def _reader_annotation_format(payload=None) -> str:
         value = payload.get("format")
     value = value or request.args.get("format") or "EPUB"
     normalized = str(value).strip().upper()
-    supported = {"EPUB", "KEPUB", "FB2", "FBZ", "MOBI", "AZW", "AZW3", "CBZ"}
+    supported = {"EPUB", "KEPUB", "FB2", "FBZ", "MOBI", "AZW", "AZW3", "CBZ", "PDF"}
     if normalized not in supported:
         raise ValueError(f"unsupported reader annotation format {normalized!r}")
     return normalized
 
 
 def _load_user_annotations(user_id: int, book_id: int, fmt: str | None = None) -> list:
-    """Load the live per-user annotation set from the active storage backend."""
+    """Load live annotations, scoped to the reader's locator namespace."""
     if deployment_profile.use_calibre_native_reader_data():
         return calibre_annotations.list_annotations(_cwng_user_name(), book_id, fmt or "EPUB")
-    return (
+    query = (
         ub.session.query(ub.Annotation)
         .filter(
             ub.Annotation.user_id == user_id,
@@ -316,7 +316,20 @@ def _load_user_annotations(user_id: int, book_id: int, fmt: str | None = None) -
             (ub.Annotation.hidden.is_(None))
             | (ub.Annotation.hidden == False)  # noqa: E712 — SQLA needs ==
         )
-        .order_by(
+    )
+    if fmt:
+        normalized = fmt.strip().upper()
+        if normalized == "PDF":
+            query = query.filter(ub.Annotation.position_type == "pdf_quad")
+        else:
+            # Reflowable readers consume only CFI-compatible rows. Excluding
+            # PDF/comic locators prevents formats of the same book from mixing.
+            query = query.filter(
+                (ub.Annotation.position_type.is_(None))
+                | (ub.Annotation.position_type == "cfi")
+            )
+    return (
+        query.order_by(
             ub.Annotation.chapter_progress.asc().nullslast(),
             ub.Annotation.created_at.asc().nullslast(),
             ub.Annotation.id.asc(),
@@ -667,6 +680,49 @@ def create_annotation(payload, *, user_id, book, session, commit):
     start_span = (payload.get("start_kobospan") or "").strip()
     cfi_range = (payload.get("cfi_range") or "").strip()
 
+    if str(payload.get("format") or "").strip().upper() == "PDF":
+        page, quad_json = calibre_annotations.normalize_pdf_locator(payload)
+        requested_id = str(payload.get("annotation_id") or "").strip()
+        annotation_id = requested_id or WEBREADER_ID_PREFIX + uuid.uuid4().hex
+        existing = (
+            session.query(ub.Annotation)
+            .filter(
+                ub.Annotation.user_id == user_id,
+                ub.Annotation.book_id == book.id,
+                ub.Annotation.annotation_id == annotation_id,
+            )
+            .first()
+        )
+        if existing is not None:
+            existing.highlighted_text = payload.get("highlighted_text")
+            existing.highlight_color = color
+            existing.note_text = payload.get("note_text")
+            existing.position_type = "pdf_quad"
+            existing.pdf_page = page
+            existing.pdf_quad_json = quad_json
+            existing.hidden = False
+            existing.last_synced = datetime.now(timezone.utc)
+            commit()
+            return existing
+        row = ub.Annotation(
+            user_id=user_id,
+            annotation_id=annotation_id,
+            book_id=book.id,
+            source="webreader",
+            highlighted_text=payload.get("highlighted_text"),
+            highlight_color=color,
+            note_text=payload.get("note_text"),
+            position_type="pdf_quad",
+            pdf_page=page,
+            pdf_quad_json=quad_json,
+            chapter_progress=payload.get("chapter_progress"),
+            context_string=payload.get("context_string"),
+            hidden=False,
+        )
+        session.add(row)
+        commit()
+        return row
+
     # The SPA epub.js reader produces a portable EPUB CFI (not a KoboSpan). Accept
     # a CFI-only web-reader highlight: it stands on its cfi_range, exports like any
     # other, and renders back in the reader. KoboSpan stays the path for the kepub
@@ -751,11 +807,12 @@ def _find_owned_annotation(annotation_id, user_id, book_id, session):
 
 
 def edit_annotation(annotation_id, *, user_id, book_id, session, commit,
-                    color=_UNSET, note=_UNSET):
-    """Update an annotation's color and/or note. Position is immutable.
+                    color=_UNSET, note=_UNSET, highlighted_text=_UNSET,
+                    pdf_locator=_UNSET):
+    """Update an owned annotation, including a PDF locator when supplied.
 
     Returns the row, or ``None`` if no annotation with that id belongs to
-    ``(user_id, book_id)``. Raises ``ValueError`` on an unsupported color.
+    ``(user_id, book_id)``. Raises ``ValueError`` on invalid input.
     """
     row = _find_owned_annotation(annotation_id, user_id, book_id, session)
     if row is None:
@@ -767,6 +824,13 @@ def edit_annotation(annotation_id, *, user_id, book_id, session, commit,
         row.highlight_color = normalized
     if note is not _UNSET:
         row.note_text = note
+    if highlighted_text is not _UNSET:
+        row.highlighted_text = highlighted_text
+    if pdf_locator is not _UNSET:
+        page, quad_json = calibre_annotations.normalize_pdf_locator(pdf_locator)
+        row.position_type = "pdf_quad"
+        row.pdf_page = page
+        row.pdf_quad_json = quad_json
     row.last_synced = datetime.now(timezone.utc)
     commit()
     return row
@@ -812,7 +876,7 @@ def annotations_create(book_id):
             return jsonify({"error": "bad_anchor", "message": str(e)}), 400
         except CalibreMCPClientError as e:
             return jsonify({"error": "reader_backend_error", "message": str(e)}), e.status_code
-        return jsonify(_data_json_row(row, row.cfi_range, None)), 201
+        return jsonify(_data_json_row(row, row.cfi_range, json.loads(row.pdf_quad_json) if row.pdf_quad_json else None)), 201
 
     try:
         row = create_annotation(
@@ -822,7 +886,7 @@ def annotations_create(book_id):
     except ValueError as e:
         return jsonify({"error": "bad_anchor", "message": str(e)}), 400
     _fanout_to_sync_targets(row, book)
-    return jsonify(_data_json_row(row, row.cfi_range, None)), 201
+    return jsonify(_data_json_row(row, row.cfi_range, json.loads(row.pdf_quad_json) if row.pdf_quad_json else None)), 201
 
 
 @annotations_bp.route("/annotations/<int:book_id>/<annotation_id>", methods=["PATCH"])
@@ -841,24 +905,29 @@ def annotations_edit(book_id, annotation_id):
             return jsonify({"error": "bad_color", "message": str(e)}), 400
         except CalibreMCPClientError as e:
             return jsonify({"error": "reader_backend_error", "message": str(e)}), e.status_code
-        return jsonify(_data_json_row(row, row.cfi_range, None)), 200
+        return jsonify(_data_json_row(row, row.cfi_range, json.loads(row.pdf_quad_json) if row.pdf_quad_json else None)), 200
 
     kwargs = {}
     if "highlight_color" in data:
         kwargs["color"] = data.get("highlight_color")
     if "note_text" in data:
         kwargs["note"] = data.get("note_text")
+    if "highlighted_text" in data:
+        kwargs["highlighted_text"] = data.get("highlighted_text")
+    if any(key in data for key in ("pdf_page", "page", "pdf_quad", "pdf_quad_json", "quads")):
+        kwargs["pdf_locator"] = data
     try:
         row = edit_annotation(
             annotation_id, user_id=current_user.id, book_id=book_id,
             session=ub.session, commit=ub.session_commit, **kwargs,
         )
     except ValueError as e:
-        return jsonify({"error": "bad_color", "message": str(e)}), 400
+        return jsonify({"error": "bad_annotation", "message": str(e)}), 400
     if row is None:
         abort(404)
     _fanout_to_sync_targets(row, book)
-    return jsonify(_data_json_row(row, row.cfi_range, None)), 200
+    locator = json.loads(row.pdf_quad_json) if row.pdf_quad_json else None
+    return jsonify(_data_json_row(row, row.cfi_range, locator)), 200
 
 
 @annotations_bp.route("/annotations/<int:book_id>/<annotation_id>", methods=["DELETE"])
