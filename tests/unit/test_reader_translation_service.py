@@ -116,6 +116,102 @@ def test_chat_payload_sends_structured_runs_without_html_or_urls():
     assert "<strong>" not in content
 
 
+def test_gpt_oss_translation_uses_low_reasoning_effort():
+    from cps.services.reader_translation import _chat_payload
+
+    payload = _chat_payload(
+        _profile(model="openai/gpt-oss-120b"),
+        source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": "Source"}], json_mode=True,
+    )
+    assert payload["reasoning_effort"] == "low"
+    assert payload["stream"] is True
+
+    regular = _chat_payload(
+        _profile(model="other-model"),
+        source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": "Source"}], json_mode=True,
+    )
+    assert "reasoning_effort" not in regular
+    assert regular["stream"] is False
+
+
+def test_gpt_oss_streaming_completion_is_reassembled(monkeypatch):
+    import json
+    from cps.services import reader_translation as service
+
+    chunks = [
+        {"choices": [{"delta": {"content": '{"blocks":[{"id":"a",'}}]},
+        {"choices": [{"delta": {"content": '"text":"Переклад"}]}'}}]},
+    ]
+    body = "\n\n".join(
+        f"data: {json.dumps(chunk, ensure_ascii=False)}" for chunk in chunks
+    ) + "\n\ndata: [DONE]\n\n"
+
+    class Response:
+        ok = True
+        status_code = 200
+        content = body.encode("utf-8")
+        text = body
+
+    seen = {}
+
+    def fake_request(method, url, **kwargs):
+        seen.update(kwargs["json"])
+        return Response()
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    profile = _profile(
+        model="openai/gpt-oss-120b", api_key_encrypted=None,
+        extra_headers={}, timeout_seconds=30,
+    )
+    result = service.translate_page(
+        profile, source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": "Source"}],
+    )
+    assert result[0]["text"] == "Переклад"
+    assert seen["stream"] is True
+    assert seen["reasoning_effort"] == "low"
+
+
+def test_gpt_oss_timeout_is_retried_with_a_bounded_attempt(monkeypatch):
+    import json
+    from cps.services import reader_translation as service
+
+    event = {
+        "choices": [{"delta": {"content": '{"blocks":[{"id":"a","text":"Переклад"}]}'}}],
+    }
+    body = f"data: {json.dumps(event, ensure_ascii=False)}\n\ndata: [DONE]\n\n"
+
+    class Response:
+        ok = True
+        status_code = 200
+        content = body.encode("utf-8")
+        text = body
+
+    timeouts = []
+
+    def fake_request(method, url, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        if len(timeouts) == 1:
+            raise ReaderTranslationError(
+                "temporary timeout", code="provider_timeout", status=504,
+            )
+        return Response()
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    profile = _profile(
+        model="openai/gpt-oss-120b", api_key_encrypted=None,
+        extra_headers={}, timeout_seconds=60,
+    )
+    result = service.translate_page(
+        profile, source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": "Source"}],
+    )
+    assert result[0]["text"] == "Переклад"
+    assert timeouts == [pytest.approx(25.0), pytest.approx(25.0)]
+
+
 def test_request_hash_changes_with_text_language_model_or_prompt():
     base = dict(
         user_id=1, book_id=2, fmt="epub", source_language="auto",
@@ -583,9 +679,40 @@ def test_translate_page_reuses_one_deadline_during_incomplete_retry(monkeypatch)
     assert len(set(deadlines)) == 1
 
 
-def test_big_pickle_translation_batches_are_sequential_to_avoid_rate_limit_bursts():
+def test_sequential_translation_models_bypass_fan_out(monkeypatch):
+    from cps.services import reader_translation as service
+
+    calls = []
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        calls.append([block["id"] for block in blocks])
+        return [
+            {"id": block["id"], "tag": block["tag"], "text": f"T:{block['text']}"}
+            for block in blocks
+        ]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    monkeypatch.setattr(
+        service.parallel, "fan_out",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fan_out must not run")),
+    )
+    blocks = [
+        {"id": f"b{index}", "tag": "p", "text": "source"}
+        for index in range(9)
+    ]
+    result = service.translate_page(
+        _profile(model="openai/gpt-oss-120b", timeout_seconds=60),
+        source_language="en", target_language="uk", prompt="", blocks=blocks,
+    )
+    assert calls == [[f"b{index}" for index in range(8)], ["b8"]]
+    assert [item["id"] for item in result] == [f"b{index}" for index in range(9)]
+
+
+def test_reasoning_heavy_translation_batches_are_sequential():
     from cps.services.reader_translation import _translation_parallel_workers
 
     assert _translation_parallel_workers(_profile(model="big-pickle"), 5) == 1
+    assert _translation_parallel_workers(_profile(model="openai/gpt-oss-120b"), 5) == 1
+    assert _translation_parallel_workers(_profile(model="gpt-oss-20b"), 2) == 1
     assert _translation_parallel_workers(_profile(model="other-model"), 5) == 3
     assert _translation_parallel_workers(_profile(model="other-model"), 2) == 2

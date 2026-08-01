@@ -34,6 +34,17 @@ def test_original_page_remains_visible_while_translation_is_pending():
     assert ".translationSpinner" not in CSS
 
 
+def test_reader_content_is_clipped_above_an_opaque_bottom_bar():
+    stage = CSS.split(".stage {", 1)[1].split("}", 1)[0]
+    bottom = CSS.rsplit(".bottomBar {", 1)[1].split("}", 1)[0]
+    assert "overflow: hidden" in stage
+    assert "contain: layout paint" in stage
+    assert "position: relative" in bottom
+    assert "z-index:" in bottom
+    assert "isolation: isolate" in bottom
+    assert "background: var(--reader-bg)" in bottom
+
+
 def test_translation_overlay_reuses_computed_original_typography():
     assert "function computedTranslationStyle" in READER
     for property_name in (

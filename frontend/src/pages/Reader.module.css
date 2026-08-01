@@ -127,6 +127,7 @@
   min-height: 0;
   flex: 1;
   overflow: hidden;
+  contain: layout paint;
 }
 
 .host,
@@ -545,7 +546,11 @@
 }
 
 .bottomBar {
+  position: relative;
+  z-index: 6;
+  isolation: isolate;
   justify-content: center;
+  background: var(--reader-bg);
 }
 
 .progressArea {

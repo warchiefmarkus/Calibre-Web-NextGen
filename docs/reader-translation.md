@@ -71,10 +71,13 @@ page replaces an older queued
 page. Provider errors remain silent while the page is only speculative; if the
 reader opens that page and joins the request, the same error is surfaced as a
 foreground translation error. Opening a different page or receiving a foreground
-provider error cancels obsolete preload work. The toolbar activity state is also
-reconciled against active request refs once per second and aborts work that exceeds
-the selected profile timeout plus a five-second client grace period, preventing a
-stale spinner after an aborted or disconnected request. Preloading is skipped in
+provider error cancels obsolete preload work. A failed foreground page is not
+submitted again by repeated Foliate relocate events; it remains on the original
+page with the error shown until the user explicitly presses **Retry**. The toolbar
+activity state is also reconciled against active request refs once per second and
+aborts work that exceeds the selected profile timeout plus a five-second client
+grace period, preventing a stale spinner after an aborted or disconnected request.
+Preloading is skipped in
 scrolling/vertical-writing layouts and at a section boundary where the next section
 is not already loaded.
 
@@ -106,7 +109,12 @@ Groq, Mistral, and Ollama, while all fields remain editable. NVIDIA NIM uses
 `https://integrate.api.nvidia.com/v1`, discovers the live hosted catalog through
 `GET /v1/models`, and defaults to `nvidia/nemotron-3-nano-30b-a3b`. The public
 catalog currently supplies model ID and publisher; context length and description
-are shown automatically when a compatible endpoint includes them.
+are shown automatically when a compatible endpoint includes them. GPT-OSS models
+use low reasoning effort and streamed Chat Completions to reduce translation
+latency. Their page batches run sequentially, and a stalled hosted completion is
+retried once with a bounded per-attempt timeout while still respecting the overall
+profile deadline. For automatic page translation, `openai/gpt-oss-20b` provides
+materially lower hosted latency than the 120B route.
 
 OpenCode Zen and OpenCode Go use their public `/models` feeds for discovery.
 Saving either preset automatically loads the current server-side model list.

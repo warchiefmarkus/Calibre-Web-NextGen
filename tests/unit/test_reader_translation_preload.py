@@ -95,8 +95,20 @@ def test_stale_activity_is_reconciled_and_foreground_errors_cancel_preload():
     assert "Page translation timed out." in READER
     assert "cancelTranslationPreload();" in READER
     assert "translationPreloading && translationOverlayVisible" in READER
+    assert "!translationError" in READER
     assert "!translationInFlightKeyRef.current" in READER
     assert "!translationPreloadInFlightKeyRef.current" in READER
+
+
+def test_failed_page_waits_for_explicit_retry_instead_of_looping():
+    assert "translationCurrentKeyRef" in READER
+    assert "translationFailureRef" in READER
+    assert "translationFailureRef.current = { key, message }" in READER
+    assert "translationFailureRef.current = { key: failedKey, message }" in READER
+    assert "previousFailure?.key === key" in READER
+    assert "setTranslationError(previousFailure.message)" in READER
+    assert "translationFailureRef.current = null" in READER
+    assert "setTranslationRetry((value) => value + 1)" in READER
 
 
 def test_different_foreground_page_cancels_stale_preload_before_request():

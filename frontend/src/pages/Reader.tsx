@@ -851,6 +851,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const wheelIdleTimerRef = useRef<number | null>(null);
   const translationAbortRef = useRef<AbortController | null>(null);
   const translationInFlightKeyRef = useRef<string | null>(null);
+  const translationCurrentKeyRef = useRef<string | null>(null);
+  const translationFailureRef = useRef<{ key: string; message: string } | null>(null);
   const translationStartedAtRef = useRef<number | null>(null);
   const translationPreloadAbortRef = useRef<AbortController | null>(null);
   const translationPreloadStartedAtRef = useRef<number | null>(null);
@@ -1101,13 +1103,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTranslationLoading(false);
       } else if (translationLoading && foregroundStarted !== null
           && now - foregroundStarted > translationRequestTimeoutMs) {
+        const failedKey = translationInFlightKeyRef.current;
+        const message = t('Page translation timed out.');
         translationAbortRef.current?.abort();
         translationAbortRef.current = null;
         translationInFlightKeyRef.current = null;
         translationStartedAtRef.current = null;
+        if (failedKey) translationFailureRef.current = { key: failedKey, message };
         cancelTranslationPreload();
         setTranslationLoading(false);
-        setTranslationError(t('Page translation timed out.'));
+        setTranslationError(message);
       }
 
       const preloadStarted = translationPreloadStartedAtRef.current;
@@ -1264,6 +1269,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       translationAbortRef.current?.abort();
       translationAbortRef.current = null;
       translationInFlightKeyRef.current = null;
+      translationCurrentKeyRef.current = null;
       translationTransitionRef.current = false;
       translationLandingRef.current = null;
       setTranslationLoading(false);
@@ -1338,6 +1344,18 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       }
 
       const key = translationPageKey(settings, blocks);
+      translationCurrentKeyRef.current = key;
+      const previousFailure = translationFailureRef.current;
+      if (previousFailure?.key === key) {
+        translationTransitionRef.current = false;
+        translationLandingRef.current = null;
+        setTranslationBlocks([]);
+        setTranslationSegments([]);
+        setTranslationLayout(null);
+        setTranslationLoading(false);
+        setTranslationError(previousFailure.message);
+        return;
+      }
       const styled = (translated: ReaderTranslationBlock[]): StyledTranslationBlock[] =>
         translated.map((block) => ({
           ...block,
@@ -1345,6 +1363,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           sourceRuns: sourceRuns[block.id],
         }));
       const applyTranslationResponse = (response: ReaderTranslationResponse) => {
+        if (translationFailureRef.current?.key === key) translationFailureRef.current = null;
+        setTranslationError(null);
         if (response.skipped) {
           translationTransitionRef.current = false;
           translationLandingRef.current = null;
@@ -1398,8 +1418,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           if (!preloadTask.controller.signal.aborted) applyTranslationResponse(response);
         } catch (cause) {
           if (!preloadTask.controller.signal.aborted) {
+            const message = cause instanceof Error ? cause.message : t('Page translation failed.');
+            translationFailureRef.current = { key, message };
             cancelTranslationPreload();
-            setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
+            setTranslationError(message);
           }
         } finally {
           if (translationInFlightKeyRef.current === key) {
@@ -1440,8 +1462,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         applyTranslationResponse(response);
       } catch (cause) {
         if (controller.signal.aborted) return;
+        const message = cause instanceof Error ? cause.message : t('Page translation failed.');
+        translationFailureRef.current = { key, message };
         cancelTranslationPreload();
-        setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
+        setTranslationError(message);
       } finally {
         if (translationInFlightKeyRef.current === key) {
           translationInFlightKeyRef.current = null;
@@ -1888,7 +1912,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     && !!settings.translationProfileId;
   const translationOverlayVisible = translationRequested
     && !translationSkipped && !!translationLayout && translationSegments.length > 0;
-  const translationActivity = translationRequested
+  const translationActivity = translationRequested && !translationError
     && (translationLoading || (translationPreloading && translationOverlayVisible));
   const translatedBlockById = new Map(translationBlocks.map((block) => [block.id, block]));
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
@@ -2031,7 +2055,13 @@ export function Reader({ id, format }: { id: string; format?: string }) {
               {translationError && (
                 <>
                   <span>{translationError}</span>
-                  <button type="button" onClick={() => setTranslationRetry((value) => value + 1)}>
+                  <button type="button" onClick={() => {
+                    if (translationFailureRef.current?.key === translationCurrentKeyRef.current) {
+                      translationFailureRef.current = null;
+                    }
+                    setTranslationError(null);
+                    setTranslationRetry((value) => value + 1);
+                  }}>
                     {t('Retry')}
                   </button>
                 </>

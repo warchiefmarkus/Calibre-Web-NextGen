@@ -345,6 +345,69 @@ def _message_content(payload: dict[str, Any]) -> str:
     raise ReaderTranslationError("The LLM response contains no text.", code="empty_provider_response", status=502)
 
 
+def _streaming_message_content(response: requests.Response) -> str:
+    """Reassemble an OpenAI-compatible SSE chat completion."""
+    body = response.content or b""
+    if len(body) > _MAX_RESPONSE_BYTES:
+        raise ReaderTranslationError(
+            "The LLM response was unexpectedly large.",
+            code="provider_response_too_large", status=502,
+        )
+    if not response.ok:
+        _response_json(response)
+
+    # Some compatible gateways ignore stream=true and return ordinary JSON.
+    if body.lstrip().startswith(b"{"):
+        return _message_content(_response_json(response))
+
+    parts: list[str] = []
+    for raw_line in body.splitlines():
+        line = raw_line.decode("utf-8", errors="replace").strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            event = json.loads(data)
+        except ValueError as exc:
+            raise ReaderTranslationError(
+                "The LLM provider returned an invalid streaming response.",
+                code="invalid_provider_json", status=502,
+            ) from exc
+        if not isinstance(event, dict):
+            continue
+        error = event.get("error")
+        if error:
+            detail = error.get("message") if isinstance(error, dict) else error
+            raise ReaderTranslationError(
+                f"LLM provider streaming error: {detail}",
+                code="provider_error", status=502,
+            )
+        choices = event.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            continue
+        delta = choices[0].get("delta")
+        if not isinstance(delta, dict):
+            continue
+        content = delta.get("content")
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            parts.extend(
+                item["text"]
+                for item in content
+                if isinstance(item, dict) and isinstance(item.get("text"), str)
+            )
+    joined = "".join(parts).strip()
+    if joined:
+        return joined
+    raise ReaderTranslationError(
+        "The LLM streaming response contains no text.",
+        code="empty_provider_response", status=502,
+    )
+
+
 def _responses_content(payload: dict[str, Any]) -> str:
     direct = payload.get("output_text")
     if isinstance(direct, str) and direct.strip():
@@ -562,6 +625,11 @@ def parse_translation_content(content: str, source_blocks: list[dict[str, Any]])
     return [_translated_block_from_value(block, translated[block["id"]]) for block in source_blocks]
 
 
+def _is_gpt_oss_model(profile: Any | None) -> bool:
+    model = str(getattr(profile, "model", "") or "").strip().lower()
+    return model.split("/")[-1].startswith("gpt-oss-")
+
+
 def _effective_max_output_tokens(profile: Any) -> int:
     configured = int(getattr(profile, "max_output_tokens", 4096) or 4096)
     # big-pickle exposes hidden reasoning_content inside the same completion
@@ -621,6 +689,15 @@ def _chat_payload(profile: Any, *, source_language: str, target_language: str,
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
+    if _is_gpt_oss_model(profile):
+        # NVIDIA's hosted GPT-OSS routes default to medium reasoning. Page
+        # translation is a deterministic transformation, so low reasoning
+        # substantially reduces first-token latency and avoids spending most
+        # of the response budget on reasoning_content. Streaming keeps the
+        # provider's socket active while the large model generates the page;
+        # requests still buffers the completed SSE body in the native worker.
+        payload["reasoning_effort"] = "low"
+        payload["stream"] = True
     return payload
 
 
@@ -683,14 +760,16 @@ _TRANSLATION_BATCH_MAX_CHARS = 3500
 _TRANSLATION_FRAGMENT_MAX_CHARS = 2600
 _TRANSLATION_RETRY_MAX_DEPTH = 8
 _TRANSLATION_PARALLEL_BATCHES = 3
+_GPT_OSS_ATTEMPT_TIMEOUT_SECONDS = 25.0
+_GPT_OSS_TIMEOUT_ATTEMPTS = 2
 
 
 def _translation_parallel_workers(profile: Any | None, batch_count: int) -> int:
     model = str(getattr(profile, "model", "") or "").strip().lower()
-    # OpenCode Zen's big-pickle route rate-limits bursts aggressively. Running
-    # its page batches sequentially prevents one page/preload from generating
-    # a fan-out of simultaneous 429 responses.
-    if model == "big-pickle":
+    # Reasoning-heavy hosted routes either rate-limit bursts or queue concurrent
+    # requests behind the same account. Sequential batches avoid turning one
+    # visible page into several requests that all consume the page deadline.
+    if model == "big-pickle" or _is_gpt_oss_model(profile):
         return 1
     return max(1, min(_TRANSLATION_PARALLEL_BATCHES, batch_count))
 
@@ -756,9 +835,31 @@ def _split_translation_text(text: str, max_chars: int = _TRANSLATION_FRAGMENT_MA
     return parts
 
 
+def _request_translation_completion(
+    profile: Any, *, headers: dict[str, str], payload: dict[str, Any],
+) -> requests.Response:
+    attempts = _GPT_OSS_TIMEOUT_ATTEMPTS if _is_gpt_oss_model(profile) else 1
+    for attempt in range(attempts):
+        timeout = _remaining_translation_timeout(profile)
+        if _is_gpt_oss_model(profile):
+            timeout = min(timeout, _GPT_OSS_ATTEMPT_TIMEOUT_SECONDS)
+        try:
+            return _request(
+                "POST", _endpoint_url(profile), headers=headers, json=payload, timeout=timeout,
+            )
+        except ReaderTranslationError as exc:
+            can_retry = exc.code == "provider_timeout" and attempt + 1 < attempts
+            if not can_retry:
+                raise
+            log.warning(
+                "LLM model %s timed out after %.1fs; retrying completion once",
+                profile.model, timeout,
+            )
+    raise AssertionError("unreachable")
+
+
 def _translate_batch_once(profile: Any, *, source_language: str, target_language: str,
                           prompt: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    timeout = _remaining_translation_timeout(profile)
     endpoint = normalize_endpoint_path(profile.endpoint_path).lower()
     responses_mode = endpoint.endswith("responses")
     messages_mode = endpoint.endswith("messages")
@@ -784,25 +885,25 @@ def _translate_batch_once(profile: Any, *, source_language: str, target_language
             profile, source_language=source_language, target_language=target_language,
             prompt=prompt, blocks=blocks, json_mode=bool(profile.json_mode),
         )
-    response = _request("POST", _endpoint_url(profile), headers=headers, json=payload, timeout=timeout)
+    response = _request_translation_completion(profile, headers=headers, payload=payload)
     response_hint = (response.text or "").lower()[:2000] if response.status_code == 400 else ""
     if (not responses_mode and not messages_mode and not google_mode
             and response.status_code == 400 and "response_format" in payload
             and any(token in response_hint for token in ("response_format", "json_object", "json mode"))):
         payload.pop("response_format", None)
-        response = _request(
-            "POST", _endpoint_url(profile), headers=headers, json=payload,
-            timeout=_remaining_translation_timeout(profile),
-        )
-    response_payload = _response_json(response)
-    if responses_mode:
-        content = _responses_content(response_payload)
-    elif messages_mode:
-        content = _anthropic_content(response_payload)
-    elif google_mode:
-        content = _google_content(response_payload)
+        response = _request_translation_completion(profile, headers=headers, payload=payload)
+    if not responses_mode and not messages_mode and not google_mode and payload.get("stream"):
+        content = _streaming_message_content(response)
     else:
-        content = _message_content(response_payload)
+        response_payload = _response_json(response)
+        if responses_mode:
+            content = _responses_content(response_payload)
+        elif messages_mode:
+            content = _anthropic_content(response_payload)
+        elif google_mode:
+            content = _google_content(response_payload)
+        else:
+            content = _message_content(response_payload)
     return parse_translation_content(content, blocks)
 
 
@@ -937,6 +1038,24 @@ def translate_page(profile: Any, *, source_language: str, target_language: str,
             ),
         )
 
+    workers = _translation_parallel_workers(profile, len(batches))
+    if workers == 1:
+        # Do not submit sequential work to a temporary thread pool. If the first
+        # provider call fails, gevent cannot cancel a native requests socket and
+        # pool shutdown may wait for every queued batch. Running the batches
+        # directly still keeps each socket wait off the hub through _request(),
+        # but returns immediately on the first failure.
+        translated: list[dict[str, Any]] = []
+        for batch in batches:
+            translated.extend(_run_with_translation_deadline(
+                deadline,
+                lambda batch=batch: _translate_batch_resilient(
+                    profile, source_language=source_language, target_language=target_language,
+                    prompt=prompt, blocks=batch,
+                ),
+            ))
+        return translated
+
     jobs = [
         (
             index,
@@ -950,10 +1069,8 @@ def translate_page(profile: Any, *, source_language: str, target_language: str,
         )
         for index, batch in enumerate(batches)
     ]
-    completed: dict[int, list[dict[str, str]]] = {}
-    for index, outcome in parallel.fan_out(
-        jobs, max_workers=_translation_parallel_workers(profile, len(jobs)),
-    ):
+    completed: dict[int, list[dict[str, Any]]] = {}
+    for index, outcome in parallel.fan_out(jobs, max_workers=workers):
         if outcome.exception is not None:
             raise outcome.exception
         completed[index] = outcome.value
