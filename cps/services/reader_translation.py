@@ -365,7 +365,13 @@ def _strip_code_fence(value: str) -> str:
     return text.strip()
 
 
-def parse_translation_content(content: str, source_blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+def _translation_content_map(content: str, source_blocks: list[dict[str, str]]) -> dict[str, str]:
+    """Parse every valid translated block without requiring full coverage.
+
+    Some reasoning models return a syntactically valid but truncated block list
+    when a visible page is too large. Keeping the valid subset lets the caller
+    retry only the missing work instead of discarding the complete translations.
+    """
     cleaned = _strip_code_fence(content)
     parsed: Any = None
     try:
@@ -398,19 +404,27 @@ def parse_translation_content(content: str, source_blocks: list[dict[str, str]])
         parts = [part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()]
         if len(parts) == len(source_blocks):
             translated = {block["id"]: parts[index] for index, block in enumerate(source_blocks)}
-        elif len(source_blocks) == 1:
+        elif len(source_blocks) == 1 and not cleaned.startswith(("{", "[")):
             translated = {source_blocks[0]["id"]: cleaned}
+    return translated
 
-    result = []
-    for block in source_blocks:
-        text = translated.get(block["id"])
-        if not text:
-            raise ReaderTranslationError(
-                "The LLM response did not contain every translated page block.",
-                code="incomplete_translation", status=502,
-            )
-        result.append({"id": block["id"], "tag": block.get("tag", "p"), "text": text[:20000]})
-    return result
+
+def parse_translation_content(content: str, source_blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+    translated = _translation_content_map(content, source_blocks)
+    missing_count = sum(1 for block in source_blocks if not translated.get(block["id"]))
+    if missing_count:
+        raise ReaderTranslationError(
+            f"The LLM response omitted {missing_count} of {len(source_blocks)} translated page blocks.",
+            code="incomplete_translation", status=502,
+        )
+    return [
+        {
+            "id": block["id"],
+            "tag": block.get("tag", "p"),
+            "text": translated[block["id"]][:20000],
+        }
+        for block in source_blocks
+    ]
 
 
 def _chat_payload(profile: Any, *, source_language: str, target_language: str,
@@ -502,8 +516,61 @@ def _google_payload(profile: Any, *, source_language: str, target_language: str,
     }
 
 
-def translate_page(profile: Any, *, source_language: str, target_language: str,
-                   prompt: str, blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+_TRANSLATION_BATCH_MAX_BLOCKS = 8
+_TRANSLATION_BATCH_MAX_CHARS = 3500
+_TRANSLATION_FRAGMENT_MAX_CHARS = 2600
+_TRANSLATION_RETRY_MAX_DEPTH = 8
+
+
+def _partition_translation_blocks(blocks: list[dict[str, str]]) -> list[list[dict[str, str]]]:
+    batches: list[list[dict[str, str]]] = []
+    current: list[dict[str, str]] = []
+    current_chars = 0
+    for block in blocks:
+        block_chars = len(block.get("text", ""))
+        if current and (
+            len(current) >= _TRANSLATION_BATCH_MAX_BLOCKS
+            or current_chars + block_chars > _TRANSLATION_BATCH_MAX_CHARS
+        ):
+            batches.append(current)
+            current = []
+            current_chars = 0
+        current.append(block)
+        current_chars += block_chars
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _split_translation_text(text: str, max_chars: int = _TRANSLATION_FRAGMENT_MAX_CHARS) -> list[str]:
+    text = text.strip()
+    if len(text) <= max_chars:
+        return [text]
+    parts: list[str] = []
+    remaining = text
+    minimum = max(1, int(max_chars * 0.55))
+    while len(remaining) > max_chars:
+        window = remaining[:max_chars + 1]
+        candidates = [
+            window.rfind(". "), window.rfind("! "), window.rfind("? "),
+            window.rfind("; "), window.rfind(": "), window.rfind(" "),
+        ]
+        cut = max(candidates)
+        if cut < minimum:
+            cut = max_chars
+        elif window[cut:cut + 2] in {". ", "! ", "? ", "; ", ": "}:
+            cut += 1
+        piece = remaining[:cut].strip()
+        if piece:
+            parts.append(piece)
+        remaining = remaining[cut:].strip()
+    if remaining:
+        parts.append(remaining)
+    return parts
+
+
+def _translate_batch_once(profile: Any, *, source_language: str, target_language: str,
+                          prompt: str, blocks: list[dict[str, str]]) -> list[dict[str, str]]:
     timeout = max(5, min(180, int(profile.timeout_seconds or 60)))
     endpoint = normalize_endpoint_path(profile.endpoint_path).lower()
     responses_mode = endpoint.endswith("responses")
@@ -547,6 +614,67 @@ def translate_page(profile: Any, *, source_language: str, target_language: str,
     else:
         content = _message_content(response_payload)
     return parse_translation_content(content, blocks)
+
+
+def _translate_batch_resilient(profile: Any, *, source_language: str, target_language: str,
+                               prompt: str, blocks: list[dict[str, str]],
+                               depth: int = 0) -> list[dict[str, str]]:
+    try:
+        return _translate_batch_once(
+            profile, source_language=source_language, target_language=target_language,
+            prompt=prompt, blocks=blocks,
+        )
+    except ReaderTranslationError as exc:
+        if exc.code != "incomplete_translation" or depth >= _TRANSLATION_RETRY_MAX_DEPTH:
+            raise
+        log.warning(
+            "LLM model %s returned an incomplete translation batch (%d blocks, %d chars); retrying smaller work",
+            profile.model, len(blocks), sum(len(block.get("text", "")) for block in blocks),
+        )
+        if len(blocks) > 1:
+            middle = max(1, len(blocks) // 2)
+            return _translate_batch_resilient(
+                profile, source_language=source_language, target_language=target_language,
+                prompt=prompt, blocks=blocks[:middle], depth=depth + 1,
+            ) + _translate_batch_resilient(
+                profile, source_language=source_language, target_language=target_language,
+                prompt=prompt, blocks=blocks[middle:], depth=depth + 1,
+            )
+
+        block = blocks[0]
+        fragments = _split_translation_text(block["text"])
+        if len(fragments) <= 1:
+            raise
+        fragment_blocks = [
+            {
+                "id": f"{block['id']}__cwpart{index + 1}",
+                "tag": block.get("tag", "p"),
+                "text": fragment,
+            }
+            for index, fragment in enumerate(fragments)
+        ]
+        translated_fragments: list[dict[str, str]] = []
+        for fragment_batch in _partition_translation_blocks(fragment_blocks):
+            translated_fragments.extend(_translate_batch_resilient(
+                profile, source_language=source_language, target_language=target_language,
+                prompt=prompt, blocks=fragment_batch, depth=depth + 1,
+            ))
+        return [{
+            "id": block["id"],
+            "tag": block.get("tag", "p"),
+            "text": " ".join(item["text"].strip() for item in translated_fragments if item["text"].strip()),
+        }]
+
+
+def translate_page(profile: Any, *, source_language: str, target_language: str,
+                   prompt: str, blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+    translated: list[dict[str, str]] = []
+    for batch in _partition_translation_blocks(blocks):
+        translated.extend(_translate_batch_resilient(
+            profile, source_language=source_language, target_language=target_language,
+            prompt=prompt, blocks=batch,
+        ))
+    return translated
 
 
 def test_profile(profile: Any) -> dict[str, Any]:

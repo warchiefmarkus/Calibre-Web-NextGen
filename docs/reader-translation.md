@@ -19,6 +19,13 @@ Translations are cached per user using a hash of the book, visible source text,
 languages, model settings, and prompt. Changing any of those inputs creates a
 new cache entry.
 
+Visible pages are translated in bounded batches (up to 8 blocks and roughly
+3,500 source characters per provider request). If a model returns an incomplete
+block list, the backend automatically retries smaller halves. Oversized single
+paragraphs are split into temporary fragments and reassembled under the original
+block ID, so reasoning models with limited output budgets do not fail the whole
+page.
+
 ## Supported endpoint contract
 
 Profiles use the common OpenAI-compatible request shape:

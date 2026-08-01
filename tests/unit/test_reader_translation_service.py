@@ -238,3 +238,69 @@ def test_only_exact_https_opencode_zen_routes_bypass_generic_ssrf_resolver():
     assert not _is_trusted_opencode_endpoint("https://evil.opencode.ai/zen/v1/models")
     assert not _is_trusted_opencode_endpoint("https://opencode.ai.evil.test/zen/v1/models")
     assert not _is_trusted_opencode_endpoint("https://opencode.ai/docs/zen")
+
+
+def test_page_blocks_are_partitioned_by_count_and_character_budget():
+    from cps.services.reader_translation import _partition_translation_blocks
+
+    blocks = [
+        {"id": f"b{index}", "tag": "p", "text": "x" * 600}
+        for index in range(13)
+    ]
+    batches = _partition_translation_blocks(blocks)
+    assert [block["id"] for batch in batches for block in batch] == [block["id"] for block in blocks]
+    assert all(len(batch) <= 8 for batch in batches)
+    assert all(sum(len(block["text"]) for block in batch) <= 3500 for batch in batches)
+
+
+def test_incomplete_multi_block_batch_is_retried_as_smaller_batches(monkeypatch):
+    from cps.services import reader_translation as service
+
+    calls = []
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        calls.append([block["id"] for block in blocks])
+        if len(blocks) > 1:
+            raise ReaderTranslationError(
+                "incomplete", code="incomplete_translation", status=502,
+            )
+        block = blocks[0]
+        return [{"id": block["id"], "tag": block["tag"], "text": f"T:{block['text']}"}]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    blocks = [
+        {"id": f"b{index}", "tag": "p", "text": f"source {index}"}
+        for index in range(4)
+    ]
+    result = service.translate_page(
+        _profile(), source_language="en", target_language="uk", prompt="", blocks=blocks,
+    )
+    assert [item["id"] for item in result] == [block["id"] for block in blocks]
+    assert [item["text"] for item in result] == [f"T:{block['text']}" for block in blocks]
+    assert calls[0] == ["b0", "b1", "b2", "b3"]
+    assert ["b0"] in calls and ["b3"] in calls
+
+
+def test_incomplete_long_single_block_is_split_and_reassembled(monkeypatch):
+    from cps.services import reader_translation as service
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        if len(blocks) == 1 and len(blocks[0]["text"]) > 2600:
+            raise ReaderTranslationError(
+                "incomplete", code="incomplete_translation", status=502,
+            )
+        return [
+            {"id": block["id"], "tag": block["tag"], "text": f"[{block['text']}]"}
+            for block in blocks
+        ]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    source = "Sentence. " * 700
+    result = service.translate_page(
+        _profile(), source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "long", "tag": "p", "text": source}],
+    )
+    assert result[0]["id"] == "long"
+    assert result[0]["tag"] == "p"
+    assert result[0]["text"].count("[") >= 2
+    assert "__cwpart" not in result[0]["id"]
