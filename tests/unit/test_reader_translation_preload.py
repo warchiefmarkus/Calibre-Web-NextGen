@@ -54,3 +54,25 @@ def test_preload_runs_after_current_page_cache_hit_or_translation_success():
     assert "translationPreloadNextPage" in READER
     assert "activeSettings.flow !== 'paginated'" in READER
     assert "sourceAlreadyMatchesTarget(activeSettings, bookLanguage, blocks)" in READER
+
+
+def test_foreground_joins_the_matching_preload_promise_without_a_second_request():
+    assert "type TranslationPreloadTask" in READER
+    assert "translationPreloadTaskRef.current = { key: job.key, controller, promise }" in READER
+    foreground = READER.split("const preloadTask = translationPreloadTaskRef.current", 1)[1].split(
+        "translationAbortRef.current?.abort();", 1
+    )[0]
+    assert "preloadTask?.key === key" in foreground
+    assert "await preloadTask.promise" in foreground
+    assert "translateReaderPage(" not in foreground
+    assert "applyTranslationResponse(response)" in foreground
+
+
+def test_toolbar_ring_reports_both_foreground_translation_and_preload_activity():
+    assert "const [translationPreloading, setTranslationPreloading] = useState(false)" in READER
+    assert "setTranslationPreloading(true)" in READER
+    assert "setTranslationPreloading(false)" in READER
+    assert "translationLoading || translationPreloading" in READER
+    assert "? 'translation'" in READER
+    assert "'preload'" in READER
+    assert "aria-busy={translationActivity}" in READER

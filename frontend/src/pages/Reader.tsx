@@ -6,13 +6,14 @@ import {
   Square, StickyNote, Trash2, Volume2, X,
 } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState';
-import { Spinner, SpinnerCentered } from '../components/Spinner';
+import { SpinnerCentered } from '../components/Spinner';
 import { apiDelete, apiGet, apiPatch, apiPost, resourceUrl } from '../lib/api';
 import {
   useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
   useReaderBookmarks, useReaderSettings,
   useSaveReaderSettings, translateReaderPage, type ReaderBookmark, type ReaderSettings,
-  type ReaderTranslationBlock, type ReaderTranslationRun, type ReaderTranslationRunMark,
+  type ReaderTranslationBlock, type ReaderTranslationResponse, type ReaderTranslationRun,
+  type ReaderTranslationRunMark,
 } from '../lib/queries';
 import { useT } from '../lib/i18n';
 import { parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
@@ -213,6 +214,12 @@ type TranslationPreloadJob = {
   key: string;
   settings: ReaderSettings;
   blocks: ReaderTranslationBlock[];
+};
+
+type TranslationPreloadTask = {
+  key: string;
+  controller: AbortController;
+  promise: Promise<ReaderTranslationResponse>;
 };
 
 const LANGUAGE_ALIASES: Record<string, string> = {
@@ -840,6 +847,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const translationPreloadAbortRef = useRef<AbortController | null>(null);
   const translationPreloadInFlightKeyRef = useRef<string | null>(null);
   const translationPreloadQueuedRef = useRef<TranslationPreloadJob | null>(null);
+  const translationPreloadTaskRef = useRef<TranslationPreloadTask | null>(null);
   const translationPreloadRunnerRef = useRef<(job: TranslationPreloadJob) => void>(() => undefined);
   const translationCacheRef = useRef<Map<string, ReaderTranslationBlock[]>>(new Map());
   const translationPagerContentRef = useRef<HTMLDivElement>(null);
@@ -873,8 +881,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [translationSegments, setTranslationSegments] = useState<TranslationContentSegment[]>([]);
   const [translationLayout, setTranslationLayout] = useState<TranslationPageLayout | null>(null);
   const [translationPageIndex, setTranslationPageIndex] = useState(0);
-  const [translationTransitioning, setTranslationTransitioning] = useState(false);
   const [translationLoading, setTranslationLoading] = useState(false);
+  const [translationPreloading, setTranslationPreloading] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translationRetry, setTranslationRetry] = useState(0);
   const [translationSkipped, setTranslationSkipped] = useState(false);
@@ -976,8 +984,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     const controller = new AbortController();
     translationPreloadAbortRef.current = controller;
     translationPreloadInFlightKeyRef.current = job.key;
+    setTranslationPreloading(true);
     const configuredSource = normalizeLanguageCode(job.settings.translationSourceLanguage);
-    void translateReaderPage(id, {
+    const promise = translateReaderPage(id, {
       profile_id: job.settings.translationProfileId,
       format: fmt,
       source_language: configuredSource === 'auto' || !configuredSource
@@ -987,13 +996,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       prompt: job.settings.translationPrompt,
       cache_enabled: true,
       blocks: job.blocks,
-    }, controller.signal).then((response) => {
+    }, controller.signal);
+    translationPreloadTaskRef.current = { key: job.key, controller, promise };
+    void promise.then((response) => {
       if (!controller.signal.aborted && !response.skipped) {
         cacheTranslatedPage(job.key, response.blocks);
       }
     }).catch(() => {
-      // Preloading is opportunistic. Current-page translation remains the
-      // authoritative path and will surface any provider error to the user.
+      // Preloading is opportunistic. If the user opens this page while the
+      // request is active, the foreground path joins the same promise and will
+      // surface its provider error instead of starting a duplicate request.
     }).finally(() => {
       if (translationPreloadInFlightKeyRef.current === job.key) {
         translationPreloadInFlightKeyRef.current = null;
@@ -1001,8 +1013,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (translationPreloadAbortRef.current === controller) {
         translationPreloadAbortRef.current = null;
       }
+      if (translationPreloadTaskRef.current?.controller === controller) {
+        translationPreloadTaskRef.current = null;
+      }
       const queued = translationPreloadQueuedRef.current;
       translationPreloadQueuedRef.current = null;
+      setTranslationPreloading(false);
       if (queued && queued.key !== job.key) {
         window.queueMicrotask(() => translationPreloadRunnerRef.current(queued));
       }
@@ -1042,6 +1058,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     translationPreloadAbortRef.current = null;
     translationPreloadInFlightKeyRef.current = null;
     translationPreloadQueuedRef.current = null;
+    translationPreloadTaskRef.current = null;
+    setTranslationPreloading(false);
   }, [settings?.flow, settings?.translationCacheEnabled, settings?.translationEnabled,
     settings?.translationPreloadNextPage, settings?.translationProfileId,
     settings?.translationPrompt, settings?.translationSourceLanguage,
@@ -1117,12 +1135,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
     translationLandingRef.current = direction === 'next' ? 'first' : 'last';
     translationTransitionRef.current = true;
-    setTranslationTransitioning(true);
     setTranslationLoading(true);
     void navigate(direction).catch((cause) => {
       translationTransitionRef.current = false;
       translationLandingRef.current = null;
-      setTranslationTransitioning(false);
       setTranslationLoading(false);
       setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
     });
@@ -1191,7 +1207,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       translationInFlightKeyRef.current = null;
       translationTransitionRef.current = false;
       translationLandingRef.current = null;
-      setTranslationTransitioning(false);
       setTranslationLoading(false);
       setTranslationError(null);
       setTranslationSkipped(false);
@@ -1208,7 +1223,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       translationInFlightKeyRef.current = null;
       translationTransitionRef.current = false;
       translationLandingRef.current = null;
-      setTranslationTransitioning(false);
       setTranslationBlocks([]);
       setTranslationSegments([]);
       setTranslationLayout(null);
@@ -1243,7 +1257,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTranslationLoading(false);
         setTranslationError(null);
         setTranslationSkipped(false);
-        setTranslationTransitioning(false);
         translationTransitionRef.current = false;
         scheduleNextTranslationPreload(settings);
         return;
@@ -1254,7 +1267,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         translationInFlightKeyRef.current = null;
         translationTransitionRef.current = false;
         translationLandingRef.current = null;
-        setTranslationTransitioning(false);
         setTranslationBlocks([]);
         setTranslationSegments([]);
         setTranslationLayout(null);
@@ -1264,14 +1276,33 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         return;
       }
 
+      const key = translationPageKey(settings, blocks);
       const styled = (translated: ReaderTranslationBlock[]): StyledTranslationBlock[] =>
         translated.map((block) => ({
           ...block,
           style: sourceStyles[block.id],
           sourceRuns: sourceRuns[block.id],
         }));
+      const applyTranslationResponse = (response: ReaderTranslationResponse) => {
+        if (response.skipped) {
+          translationTransitionRef.current = false;
+          translationLandingRef.current = null;
+          setTranslationSkipped(true);
+          setTranslationBlocks([]);
+          setTranslationSegments([]);
+          setTranslationLayout(null);
+          return;
+        }
+        if (settings.translationCacheEnabled) {
+          cacheTranslatedPage(key, response.blocks);
+        }
+        setTranslationLayout(layout);
+        setTranslationSegments(segments);
+        setTranslationBlocks(styled(response.blocks));
+        translationTransitionRef.current = false;
+        scheduleNextTranslationPreload(settings);
+      };
       setTranslationSkipped(false);
-      const key = translationPageKey(settings, blocks);
       const local = settings.translationCacheEnabled
         ? translationCacheRef.current.get(key)
         : undefined;
@@ -1281,12 +1312,35 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTranslationBlocks(styled(local));
         setTranslationLoading(false);
         setTranslationError(null);
-        setTranslationTransitioning(false);
         translationTransitionRef.current = false;
         scheduleNextTranslationPreload(settings);
         return;
       }
       if (translationInFlightKeyRef.current === key) return;
+
+      const preloadTask = translationPreloadTaskRef.current;
+      if (preloadTask?.key === key) {
+        translationInFlightKeyRef.current = key;
+        if (!translationTransitionRef.current) {
+          setTranslationBlocks([]);
+          setTranslationSegments([]);
+          setTranslationLayout(layout);
+        }
+        setTranslationLoading(true);
+        setTranslationError(null);
+        try {
+          const response = await preloadTask.promise;
+          if (!preloadTask.controller.signal.aborted) applyTranslationResponse(response);
+        } catch (cause) {
+          if (!preloadTask.controller.signal.aborted) {
+            setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
+          }
+        } finally {
+          if (translationInFlightKeyRef.current === key) translationInFlightKeyRef.current = null;
+          if (!preloadTask.controller.signal.aborted) setTranslationLoading(false);
+        }
+        return;
+      }
 
       translationAbortRef.current?.abort();
       const controller = new AbortController();
@@ -1313,25 +1367,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           blocks,
         }, controller.signal);
         if (controller.signal.aborted) return;
-        if (response.skipped) {
-          translationTransitionRef.current = false;
-          translationLandingRef.current = null;
-          setTranslationTransitioning(false);
-          setTranslationSkipped(true);
-          setTranslationBlocks([]);
-          setTranslationSegments([]);
-          setTranslationLayout(null);
-          return;
-        }
-        if (settings.translationCacheEnabled) {
-          cacheTranslatedPage(key, response.blocks);
-        }
-        setTranslationLayout(layout);
-        setTranslationSegments(segments);
-        setTranslationBlocks(styled(response.blocks));
-        setTranslationTransitioning(false);
-        translationTransitionRef.current = false;
-        scheduleNextTranslationPreload(settings);
+        applyTranslationResponse(response);
       } catch (cause) {
         if (controller.signal.aborted) return;
         setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
@@ -1768,6 +1804,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const translationRequested = !!settings?.translationEnabled
     && settings.translationView === 'translated'
     && !!settings.translationProfileId;
+  const translationActivity = translationRequested
+    && (translationLoading || translationPreloading);
   const translationOverlayVisible = translationRequested
     && !translationSkipped && !!translationLayout && translationSegments.length > 0;
   const translatedBlockById = new Map(translationBlocks.map((block) => [block.id, block]));
@@ -1823,8 +1861,18 @@ export function Reader({ id, format }: { id: string; format?: string }) {
               <button type="button" className={settings.translationView === 'translated' && !translationSkipped ? styles.translationToggleActive : ''}
                 onClick={() => updateSettings({ translationEnabled: true, translationView: 'translated' })}
                 aria-pressed={settings.translationView === 'translated' && !translationSkipped}
+                aria-busy={translationActivity}
+                data-translation-activity={translationLoading
+                  ? 'translation'
+                  : translationPreloading
+                    ? 'preload'
+                    : 'idle'}
                 aria-label={t('Translation')} title={`${t('Translation')} (T)`}>
-                <Languages size={16} aria-hidden="true" />
+                <span className={`${styles.translationToggleIcon} ${
+                  translationActivity ? styles.translationToggleIconBusy : ''
+                }`}>
+                  <Languages size={16} aria-hidden="true" />
+                </span>
               </button>
             </div>
           )}
@@ -1887,12 +1935,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
           {error && <EmptyState message={error} />}
           <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
-          {translationRequested && translationLoading && (
-            <div className={styles.translationSpinner} role="status"
-              aria-label={t('Translation')} data-transitioning={translationTransitioning ? 'true' : 'false'}>
-              <Spinner size={38} />
-            </div>
-          )}
           {translationRequested && (translationError || translationSkipped) && (
             <div className={styles.translationStatus} role={translationError ? 'alert' : 'status'}>
               {translationSkipped && (

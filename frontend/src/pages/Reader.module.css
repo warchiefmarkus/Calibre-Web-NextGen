@@ -214,15 +214,34 @@
   box-shadow: 0 1px 4px rgb(0 0 0 / 22%);
 }
 
-.translationSpinner {
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-start: 50%;
-  z-index: 5;
-  transform: translate(-50%, -50%);
+.translationToggleIcon {
+  position: relative;
+  inline-size: 22px;
+  block-size: 22px;
   display: grid;
   place-items: center;
+  border-radius: 999px;
+}
+
+.translationToggleIconBusy::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 999px;
   pointer-events: none;
+  animation: translation-ring-spin 720ms linear infinite;
+}
+
+@keyframes translation-ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .translationToggleIconBusy::after {
+    animation-duration: 1.8s;
+  }
 }
 
 .translationStatus {

@@ -35,8 +35,9 @@ there is no vertical reader scroll. Reaching the final translated subpage turns
 exactly one original Foliate page, keeps the previous overlay visible while the
 next translation loads, then opens the first translated subpage. Backward
 navigation restores the previous original page and its final translated subpage.
-The translated page has no cache/status strip. While a request is pending, only
-a larger centered spinner is shown without text, border, or background. Text
+The translated page has no cache/status strip or centered loading overlay. While
+a current-page translation or one-page-ahead preload is active, a compact progress
+ring is drawn around the translation icon in the top Original/Translation switch. Text
 selection uses the same readable yellow highlight as the original Foliate document.
 
 Selecting text in the original page exposes a temporary **Translation** action
@@ -59,11 +60,15 @@ When **Preload one translated page ahead** is enabled together with automatic
 translation and full-page caching, the reader extracts the next paginated
 Foliate page from the already loaded section after the current page is ready. It
 shifts only an offscreen extraction viewport; it does not call next/previous,
-change the reader CFI, save progress, or display a loading indicator. The
-background result is stored in both browser and server caches. Only one preload
-request runs at a time and the newest requested page replaces an older queued
-page. Provider errors remain silent and the normal current-page request remains
-authoritative. Preloading is skipped in scrolling/vertical-writing layouts and
+change the reader CFI or save progress. Its activity is shown by the same compact
+ring around the top translation icon. The background result is stored in both
+browser and server caches. If the reader opens that page before preloading finishes,
+the foreground view joins the existing preload promise instead of sending a second
+HTTP request. Only one preload request runs at a time, and the newest requested
+page replaces an older queued
+page. Provider errors remain silent while the page is only speculative; if the
+reader opens that page and joins the request, the same error is surfaced as a
+foreground translation error. Preloading is skipped in scrolling/vertical-writing layouts and
 at a section boundary where the next section is not already loaded.
 
 Visible pages are translated in bounded batches (up to 8 blocks and roughly
