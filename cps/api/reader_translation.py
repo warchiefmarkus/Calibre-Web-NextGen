@@ -33,7 +33,9 @@ from ..usermanagement import login_required_if_no_ano
 log = logger.create()
 
 _ALLOWED_BLOCK_TAGS = {"p", "li", "blockquote", "pre", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6"}
+_ALLOWED_RUN_MARKS = {"strong", "em", "code", "sup", "sub", "link"}
 _MAX_BLOCKS = 80
+_MAX_RUNS_PER_BLOCK = 200
 _MAX_BLOCK_CHARS = 8000
 _MAX_PAGE_CHARS = 8000
 _MAX_PROMPT_CHARS = 6000
@@ -328,6 +330,52 @@ def get_reader_translation_models(profile_id):
         return _err(exc.code, str(exc), exc.status)
 
 
+def _translation_runs(item, block_id):
+    raw = item.get("runs")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw or len(raw) > _MAX_RUNS_PER_BLOCK:
+        raise ReaderTranslationError(
+            f"Block {block_id} must contain between 1 and {_MAX_RUNS_PER_BLOCK} inline runs.",
+            code="invalid_runs", status=400,
+        )
+    result = []
+    seen = set()
+    for run in raw:
+        if not isinstance(run, dict):
+            raise ReaderTranslationError("Each inline run must be an object.", code="invalid_runs", status=400)
+        run_id = str(run.get("id") or "").strip()
+        text = run.get("text")
+        if not run_id or len(run_id) > 200 or run_id in seen:
+            raise ReaderTranslationError(
+                "Inline run IDs must be unique within the block and at most 200 characters.",
+                code="invalid_runs", status=400,
+            )
+        if not isinstance(text, str) or not text.strip() or len(text) > _MAX_BLOCK_CHARS:
+            raise ReaderTranslationError(
+                f"Each inline run must contain 1 to {_MAX_BLOCK_CHARS} characters.",
+                code="invalid_runs", status=400,
+            )
+        marks = run.get("marks", [])
+        if not isinstance(marks, list) or any(mark not in _ALLOWED_RUN_MARKS for mark in marks):
+            raise ReaderTranslationError("Inline run marks are invalid.", code="invalid_runs", status=400)
+        normalized_marks = list(dict.fromkeys(marks))
+        break_before = run.get("break_before", 0)
+        if isinstance(break_before, bool) or not isinstance(break_before, int) or not 0 <= break_before <= 8:
+            raise ReaderTranslationError(
+                "Inline run break_before must be an integer from 0 to 8.",
+                code="invalid_runs", status=400,
+            )
+        normalized = {"id": run_id, "text": text}
+        if normalized_marks:
+            normalized["marks"] = normalized_marks
+        if break_before:
+            normalized["break_before"] = break_before
+        result.append(normalized)
+        seen.add(run_id)
+    return result
+
+
 def _translation_blocks(payload):
     raw = payload.get("blocks") if isinstance(payload, dict) else None
     if not isinstance(raw, list) or not raw or len(raw) > _MAX_BLOCKS:
@@ -338,14 +386,24 @@ def _translation_blocks(payload):
     result = []
     seen = set()
     total_chars = 0
-    for index, item in enumerate(raw):
+    for item in raw:
         if not isinstance(item, dict):
             raise ReaderTranslationError("Each page block must be an object.", code="invalid_blocks", status=400)
         block_id = str(item.get("id") or "").strip()
-        text = str(item.get("text") or "").strip()
         tag = str(item.get("tag") or "p").strip().lower()
         if not block_id or len(block_id) > 200 or block_id in seen:
             raise ReaderTranslationError("Page block IDs must be unique and at most 200 characters.", code="invalid_blocks", status=400)
+        runs = _translation_runs(item, block_id)
+        if runs:
+            rendered_parts = []
+            for run in runs:
+                if run.get("break_before"):
+                    rendered_parts.append("\n" * run["break_before"])
+                rendered_parts.append(run["text"])
+            text = "".join(rendered_parts).strip()
+        else:
+            raw_text = item.get("text")
+            text = raw_text.strip() if isinstance(raw_text, str) else ""
         if not text or len(text) > _MAX_BLOCK_CHARS:
             raise ReaderTranslationError(
                 f"Each page block must contain 1 to {_MAX_BLOCK_CHARS} characters.",
@@ -354,13 +412,16 @@ def _translation_blocks(payload):
         if tag not in _ALLOWED_BLOCK_TAGS:
             tag = "p"
         seen.add(block_id)
-        total_chars += len(text)
+        total_chars += sum(len(run["text"]) for run in runs) if runs else len(text)
         if total_chars > _MAX_PAGE_CHARS:
             raise ReaderTranslationError(
                 f"Visible page text exceeds the {_MAX_PAGE_CHARS}-character limit.",
                 code="page_too_large", status=413,
             )
-        result.append({"id": block_id, "tag": tag, "text": text})
+        block = {"id": block_id, "tag": tag, "text": text}
+        if runs:
+            block["runs"] = runs
+        result.append(block)
     return result
 
 

@@ -312,6 +312,17 @@
   break-after: avoid-column;
 }
 
+.translationBlock a,
+.translationLink {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: .12em;
+}
+
+.translationBlock code {
+  font-family: monospace;
+}
+
 .translationImage {
   break-inside: avoid-column;
   page-break-inside: avoid;

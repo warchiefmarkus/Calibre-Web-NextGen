@@ -24,7 +24,7 @@ def test_images_are_not_added_to_the_llm_request_blocks():
     start = reader.index("function extractVisiblePage")
     end = reader.index("function looksLikeUkrainian")
     extraction = reader[start:end]
-    assert "blocks.push({ id: blockId" in extraction
+    assert "blocks.push({" in extraction and "runs: extracted.requestRuns" in extraction
     assert "segments.push(image)" in extraction
     assert "blocks.push(image)" not in extraction
     assert "cache_enabled: settings.translationCacheEnabled" in reader

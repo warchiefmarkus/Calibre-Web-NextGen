@@ -236,3 +236,60 @@ def test_translate_page_rejects_non_boolean_cache_setting():
     assert status == 400
     assert json.loads(response.get_data())["error"]["code"] == "invalid_cache_setting"
     provider.assert_not_called()
+
+
+
+def test_translate_page_validates_and_passes_structured_inline_runs():
+    from cps.api import reader_translation as mod
+
+    mock_ub = MagicMock()
+    mock_ub.session.query.return_value.filter.return_value.first.return_value = None
+    mock_ub.ReaderTranslationCache.side_effect = lambda **kwargs: SimpleNamespace(**kwargs)
+    request_body = {
+        "profile_id": "profile-1", "format": "epub",
+        "source_language": "en", "target_language": "uk", "prompt": "",
+        "blocks": [{
+            "id": "a", "tag": "p", "text": "ignored mismatch",
+            "runs": [
+                {"id": "r1", "text": "Configure the ", "marks": []},
+                {"id": "r2", "text": "JTAG clock", "marks": ["strong"]},
+            ],
+        }],
+    }
+    translated = [{
+        "id": "a", "tag": "p", "text": "Налаштуйте частоту JTAG",
+        "runs": [
+            {"id": "r1", "text": "Налаштуйте ",},
+            {"id": "r2", "text": "частоту JTAG", "marks": ["strong"]},
+        ],
+    }]
+    with _ctx("/api/v1/books/5/translation", method="POST", body=request_body):
+        with patch.object(mod, "current_user", _user()), patch.object(mod, "ub", mock_ub), \
+             patch.object(mod, "_get_profile", return_value=_profile()), _visible(mod), \
+             patch.object(mod, "translate_page", return_value=translated) as provider:
+            response = inspect.unwrap(mod.translate_reader_page)(5)
+    payload = json.loads(response.get_data())
+    passed = provider.call_args.kwargs["blocks"][0]
+    assert passed["text"] == "Configure the JTAG clock"
+    assert passed["runs"][1]["marks"] == ["strong"]
+    assert payload["blocks"][0]["runs"][1]["text"] == "частоту JTAG"
+
+
+def test_translate_page_rejects_untrusted_inline_mark():
+    from cps.api import reader_translation as mod
+
+    request_body = {
+        "profile_id": "profile-1", "target_language": "uk",
+        "blocks": [{
+            "id": "a", "tag": "p", "text": "Source",
+            "runs": [{"id": "r1", "text": "Source", "marks": ["script"]}],
+        }],
+    }
+    with _ctx("/api/v1/books/5/translation", method="POST", body=request_body):
+        with patch.object(mod, "current_user", _user()), \
+             patch.object(mod, "_get_profile", return_value=_profile()), _visible(mod), \
+             patch.object(mod, "translate_page") as provider:
+            response, status = inspect.unwrap(mod.translate_reader_page)(5)
+    assert status == 400
+    assert json.loads(response.get_data())["error"]["code"] == "invalid_runs"
+    provider.assert_not_called()

@@ -18,11 +18,19 @@ reader pagination remain based on the original book.
 
 The overlay copies the computed typography and page geometry of the visible
 source blocks, including font family, pixel font size, line height, weight,
-style, alignment, indentation, and block margins. Original `img` elements are
-inserted back into the translated content at their source-order positions with
-their displayed size, alignment, margins, and aspect ratio. Text embedded inside
-images is not translated. Longer translations are laid out as horizontal
-subpages with the same available height as the original page;
+style, alignment, indentation, and block margins. Inline source formatting is
+normalized into ordered text runs with stable IDs. The supported semantic marks
+are strong, emphasis, code, superscript, subscript, and link, plus explicit line
+breaks. The model receives only run IDs, text, semantic mark names, and break
+counts; it never receives source HTML, CSS, or link URLs. The backend requires
+complete run-ID coverage, restores source boundary whitespace, and copies trusted
+source marks into the response. The browser then rebuilds safe React elements
+from the original run metadata instead of rendering model-produced markup.
+
+Original `img` elements are inserted back into the translated content at their
+source-order positions with their displayed size, alignment, margins, and aspect
+ratio. Text embedded inside images is not translated. Longer translations are
+laid out as horizontal subpages with the same available height as the original page;
 there is no vertical reader scroll. Reaching the final translated subpage turns
 exactly one original Foliate page, keeps the previous overlay visible while the
 next translation loads, then opens the first translated subpage. Backward
@@ -49,7 +57,9 @@ being written; inline selected-text translations are never persisted.
 
 Visible pages are translated in bounded batches (up to 8 blocks and roughly
 3,500 source characters per provider request). If a model returns an incomplete
-block list, the backend automatically retries smaller halves. Oversized single
+block list, the backend automatically retries smaller halves. If one formatted
+block still omits runs, the backend translates its runs separately and rebuilds
+the block with the original marks and line-break metadata. Oversized plain
 paragraphs are split into temporary fragments and reassembled under the original
 block ID, so reasoning models with limited output budgets do not fail the whole
 page.

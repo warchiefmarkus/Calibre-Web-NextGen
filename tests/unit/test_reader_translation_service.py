@@ -52,6 +52,70 @@ def test_parse_translation_content_rejects_missing_blocks():
     assert exc.value.code == "incomplete_translation"
 
 
+def test_parse_translation_content_preserves_inline_run_format_and_spacing():
+    source = [{
+        "id": "a", "tag": "p", "text": "Configure the JTAG clock to 2.5 MHz",
+        "runs": [
+            {"id": "a-r1", "text": "Configure the "},
+            {"id": "a-r2", "text": "JTAG clock", "marks": ["strong"]},
+            {"id": "a-r3", "text": " to "},
+            {"id": "a-r4", "text": "2.5 MHz", "marks": ["code"], "break_before": 1},
+        ],
+    }]
+    result = parse_translation_content(
+        '{"blocks":[{"id":"a","runs":['
+        '{"id":"a-r1","text":"Налаштуйте"},'
+        '{"id":"a-r2","text":"частоту JTAG"},'
+        '{"id":"a-r3","text":"на"},'
+        '{"id":"a-r4","text":"2,5 МГц"}]}]}',
+        source,
+    )
+    assert result[0]["runs"] == [
+        {"id": "a-r1", "text": "Налаштуйте ",},
+        {"id": "a-r2", "text": "частоту JTAG", "marks": ["strong"]},
+        {"id": "a-r3", "text": " на "},
+        {"id": "a-r4", "text": "2,5 МГц", "marks": ["code"], "break_before": 1},
+    ]
+    assert result[0]["text"] == "Налаштуйте частоту JTAG на \n2,5 МГц"
+
+
+def test_parse_translation_content_rejects_missing_inline_run():
+    source = [{
+        "id": "a", "tag": "p", "text": "A B",
+        "runs": [{"id": "r1", "text": "A "}, {"id": "r2", "text": "B"}],
+    }]
+    with pytest.raises(ReaderTranslationError) as exc:
+        parse_translation_content(
+            '{"blocks":[{"id":"a","runs":[{"id":"r1","text":"Один"}]}]}',
+            source,
+        )
+    assert exc.value.code == "incomplete_translation"
+
+
+def test_chat_payload_sends_structured_runs_without_html_or_urls():
+    import json
+    from cps.services.reader_translation import _chat_payload
+
+    payload = _chat_payload(
+        _profile(), source_language="en", target_language="uk", prompt="",
+        blocks=[{
+            "id": "a", "tag": "p", "text": "Bold link",
+            "runs": [
+                {"id": "r1", "text": "Bold ", "marks": ["strong"]},
+                {"id": "r2", "text": "link", "marks": ["link"]},
+            ],
+        }], json_mode=True,
+    )
+    content = payload["messages"][1]["content"]
+    page = json.loads(content.split("\n\n", 1)[1])
+    assert page["blocks"][0]["runs"] == [
+        {"id": "r1", "text": "Bold ", "marks": ["strong"]},
+        {"id": "r2", "text": "link", "marks": ["link"]},
+    ]
+    assert "href" not in content
+    assert "<strong>" not in content
+
+
 def test_request_hash_changes_with_text_language_model_or_prompt():
     base = dict(
         user_id=1, book_id=2, fmt="epub", source_language="auto",
@@ -63,6 +127,12 @@ def test_request_hash_changes_with_text_language_model_or_prompt():
     assert translation_request_hash(_profile(), **{**base, "prompt": "Literary"}) != original
     assert translation_request_hash(
         _profile(), **{**base, "blocks": [{"id": "a", "tag": "p", "text": "B"}]},
+    ) != original
+    assert translation_request_hash(
+        _profile(), **{**base, "blocks": [{
+            "id": "a", "tag": "p", "text": "A",
+            "runs": [{"id": "r1", "text": "A", "marks": ["strong"]}],
+        }]},
     ) != original
 
 
@@ -279,6 +349,41 @@ def test_incomplete_multi_block_batch_is_retried_as_smaller_batches(monkeypatch)
     assert [item["text"] for item in result] == [f"T:{block['text']}" for block in blocks]
     assert calls[0] == ["b0", "b1", "b2", "b3"]
     assert ["b0"] in calls and ["b3"] in calls
+
+
+def test_incomplete_formatted_block_falls_back_to_runs_and_rebuilds_marks(monkeypatch):
+    from cps.services import reader_translation as service
+
+    calls = []
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        calls.append([block["id"] for block in blocks])
+        if blocks[0].get("runs"):
+            raise ReaderTranslationError("incomplete", code="incomplete_translation", status=502)
+        return [
+            {"id": block["id"], "tag": block["tag"], "text": f"T:{block['text'].strip()}"}
+            for block in blocks
+        ]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    block = {
+        "id": "formatted", "tag": "p", "text": "Open Settings now",
+        "runs": [
+            {"id": "r1", "text": "Open "},
+            {"id": "r2", "text": "Settings", "marks": ["strong"]},
+            {"id": "r3", "text": " now", "break_before": 1},
+        ],
+    }
+    result = service.translate_page(
+        _profile(), source_language="en", target_language="uk", prompt="", blocks=[block],
+    )
+    assert calls[0] == ["formatted"]
+    assert any(call == ["formatted__cwrun1", "formatted__cwrun2", "formatted__cwrun3"] for call in calls)
+    assert result[0]["runs"] == [
+        {"id": "r1", "text": "T:Open ",},
+        {"id": "r2", "text": "T:Settings", "marks": ["strong"]},
+        {"id": "r3", "text": " T:now", "break_before": 1},
+    ]
 
 
 def test_incomplete_long_single_block_is_split_and_reassembled(monkeypatch):

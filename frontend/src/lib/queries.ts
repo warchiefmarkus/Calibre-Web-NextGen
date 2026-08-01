@@ -920,10 +920,20 @@ export interface ReaderTranslationProfileInput {
   extra_headers: Record<string, string>;
 }
 
+export type ReaderTranslationRunMark = 'strong' | 'em' | 'code' | 'sup' | 'sub' | 'link';
+
+export interface ReaderTranslationRun {
+  id: string;
+  text: string;
+  marks?: ReaderTranslationRunMark[];
+  break_before?: number;
+}
+
 export interface ReaderTranslationBlock {
   id: string;
   tag: string;
   text: string;
+  runs?: ReaderTranslationRun[];
 }
 
 export interface ReaderTranslationResponse {

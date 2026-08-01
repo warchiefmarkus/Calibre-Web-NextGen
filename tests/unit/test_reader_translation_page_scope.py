@@ -29,7 +29,7 @@ def test_auto_translation_skips_matching_language_and_dedupes_settling_relocates
 
 def test_original_page_remains_visible_while_translation_is_pending():
     assert "const translationOverlayVisible = translationRequested" in READER
-    assert "&& translationBlocks.length > 0" in READER
+    assert "&& translationSegments.length > 0" in READER
     assert "className={styles.translationSpinner}" in READER
     assert ".translationSpinner" in CSS
 

@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'wouter';
 import {
   AlignJustify, Bookmark, BookOpen, ChevronLeft, ChevronRight,
@@ -12,7 +12,7 @@ import {
   useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
   useReaderBookmarks, useReaderSettings,
   useSaveReaderSettings, translateReaderPage, type ReaderBookmark, type ReaderSettings,
-  type ReaderTranslationBlock,
+  type ReaderTranslationBlock, type ReaderTranslationRun, type ReaderTranslationRunMark,
 } from '../lib/queries';
 import { useT } from '../lib/i18n';
 import { parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
@@ -148,6 +148,8 @@ const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, f
 const TRANSLATION_CONTENT_SELECTOR = `${TRANSLATABLE_SELECTOR}, img`;
 const MAX_VISIBLE_TRANSLATION_CHARS = 8_000;
 const MAX_VISIBLE_TRANSLATION_BLOCKS = 80;
+const MAX_INLINE_TRANSLATION_RUNS = 200;
+const MAX_INLINE_TRANSLATION_RUN_CHARS = 1200;
 const TRANSLATION_DEBOUNCE_MS = 500;
 
 type TranslationViewport = {
@@ -161,7 +163,11 @@ type TranslationBlockStyle = Pick<CSSProperties,
   | 'letterSpacing' | 'textAlign' | 'textIndent' | 'textTransform'
   | 'marginBlockStart' | 'marginBlockEnd'>;
 
-type StyledTranslationBlock = ReaderTranslationBlock & { style?: TranslationBlockStyle };
+type SourceTranslationRun = ReaderTranslationRun & { href?: string };
+type StyledTranslationBlock = ReaderTranslationBlock & {
+  style?: TranslationBlockStyle;
+  sourceRuns?: SourceTranslationRun[];
+};
 
 type PreservedImageStyle = Pick<CSSProperties,
   'width' | 'height' | 'maxWidth' | 'maxHeight' | 'objectFit' | 'display'
@@ -195,6 +201,7 @@ type TranslationPageLayout = {
 type VisibleTranslationPage = {
   blocks: ReaderTranslationBlock[];
   styles: Record<string, TranslationBlockStyle>;
+  sourceRuns: Record<string, SourceTranslationRun[]>;
   segments: TranslationContentSegment[];
   layout: TranslationPageLayout;
 };
@@ -275,30 +282,187 @@ function intersectingOuterRects(element: Element, viewport: TranslationViewport)
     }));
 }
 
-function visibleBlockText(element: Element, viewport: TranslationViewport): string {
+type ExtractedInlineRuns = {
+  text: string;
+  sourceRuns: SourceTranslationRun[];
+  requestRuns: ReaderTranslationRun[];
+};
+
+function inlineRunContext(node: Text, block: Element): {
+  marks: ReaderTranslationRunMark[];
+  href?: string;
+} {
+  const ancestors: Element[] = [];
+  let current = node.parentElement;
+  while (current && current !== block) {
+    ancestors.push(current);
+    current = current.parentElement;
+  }
+  ancestors.reverse();
+
+  const marks: ReaderTranslationRunMark[] = [];
+  const addMark = (mark: ReaderTranslationRunMark) => {
+    if (!marks.includes(mark)) marks.push(mark);
+  };
+  let href: string | undefined;
+  for (const element of ancestors) {
+    const name = element.localName.toLowerCase();
+    if (name === 'strong' || name === 'b') addMark('strong');
+    if (name === 'em' || name === 'i') addMark('em');
+    if (['code', 'kbd', 'samp', 'tt'].includes(name)) addMark('code');
+    if (name === 'sup') addMark('sup');
+    if (name === 'sub') addMark('sub');
+    if (name === 'a') {
+      addMark('link');
+      const resolved = (element as Element & { href?: string }).href || element.getAttribute('href') || '';
+      if (resolved) href = resolved;
+    }
+
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+    if (!style) continue;
+    const numericWeight = Number.parseInt(style.fontWeight, 10);
+    if (style.fontWeight === 'bold' || (Number.isFinite(numericWeight) && numericWeight >= 600)) {
+      addMark('strong');
+    }
+    if (style.fontStyle === 'italic' || style.fontStyle === 'oblique') addMark('em');
+    if (style.verticalAlign === 'super') addMark('sup');
+    if (style.verticalAlign === 'sub') addMark('sub');
+  }
+  return { marks, href };
+}
+
+function sameInlineRunFormat(
+  left: Omit<SourceTranslationRun, 'id' | 'text'>,
+  right: Omit<SourceTranslationRun, 'id' | 'text'>,
+): boolean {
+  return left.href === right.href
+    && (left.break_before ?? 0) === (right.break_before ?? 0)
+    && JSON.stringify(left.marks ?? []) === JSON.stringify(right.marks ?? []);
+}
+
+function visibleBlockRuns(
+  element: Element,
+  viewport: TranslationViewport,
+  blockId: string,
+  maxChars: number,
+): ExtractedInlineRuns | null {
   const doc = element.ownerDocument;
-  const showText = doc.defaultView?.NodeFilter.SHOW_TEXT ?? 4;
-  const walker = doc.createTreeWalker(element, showText);
-  const visible: string[] = [];
-  let node = walker.nextNode() as Text | null;
-  while (node) {
-    const parent = node.parentElement;
-    if (!parent?.closest('script, style, noscript, svg, canvas')) {
-      for (const match of node.data.matchAll(/\S+(?:\s+|$)/g)) {
+  const runs: Array<Omit<SourceTranslationRun, 'id'>> = [];
+  let pendingBreaks = 0;
+  let pendingSpace = false;
+  let totalChars = 0;
+  let stopped = false;
+
+  const appendText = (raw: string, context: { marks: ReaderTranslationRunMark[]; href?: string }) => {
+    if (stopped) return;
+    let text = raw.replace(/[\t\f\v ]+/g, ' ');
+    if (!text.trim()) return;
+    const remaining = maxChars - totalChars;
+    if (remaining <= 0) {
+      stopped = true;
+      return;
+    }
+    if (text.length > remaining) {
+      text = text.slice(0, remaining).trimEnd();
+      stopped = true;
+    }
+    if (!text) return;
+
+    const format: Omit<SourceTranslationRun, 'id' | 'text'> = {
+      marks: context.marks.length ? context.marks : undefined,
+      href: context.href,
+      break_before: pendingBreaks || undefined,
+    };
+    const last = runs[runs.length - 1];
+    const canMerge = !!last
+      && !pendingBreaks
+      && sameInlineRunFormat(last, format)
+      && last.text.length + text.length <= MAX_INLINE_TRANSLATION_RUN_CHARS;
+    if (canMerge) {
+      last.text += text;
+    } else if (runs.length < MAX_INLINE_TRANSLATION_RUNS) {
+      runs.push({ text, ...format });
+    } else {
+      stopped = true;
+      return;
+    }
+    totalChars += text.length;
+    pendingBreaks = 0;
+  };
+
+  const visit = (node: Node) => {
+    if (stopped) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const textNode = node as Text;
+      const parent = textNode.parentElement;
+      if (!parent || parent.closest('script, style, noscript, svg, canvas')) return;
+      const context = inlineRunContext(textNode, element);
+      let previousEnd = 0;
+      for (const match of textNode.data.matchAll(/\S+/g)) {
         const start = match.index ?? 0;
         const end = start + match[0].length;
+        const whitespaceBefore = textNode.data.slice(previousEnd, start);
+        previousEnd = end;
         const range = doc.createRange();
-        range.setStart(node, start);
-        range.setEnd(node, end);
-        if (Array.from(range.getClientRects()).some((rect) => rectIntersectsViewport(rect, viewport))) {
-          visible.push(match[0]);
+        range.setStart(textNode, start);
+        range.setEnd(textNode, end);
+        if (!Array.from(range.getClientRects()).some((rect) => rectIntersectsViewport(rect, viewport))) {
+          continue;
         }
+        const lineBreaks = whitespaceBefore.match(/\r\n|\r|\n/g)?.length ?? 0;
+        if (lineBreaks) {
+          pendingBreaks = Math.min(8, pendingBreaks + lineBreaks);
+          pendingSpace = false;
+        } else if (/\s/.test(whitespaceBefore)) {
+          pendingSpace = true;
+        }
+        const prefix = pendingSpace && runs.length ? ' ' : '';
+        pendingSpace = false;
+        appendText(`${prefix}${match[0]}`, context);
+        if (stopped) break;
       }
+      const trailingWhitespace = textNode.data.slice(previousEnd);
+      const trailingBreaks = trailingWhitespace.match(/\r\n|\r|\n/g)?.length ?? 0;
+      if (trailingBreaks) {
+        pendingBreaks = Math.min(8, pendingBreaks + trailingBreaks);
+        pendingSpace = false;
+      } else if (/\s/.test(trailingWhitespace)) {
+        pendingSpace = true;
+      }
+      return;
     }
-    node = walker.nextNode() as Text | null;
-  }
-  return visible.join('').replace(/\s+/g, ' ').trim();
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const child = node as Element;
+    const name = child.localName.toLowerCase();
+    if (name === 'br') {
+      const range = doc.createRange();
+      range.selectNode(child);
+      if (Array.from(range.getClientRects()).some((rect) => rectIntersectsViewport(rect, viewport))) {
+        pendingBreaks = Math.min(8, pendingBreaks + 1);
+        pendingSpace = false;
+      }
+      return;
+    }
+    if (['script', 'style', 'noscript', 'svg', 'canvas', 'img'].includes(name)) return;
+    child.childNodes.forEach(visit);
+  };
+
+  element.childNodes.forEach(visit);
+  while (runs.length && !runs[0].text.trim()) runs.shift();
+  while (runs.length && !runs[runs.length - 1].text.trim()) runs.pop();
+  if (!runs.length) return null;
+  runs[0].text = runs[0].text.replace(/^\s+/, '');
+  runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/\s+$/, '');
+
+  const sourceRuns = runs
+    .filter((run) => run.text.trim())
+    .map((run, index) => ({ ...run, id: `${blockId}-r${index + 1}` }));
+  if (!sourceRuns.length) return null;
+  const requestRuns: ReaderTranslationRun[] = sourceRuns.map(({ href: _href, ...run }) => run);
+  const text = sourceRuns.map((run) => `${'\n'.repeat(run.break_before ?? 0)}${run.text}`).join('').trim();
+  return { text, sourceRuns, requestRuns };
 }
+
 
 function computedTranslationStyle(element: Element): TranslationBlockStyle {
   const style = element.ownerDocument.defaultView?.getComputedStyle(element);
@@ -369,6 +533,7 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
   const contents = renderer.getContents?.() ?? [];
   const blocks: ReaderTranslationBlock[] = [];
   const styles: Record<string, TranslationBlockStyle> = {};
+  const sourceRuns: Record<string, SourceTranslationRun[]> = {};
   const segments: TranslationContentSegment[] = [];
   let totalChars = 0;
   let layoutViewport: TranslationViewport | null = null;
@@ -396,16 +561,20 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
       const visibleRects = intersectingOuterRects(element, viewport);
       if (!visibleRects.length) continue;
       if (Array.from(element.children).some((child) => child.matches(TRANSLATABLE_SELECTOR))) continue;
-      let text = visibleBlockText(element, viewport);
-      if (!text) continue;
-      const remaining = MAX_VISIBLE_TRANSLATION_CHARS - totalChars;
-      if (text.length > remaining) text = text.slice(0, remaining).trimEnd();
-      if (!text) break;
       const blockId = `d${content.index}-b${index}`;
-      blocks.push({ id: blockId, tag: element.tagName.toLowerCase(), text });
+      const remaining = MAX_VISIBLE_TRANSLATION_CHARS - totalChars;
+      const extracted = visibleBlockRuns(element, viewport, blockId, remaining);
+      if (!extracted) continue;
+      blocks.push({
+        id: blockId,
+        tag: element.tagName.toLowerCase(),
+        text: extracted.text,
+        runs: extracted.requestRuns,
+      });
+      sourceRuns[blockId] = extracted.sourceRuns;
       segments.push({ kind: 'text', id: blockId });
       styles[blockId] = computedTranslationStyle(element);
-      totalChars += text.length;
+      totalChars += extracted.requestRuns.reduce((sum, run) => sum + run.text.length, 0);
       for (const rect of visibleRects) {
         minTextLeft = Math.min(minTextLeft, rect.left);
         maxTextRight = Math.max(maxTextRight, rect.right);
@@ -438,6 +607,7 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
   return {
     blocks,
     styles,
+    sourceRuns,
     segments,
     layout: {
       pageWidth,
@@ -486,7 +656,46 @@ function translationPageKey(settings: ReaderSettings, blocks: ReaderTranslationB
     source: settings.translationSourceLanguage,
     target: settings.translationTargetLanguage,
     prompt: settings.translationPrompt,
-    blocks: blocks.map((block) => [block.id, block.text]),
+    blocks: blocks.map((block) => [block.id, block.text, block.runs]),
+  });
+}
+
+function safeTranslationHref(value?: string): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value, window.location.href);
+    return ['http:', 'https:', 'mailto:', 'tel:', 'blob:'].includes(url.protocol)
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function translatedInlineContent(block: StyledTranslationBlock): ReactNode {
+  const sourceRuns = block.sourceRuns;
+  const translatedRuns = block.runs;
+  if (!sourceRuns?.length || !translatedRuns?.length) return block.text;
+  const translatedById = new Map(translatedRuns.map((run) => [run.id, run.text]));
+  return sourceRuns.map((sourceRun) => {
+    const translatedText = translatedById.get(sourceRun.id) ?? sourceRun.text;
+    let node: ReactNode = translatedText;
+    const formattingMarks = (sourceRun.marks ?? []).filter((mark) => mark !== 'link');
+    for (const mark of [...formattingMarks].reverse()) {
+      node = createElement(mark, undefined, node);
+    }
+    if (sourceRun.marks?.includes('link')) {
+      const href = safeTranslationHref(sourceRun.href);
+      node = href
+        ? createElement('a', { href, target: '_blank', rel: 'noopener noreferrer' }, node)
+        : createElement('span', { className: styles.translationLink }, node);
+    }
+    const children: ReactNode[] = [];
+    for (let index = 0; index < (sourceRun.break_before ?? 0); index += 1) {
+      children.push(createElement('br', { key: `${sourceRun.id}-br${index}` }));
+    }
+    children.push(node);
+    return createElement(Fragment, { key: sourceRun.id }, ...children);
   });
 }
 
@@ -887,7 +1096,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTranslationError(t('No visible text was found on this page.'));
         return;
       }
-      const { blocks, styles: sourceStyles, segments, layout } = extraction;
+      const { blocks, styles: sourceStyles, sourceRuns, segments, layout } = extraction;
       if (!blocks.length) {
         translationAbortRef.current?.abort();
         translationAbortRef.current = null;
@@ -919,7 +1128,11 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       }
 
       const styled = (translated: ReaderTranslationBlock[]): StyledTranslationBlock[] =>
-        translated.map((block) => ({ ...block, style: sourceStyles[block.id] }));
+        translated.map((block) => ({
+          ...block,
+          style: sourceStyles[block.id],
+          sourceRuns: sourceRuns[block.id],
+        }));
       setTranslationSkipped(false);
       const key = translationPageKey(settings, blocks);
       const local = settings.translationCacheEnabled
@@ -1613,7 +1826,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
                         className: styles.translationBlock,
                         'data-source-block-id': block.id,
                         style: block.style,
-                      }, block.text);
+                      }, translatedInlineContent(block));
                     })}
                   </div>
                 </div>
