@@ -312,6 +312,12 @@
   break-after: avoid-column;
 }
 
+.translationImage {
+  break-inside: avoid-column;
+  page-break-inside: avoid;
+  user-select: none;
+}
+
 .sidePanel {
   width: min(380px, 88vw);
   min-width: min(380px, 88vw);

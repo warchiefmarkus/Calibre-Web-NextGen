@@ -32,7 +32,7 @@ from ..usermanagement import login_required_if_no_ano
 
 log = logger.create()
 
-_ALLOWED_BLOCK_TAGS = {"p", "li", "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6"}
+_ALLOWED_BLOCK_TAGS = {"p", "li", "blockquote", "pre", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6"}
 _MAX_BLOCKS = 80
 _MAX_BLOCK_CHARS = 8000
 _MAX_PAGE_CHARS = 8000

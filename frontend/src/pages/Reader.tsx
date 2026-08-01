@@ -144,7 +144,8 @@ function isReaderTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
-const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre';
+const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, figcaption';
+const TRANSLATION_CONTENT_SELECTOR = `${TRANSLATABLE_SELECTOR}, img`;
 const MAX_VISIBLE_TRANSLATION_CHARS = 8_000;
 const MAX_VISIBLE_TRANSLATION_BLOCKS = 80;
 const TRANSLATION_DEBOUNCE_MS = 500;
@@ -162,6 +163,22 @@ type TranslationBlockStyle = Pick<CSSProperties,
 
 type StyledTranslationBlock = ReaderTranslationBlock & { style?: TranslationBlockStyle };
 
+type PreservedImageStyle = Pick<CSSProperties,
+  'width' | 'height' | 'maxWidth' | 'maxHeight' | 'objectFit' | 'display'
+  | 'marginBlockStart' | 'marginBlockEnd' | 'marginInlineStart' | 'marginInlineEnd'
+  | 'borderRadius'>;
+
+type TranslationTextSegment = { kind: 'text'; id: string };
+type TranslationImageSegment = {
+  kind: 'image';
+  id: string;
+  src: string;
+  alt: string;
+  title?: string;
+  style: PreservedImageStyle;
+};
+type TranslationContentSegment = TranslationTextSegment | TranslationImageSegment;
+
 type TranslationPageLayout = {
   pageWidth: number;
   pageHeight: number;
@@ -178,6 +195,7 @@ type TranslationPageLayout = {
 type VisibleTranslationPage = {
   blocks: ReaderTranslationBlock[];
   styles: Record<string, TranslationBlockStyle>;
+  segments: TranslationContentSegment[];
   layout: TranslationPageLayout;
 };
 
@@ -300,6 +318,47 @@ function computedTranslationStyle(element: Element): TranslationBlockStyle {
   };
 }
 
+function preservedImageSegment(
+  image: HTMLImageElement, viewport: TranslationViewport, id: string,
+): TranslationImageSegment | null {
+  const rects = intersectingOuterRects(image, viewport);
+  const src = image.currentSrc || image.src;
+  if (!rects.length || !src) return null;
+  const rect = rects.reduce((largest, candidate) => {
+    const largestArea = (largest.right - largest.left) * (largest.bottom - largest.top);
+    const candidateArea = (candidate.right - candidate.left) * (candidate.bottom - candidate.top);
+    return candidateArea > largestArea ? candidate : largest;
+  });
+  const style = image.ownerDocument.defaultView?.getComputedStyle(image);
+  const parentStyle = image.parentElement
+    ? image.ownerDocument.defaultView?.getComputedStyle(image.parentElement)
+    : null;
+  const width = Math.max(1, rect.right - rect.left);
+  const height = Math.max(1, rect.bottom - rect.top);
+  const centered = parentStyle?.textAlign === 'center'
+    || (style?.marginLeft === 'auto' && style?.marginRight === 'auto');
+  return {
+    kind: 'image',
+    id,
+    src,
+    alt: image.alt || '',
+    title: image.title || undefined,
+    style: {
+      width: `${width}px`,
+      height: 'auto',
+      maxWidth: '100%',
+      maxHeight: `${Math.max(1, Math.min(height, viewport.rendererRect.height - 16))}px`,
+      objectFit: (style?.objectFit || 'contain') as CSSProperties['objectFit'],
+      display: 'block',
+      marginBlockStart: style?.marginBlockStart || style?.marginTop || '0px',
+      marginBlockEnd: style?.marginBlockEnd || style?.marginBottom || '0px',
+      marginInlineStart: centered ? 'auto' : (style?.marginInlineStart || style?.marginLeft || '0px'),
+      marginInlineEnd: centered ? 'auto' : (style?.marginInlineEnd || style?.marginRight || '0px'),
+      borderRadius: style?.borderRadius || '0px',
+    },
+  };
+}
+
 function clampLayoutInset(value: number, pageSize: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.max(0, Math.min(pageSize * 0.3, value));
@@ -310,6 +369,7 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
   const contents = renderer.getContents?.() ?? [];
   const blocks: ReaderTranslationBlock[] = [];
   const styles: Record<string, TranslationBlockStyle> = {};
+  const segments: TranslationContentSegment[] = [];
   let totalChars = 0;
   let layoutViewport: TranslationViewport | null = null;
   let layoutDoc: Document | null = null;
@@ -322,10 +382,17 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
     if (!viewport) continue;
     layoutViewport ??= viewport;
     layoutDoc ??= doc;
-    const elements = Array.from(doc.body?.querySelectorAll(TRANSLATABLE_SELECTOR) ?? []);
+    const elements = Array.from(doc.body?.querySelectorAll(TRANSLATION_CONTENT_SELECTOR) ?? []);
     for (let index = 0; index < elements.length; index += 1) {
-      if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) break;
       const element = elements[index];
+      if (element.localName.toLowerCase() === 'img') {
+        const image = preservedImageSegment(
+          element as HTMLImageElement, viewport, `d${content.index}-i${index}`,
+        );
+        if (image) segments.push(image);
+        continue;
+      }
+      if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) break;
       const visibleRects = intersectingOuterRects(element, viewport);
       if (!visibleRects.length) continue;
       if (Array.from(element.children).some((child) => child.matches(TRANSLATABLE_SELECTOR))) continue;
@@ -336,6 +403,7 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
       if (!text) break;
       const blockId = `d${content.index}-b${index}`;
       blocks.push({ id: blockId, tag: element.tagName.toLowerCase(), text });
+      segments.push({ kind: 'text', id: blockId });
       styles[blockId] = computedTranslationStyle(element);
       totalChars += text.length;
       for (const rect of visibleRects) {
@@ -346,7 +414,7 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
     if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) break;
   }
 
-  if (!blocks.length || !layoutViewport || !layoutDoc) return null;
+  if (!segments.length || !layoutViewport || !layoutDoc) return null;
   const { rendererRect, frameRect, viewportRect } = layoutViewport;
   const pageWidth = Math.max(1, viewportRect.right - viewportRect.left);
   const pageHeight = Math.max(1, rendererRect.height);
@@ -370,6 +438,7 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
   return {
     blocks,
     styles,
+    segments,
     layout: {
       pageWidth,
       pageHeight,
@@ -561,6 +630,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [selectedAnnotation, setSelectedAnnotation] = useState<FoliateAnnotation | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [translationBlocks, setTranslationBlocks] = useState<StyledTranslationBlock[]>([]);
+  const [translationSegments, setTranslationSegments] = useState<TranslationContentSegment[]>([]);
   const [translationLayout, setTranslationLayout] = useState<TranslationPageLayout | null>(null);
   const [translationPageIndex, setTranslationPageIndex] = useState(0);
   const [translationTransitioning, setTranslationTransitioning] = useState(false);
@@ -781,6 +851,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       setTranslationError(null);
       setTranslationSkipped(false);
       setTranslationBlocks([]);
+      setTranslationSegments([]);
       setTranslationLayout(null);
       showTranslationPage(0);
       return;
@@ -794,6 +865,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       translationLandingRef.current = null;
       setTranslationTransitioning(false);
       setTranslationBlocks([]);
+      setTranslationSegments([]);
       setTranslationLayout(null);
       showTranslationPage(0);
       setTranslationLoading(false);
@@ -804,9 +876,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
     const timer = window.setTimeout(async () => {
       const extraction = extractVisiblePage(viewRef.current?.renderer);
-      if (!extraction?.blocks.length) {
+      if (!extraction) {
         if (!translationTransitionRef.current) {
           setTranslationBlocks([]);
+          setTranslationSegments([]);
           setTranslationLayout(null);
         }
         setTranslationLoading(false);
@@ -814,7 +887,21 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTranslationError(t('No visible text was found on this page.'));
         return;
       }
-      const { blocks, styles: sourceStyles, layout } = extraction;
+      const { blocks, styles: sourceStyles, segments, layout } = extraction;
+      if (!blocks.length) {
+        translationAbortRef.current?.abort();
+        translationAbortRef.current = null;
+        translationInFlightKeyRef.current = null;
+        setTranslationBlocks([]);
+        setTranslationSegments(segments);
+        setTranslationLayout(layout);
+        setTranslationLoading(false);
+        setTranslationError(null);
+        setTranslationSkipped(false);
+        setTranslationTransitioning(false);
+        translationTransitionRef.current = false;
+        return;
+      }
       if (sourceAlreadyMatchesTarget(settings, bookLanguage, blocks)) {
         translationAbortRef.current?.abort();
         translationAbortRef.current = null;
@@ -823,6 +910,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         translationLandingRef.current = null;
         setTranslationTransitioning(false);
         setTranslationBlocks([]);
+        setTranslationSegments([]);
         setTranslationLayout(null);
         setTranslationLoading(false);
         setTranslationError(null);
@@ -839,6 +927,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         : undefined;
       if (local) {
         setTranslationLayout(layout);
+        setTranslationSegments(segments);
         setTranslationBlocks(styled(local));
         setTranslationLoading(false);
         setTranslationError(null);
@@ -854,6 +943,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       translationInFlightKeyRef.current = key;
       if (!translationTransitionRef.current) {
         setTranslationBlocks([]);
+        setTranslationSegments([]);
         setTranslationLayout(layout);
       }
       setTranslationLoading(true);
@@ -878,6 +968,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           setTranslationTransitioning(false);
           setTranslationSkipped(true);
           setTranslationBlocks([]);
+          setTranslationSegments([]);
           setTranslationLayout(null);
           return;
         }
@@ -889,6 +980,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           }
         }
         setTranslationLayout(layout);
+        setTranslationSegments(segments);
         setTranslationBlocks(styled(response.blocks));
         setTranslationTransitioning(false);
         translationTransitionRef.current = false;
@@ -908,13 +1000,13 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     return () => window.clearTimeout(timer);
   }, [bookLanguage, fmt, id, location.cfi, location.fraction, ready,
     settings?.translationEnabled, settings?.translationProfileId,
-    settings?.translationPrompt, settings?.translationSourceLanguage,
+    settings?.translationCacheEnabled, settings?.translationPrompt, settings?.translationSourceLanguage,
     settings?.translationTargetLanguage, settings?.translationView,
     showTranslationPage, t, translationRetry]);
 
   useLayoutEffect(() => {
     const content = translationPagerContentRef.current;
-    if (!content || !translationLayout || !translationBlocks.length) {
+    if (!content || !translationLayout || !translationSegments.length) {
       translationPageCountRef.current = 1;
       showTranslationPage(0);
       return;
@@ -949,7 +1041,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [showTranslationPage, translationBlocks, translationLayout]);
+  }, [showTranslationPage, translationBlocks, translationLayout, translationSegments]);
 
   useEffect(() => {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
@@ -1328,7 +1420,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     && settings.translationView === 'translated'
     && !!settings.translationProfileId;
   const translationOverlayVisible = translationRequested
-    && !translationSkipped && !!translationLayout && translationBlocks.length > 0;
+    && !translationSkipped && !!translationLayout && translationSegments.length > 0;
+  const translatedBlockById = new Map(translationBlocks.map((block) => [block.id, block]));
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
   const loading = bookQuery.isLoading || settingsQuery.isLoading || positionQuery.isLoading;
 
@@ -1500,14 +1593,28 @@ export function Reader({ id, format }: { id: string; format?: string }) {
                       ...translationLayout.defaultStyle,
                     }}
                   >
-                    {translationBlocks.map((block) =>
-                      createElement(block.tag, {
+                    {translationSegments.map((segment) => {
+                      if (segment.kind === 'image') {
+                        return <img
+                          key={segment.id}
+                          className={styles.translationImage}
+                          data-source-image-id={segment.id}
+                          src={segment.src}
+                          alt={segment.alt}
+                          title={segment.title}
+                          style={segment.style}
+                          draggable={false}
+                        />;
+                      }
+                      const block = translatedBlockById.get(segment.id);
+                      if (!block) return null;
+                      return createElement(block.tag, {
                         key: block.id,
                         className: styles.translationBlock,
                         'data-source-block-id': block.id,
                         style: block.style,
-                      }, block.text),
-                    )}
+                      }, block.text);
+                    })}
                   </div>
                 </div>
               </div>

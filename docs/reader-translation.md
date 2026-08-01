@@ -1,7 +1,8 @@
 # Foliate page translation
 
-The unified Foliate reader can translate only the text visible on the current
-page through an OpenAI-compatible `chat/completions` or `responses` endpoint.
+The unified Foliate reader translates the text visible on the current page
+through an OpenAI-compatible `chat/completions` or `responses` endpoint while
+preserving visible book images locally without sending image data to the model.
 
 ## Reader workflow
 
@@ -17,8 +18,11 @@ reader pagination remain based on the original book.
 
 The overlay copies the computed typography and page geometry of the visible
 source blocks, including font family, pixel font size, line height, weight,
-style, alignment, indentation, and block margins. Longer translations are laid
-out as horizontal subpages with the same available height as the original page;
+style, alignment, indentation, and block margins. Original `img` elements are
+inserted back into the translated content at their source-order positions with
+their displayed size, alignment, margins, and aspect ratio. Text embedded inside
+images is not translated. Longer translations are laid out as horizontal
+subpages with the same available height as the original page;
 there is no vertical reader scroll. Reaching the final translated subpage turns
 exactly one original Foliate page, keeps the previous overlay visible while the
 next translation loads, then opens the first translated subpage. Backward
@@ -28,7 +32,7 @@ a larger centered spinner is shown without text, border, or background. Text
 selection uses the same readable yellow highlight as the original Foliate document.
 
 Selecting text in the original page exposes a temporary **Translation** action
-beside Highlight and Add note. The selected range is translated as one cached
+beside Highlight and Add note. The selected range is translated as one
 LLM block and replaced only in the current in-memory Foliate document. The
 original fragment is retained and restored before page, chapter, bookmark, or
 progress navigation. Leading and trailing whitespace from the selected range is
