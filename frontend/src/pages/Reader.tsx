@@ -1336,8 +1336,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
           }
         } finally {
-          if (translationInFlightKeyRef.current === key) translationInFlightKeyRef.current = null;
-          if (!preloadTask.controller.signal.aborted) setTranslationLoading(false);
+          if (translationInFlightKeyRef.current === key) {
+            translationInFlightKeyRef.current = null;
+            setTranslationLoading(false);
+          }
         }
         return;
       }

@@ -76,3 +76,13 @@ def test_toolbar_ring_reports_both_foreground_translation_and_preload_activity()
     assert "? 'translation'" in READER
     assert "'preload'" in READER
     assert "aria-busy={translationActivity}" in READER
+
+
+def test_aborted_joined_preload_always_releases_foreground_spinner():
+    joined = READER.split("const preloadTask = translationPreloadTaskRef.current", 1)[1].split(
+        "translationAbortRef.current?.abort();", 1
+    )[0]
+    finalizer = joined.split("} finally {", 1)[1]
+    assert "translationInFlightKeyRef.current === key" in finalizer
+    assert "setTranslationLoading(false)" in finalizer
+    assert "if (!preloadTask.controller.signal.aborted) setTranslationLoading(false)" not in finalizer

@@ -72,7 +72,9 @@ foreground translation error. Preloading is skipped in scrolling/vertical-writin
 at a section boundary where the next section is not already loaded.
 
 Visible pages are translated in bounded batches (up to 8 blocks and roughly
-3,500 source characters per provider request). If a model returns an incomplete
+3,500 source characters per provider request). The profile timeout is an overall
+deadline for the complete page, including incomplete-response fallbacks; each
+fallback receives only the remaining time. If a model returns an incomplete
 block list, the backend automatically retries smaller halves. If one formatted
 block still omits runs, the backend translates its runs separately and rebuilds
 the block with the original marks and line-break metadata. Oversized plain

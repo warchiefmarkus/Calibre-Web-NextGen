@@ -12,6 +12,8 @@ import hashlib
 import json
 import os
 import re
+import threading
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -23,6 +25,41 @@ from . import parallel
 from ..cw_advocate.exceptions import UnacceptableAddressException
 
 log = logger.create()
+
+_TRANSLATION_CONTEXT = threading.local()
+
+
+def _configured_translation_timeout(profile: Any) -> float:
+    return float(max(5, min(180, int(getattr(profile, "timeout_seconds", 60) or 60))))
+
+
+def _remaining_translation_timeout(profile: Any) -> float:
+    configured = _configured_translation_timeout(profile)
+    deadline = getattr(_TRANSLATION_CONTEXT, "deadline", None)
+    if deadline is None:
+        return configured
+    remaining = float(deadline) - time.monotonic()
+    if remaining <= 0:
+        raise ReaderTranslationError(
+            "The page translation exceeded the configured timeout.",
+            code="translation_timeout", status=504,
+        )
+    return max(0.1, min(configured, remaining))
+
+
+def _run_with_translation_deadline(deadline: float, callback: Any) -> Any:
+    previous = getattr(_TRANSLATION_CONTEXT, "deadline", None)
+    _TRANSLATION_CONTEXT.deadline = deadline
+    try:
+        return callback()
+    finally:
+        if previous is None:
+            try:
+                del _TRANSLATION_CONTEXT.deadline
+            except AttributeError:
+                pass
+        else:
+            _TRANSLATION_CONTEXT.deadline = previous
 
 DEFAULT_SYSTEM_PROMPT = """You are a literary translator.
 Translate the supplied book-page blocks from {source_language} into {target_language}.
@@ -711,7 +748,7 @@ def _split_translation_text(text: str, max_chars: int = _TRANSLATION_FRAGMENT_MA
 
 def _translate_batch_once(profile: Any, *, source_language: str, target_language: str,
                           prompt: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    timeout = max(5, min(180, int(profile.timeout_seconds or 60)))
+    timeout = _remaining_translation_timeout(profile)
     endpoint = normalize_endpoint_path(profile.endpoint_path).lower()
     responses_mode = endpoint.endswith("responses")
     messages_mode = endpoint.endswith("messages")
@@ -743,7 +780,10 @@ def _translate_batch_once(profile: Any, *, source_language: str, target_language
             and response.status_code == 400 and "response_format" in payload
             and any(token in response_hint for token in ("response_format", "json_object", "json mode"))):
         payload.pop("response_format", None)
-        response = _request("POST", _endpoint_url(profile), headers=headers, json=payload, timeout=timeout)
+        response = _request(
+            "POST", _endpoint_url(profile), headers=headers, json=payload,
+            timeout=_remaining_translation_timeout(profile),
+        )
     response_payload = _response_json(response)
     if responses_mode:
         content = _responses_content(response_payload)
@@ -875,18 +915,27 @@ def _translate_batch_resilient(profile: Any, *, source_language: str, target_lan
 def translate_page(profile: Any, *, source_language: str, target_language: str,
                    prompt: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     batches = _partition_translation_blocks(blocks, profile=profile)
-    if len(batches) <= 1:
-        return _translate_batch_resilient(
-            profile, source_language=source_language, target_language=target_language,
-            prompt=prompt, blocks=batches[0] if batches else [],
-        ) if batches else []
+    if not batches:
+        return []
+    deadline = time.monotonic() + _configured_translation_timeout(profile)
+    if len(batches) == 1:
+        return _run_with_translation_deadline(
+            deadline,
+            lambda: _translate_batch_resilient(
+                profile, source_language=source_language, target_language=target_language,
+                prompt=prompt, blocks=batches[0],
+            ),
+        )
 
     jobs = [
         (
             index,
-            lambda batch=batch: _translate_batch_resilient(
-                profile, source_language=source_language, target_language=target_language,
-                prompt=prompt, blocks=batch,
+            lambda batch=batch: _run_with_translation_deadline(
+                deadline,
+                lambda: _translate_batch_resilient(
+                    profile, source_language=source_language, target_language=target_language,
+                    prompt=prompt, blocks=batch,
+                ),
             ),
         )
         for index, batch in enumerate(batches)

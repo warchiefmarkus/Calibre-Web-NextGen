@@ -528,3 +528,56 @@ def test_only_exact_https_nvidia_nim_routes_bypass_generic_ssrf_resolver():
     assert not _is_trusted_nvidia_endpoint("https://evil.integrate.api.nvidia.com/v1/models")
     assert not _is_trusted_nvidia_endpoint("https://integrate.api.nvidia.com.evil.test/v1/models")
     assert not _is_trusted_nvidia_endpoint("https://integrate.api.nvidia.com/other/models")
+
+
+def test_page_translation_deadline_limits_all_fallback_requests(monkeypatch):
+    from cps.services import reader_translation as service
+
+    profile = _profile(timeout_seconds=60)
+    service._TRANSLATION_CONTEXT.deadline = 100.0
+    try:
+        monkeypatch.setattr(service.time, "monotonic", lambda: 90.0)
+        assert service._remaining_translation_timeout(profile) == pytest.approx(10.0)
+
+        monkeypatch.setattr(service.time, "monotonic", lambda: 100.01)
+        with pytest.raises(ReaderTranslationError) as exc:
+            service._remaining_translation_timeout(profile)
+        assert exc.value.code == "translation_timeout"
+        assert exc.value.status == 504
+    finally:
+        try:
+            del service._TRANSLATION_CONTEXT.deadline
+        except AttributeError:
+            pass
+
+
+def test_translate_page_reuses_one_deadline_during_incomplete_retry(monkeypatch):
+    from cps.services import reader_translation as service
+
+    deadlines = []
+    calls = 0
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        nonlocal calls
+        calls += 1
+        deadlines.append(service._TRANSLATION_CONTEXT.deadline)
+        if calls == 1:
+            raise ReaderTranslationError(
+                "incomplete", code="incomplete_translation", status=502,
+            )
+        return [
+            {"id": block["id"], "tag": block["tag"], "text": f"T:{block['text']}"}
+            for block in blocks
+        ]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    result = service.translate_page(
+        _profile(timeout_seconds=60), source_language="en", target_language="uk",
+        prompt="", blocks=[
+            {"id": "a", "tag": "p", "text": "A"},
+            {"id": "b", "tag": "p", "text": "B"},
+        ],
+    )
+    assert [item["text"] for item in result] == ["T:A", "T:B"]
+    assert len(deadlines) >= 2
+    assert len(set(deadlines)) == 1
