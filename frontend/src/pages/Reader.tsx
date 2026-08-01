@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'wouter';
 import {
   AlignJustify, Bookmark, BookOpen, ChevronLeft, ChevronRight,
@@ -133,7 +133,34 @@ const TRANSLATION_DEBOUNCE_MS = 500;
 
 type TranslationViewport = {
   frameRect: DOMRect;
+  rendererRect: DOMRect;
   viewportRect: { left: number; right: number; top: number; bottom: number };
+};
+
+type TranslationBlockStyle = Pick<CSSProperties,
+  'fontFamily' | 'fontSize' | 'fontWeight' | 'fontStyle' | 'lineHeight'
+  | 'letterSpacing' | 'textAlign' | 'textIndent' | 'textTransform'
+  | 'marginBlockStart' | 'marginBlockEnd'>;
+
+type StyledTranslationBlock = ReaderTranslationBlock & { style?: TranslationBlockStyle };
+
+type TranslationPageLayout = {
+  pageWidth: number;
+  pageHeight: number;
+  contentWidth: number;
+  contentHeight: number;
+  paddingInlineStart: number;
+  paddingInlineEnd: number;
+  paddingBlockStart: number;
+  paddingBlockEnd: number;
+  columnGap: number;
+  defaultStyle: TranslationBlockStyle;
+};
+
+type VisibleTranslationPage = {
+  blocks: ReaderTranslationBlock[];
+  styles: Record<string, TranslationBlockStyle>;
+  layout: TranslationPageLayout;
 };
 
 const LANGUAGE_ALIASES: Record<string, string> = {
@@ -162,6 +189,7 @@ function translationViewport(renderer: FoliateRenderer, doc: Document): Translat
   if (renderer.getAttribute('flow') !== 'paginated') {
     return {
       frameRect,
+      rendererRect,
       viewportRect: {
         left: rendererRect.left, right: rendererRect.right,
         top: rendererRect.top, bottom: rendererRect.bottom,
@@ -178,6 +206,7 @@ function translationViewport(renderer: FoliateRenderer, doc: Document): Translat
   const left = rendererRect.left + (rendererRect.width - visibleWidth) / 2;
   return {
     frameRect,
+    rendererRect,
     viewportRect: {
       left,
       right: left + visibleWidth,
@@ -197,8 +226,17 @@ function rectIntersectsViewport(rect: DOMRect, viewport: TranslationViewport): b
     && bottom > viewport.viewportRect.top && top < viewport.viewportRect.bottom;
 }
 
-function elementIntersectsViewport(element: Element, viewport: TranslationViewport): boolean {
-  return Array.from(element.getClientRects()).some((rect) => rectIntersectsViewport(rect, viewport));
+function intersectingOuterRects(element: Element, viewport: TranslationViewport): Array<{
+  left: number; right: number; top: number; bottom: number;
+}> {
+  return Array.from(element.getClientRects())
+    .filter((rect) => rectIntersectsViewport(rect, viewport))
+    .map((rect) => ({
+      left: viewport.frameRect.left + rect.left,
+      right: viewport.frameRect.left + rect.right,
+      top: viewport.frameRect.top + rect.top,
+      bottom: viewport.frameRect.top + rect.bottom,
+    }));
 }
 
 function visibleBlockText(element: Element, viewport: TranslationViewport): string {
@@ -226,33 +264,107 @@ function visibleBlockText(element: Element, viewport: TranslationViewport): stri
   return visible.join('').replace(/\s+/g, ' ').trim();
 }
 
-function extractVisiblePageBlocks(renderer?: FoliateRenderer): ReaderTranslationBlock[] {
-  if (!renderer) return [];
+function computedTranslationStyle(element: Element): TranslationBlockStyle {
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+  if (!style) return {};
+  return {
+    fontFamily: style.fontFamily,
+    fontSize: style.fontSize,
+    fontWeight: style.fontWeight,
+    fontStyle: style.fontStyle,
+    lineHeight: style.lineHeight,
+    letterSpacing: style.letterSpacing,
+    textAlign: style.textAlign as CSSProperties['textAlign'],
+    textIndent: style.textIndent,
+    textTransform: style.textTransform as CSSProperties['textTransform'],
+    marginBlockStart: style.marginBlockStart || style.marginTop,
+    marginBlockEnd: style.marginBlockEnd || style.marginBottom,
+  };
+}
+
+function clampLayoutInset(value: number, pageSize: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(pageSize * 0.3, value));
+}
+
+function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage | null {
+  if (!renderer) return null;
   const contents = renderer.getContents?.() ?? [];
   const blocks: ReaderTranslationBlock[] = [];
+  const styles: Record<string, TranslationBlockStyle> = {};
   let totalChars = 0;
+  let layoutViewport: TranslationViewport | null = null;
+  let layoutDoc: Document | null = null;
+  let minTextLeft = Number.POSITIVE_INFINITY;
+  let maxTextRight = Number.NEGATIVE_INFINITY;
+
   for (const content of [...contents].sort((a, b) => a.index - b.index)) {
     const doc = content.doc;
     const viewport = translationViewport(renderer, doc);
     if (!viewport) continue;
+    layoutViewport ??= viewport;
+    layoutDoc ??= doc;
     const elements = Array.from(doc.body?.querySelectorAll(TRANSLATABLE_SELECTOR) ?? []);
     for (let index = 0; index < elements.length; index += 1) {
-      if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) {
-        return blocks;
-      }
+      if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) break;
       const element = elements[index];
-      if (!elementIntersectsViewport(element, viewport)) continue;
+      const visibleRects = intersectingOuterRects(element, viewport);
+      if (!visibleRects.length) continue;
       if (Array.from(element.children).some((child) => child.matches(TRANSLATABLE_SELECTOR))) continue;
       let text = visibleBlockText(element, viewport);
       if (!text) continue;
       const remaining = MAX_VISIBLE_TRANSLATION_CHARS - totalChars;
       if (text.length > remaining) text = text.slice(0, remaining).trimEnd();
-      if (!text) return blocks;
-      blocks.push({ id: `d${content.index}-b${index}`, tag: element.tagName.toLowerCase(), text });
+      if (!text) break;
+      const blockId = `d${content.index}-b${index}`;
+      blocks.push({ id: blockId, tag: element.tagName.toLowerCase(), text });
+      styles[blockId] = computedTranslationStyle(element);
       totalChars += text.length;
+      for (const rect of visibleRects) {
+        minTextLeft = Math.min(minTextLeft, rect.left);
+        maxTextRight = Math.max(maxTextRight, rect.right);
+      }
     }
+    if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) break;
   }
-  return blocks;
+
+  if (!blocks.length || !layoutViewport || !layoutDoc) return null;
+  const { rendererRect, frameRect, viewportRect } = layoutViewport;
+  const pageWidth = Math.max(1, viewportRect.right - viewportRect.left);
+  const pageHeight = Math.max(1, rendererRect.height);
+  const fallbackInline = Math.min(32, pageWidth * 0.06);
+  const paddingInlineStart = clampLayoutInset(
+    minTextLeft - viewportRect.left, pageWidth, fallbackInline,
+  );
+  const paddingInlineEnd = clampLayoutInset(
+    viewportRect.right - maxTextRight, pageWidth, fallbackInline,
+  );
+  const paddingBlockStart = clampLayoutInset(
+    frameRect.top - rendererRect.top, pageHeight, 16,
+  );
+  const paddingBlockEnd = clampLayoutInset(
+    rendererRect.bottom - frameRect.bottom, pageHeight, 16,
+  );
+  const contentWidth = Math.max(160, pageWidth - paddingInlineStart - paddingInlineEnd);
+  const contentHeight = Math.max(120, pageHeight - paddingBlockStart - paddingBlockEnd);
+  const body = layoutDoc.body ?? layoutDoc.documentElement;
+
+  return {
+    blocks,
+    styles,
+    layout: {
+      pageWidth,
+      pageHeight,
+      contentWidth,
+      contentHeight,
+      paddingInlineStart,
+      paddingInlineEnd,
+      paddingBlockStart,
+      paddingBlockEnd,
+      columnGap: Math.max(16, paddingInlineStart + paddingInlineEnd),
+      defaultStyle: computedTranslationStyle(body),
+    },
+  };
 }
 
 function looksLikeUkrainian(blocks: ReaderTranslationBlock[]): boolean {
@@ -399,6 +511,13 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const translationAbortRef = useRef<AbortController | null>(null);
   const translationInFlightKeyRef = useRef<string | null>(null);
   const translationCacheRef = useRef<Map<string, ReaderTranslationBlock[]>>(new Map());
+  const translationPagerContentRef = useRef<HTMLDivElement>(null);
+  const translationBlocksRef = useRef<StyledTranslationBlock[]>([]);
+  const translationPageIndexRef = useRef(0);
+  const translationPageCountRef = useRef(1);
+  const translationLandingRef = useRef<'first' | 'last' | null>(null);
+  const translationTransitionRef = useRef(false);
+  const translationSkippedRef = useRef(false);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -417,12 +536,24 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [annotations, setAnnotations] = useState<FoliateAnnotation[]>([]);
   const [selectedAnnotation, setSelectedAnnotation] = useState<FoliateAnnotation | null>(null);
   const [speaking, setSpeaking] = useState(false);
-  const [translationBlocks, setTranslationBlocks] = useState<ReaderTranslationBlock[]>([]);
+  const [translationBlocks, setTranslationBlocks] = useState<StyledTranslationBlock[]>([]);
+  const [translationLayout, setTranslationLayout] = useState<TranslationPageLayout | null>(null);
+  const [translationPageIndex, setTranslationPageIndex] = useState(0);
+  const [translationPageCount, setTranslationPageCount] = useState(1);
+  const [translationTransitioning, setTranslationTransitioning] = useState(false);
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translationRetry, setTranslationRetry] = useState(0);
   const [translationCached, setTranslationCached] = useState(false);
   const [translationSkipped, setTranslationSkipped] = useState(false);
+
+  useEffect(() => {
+    translationBlocksRef.current = translationBlocks;
+  }, [translationBlocks]);
+
+  useEffect(() => {
+    translationSkippedRef.current = translationSkipped;
+  }, [translationSkipped]);
 
   useEffect(() => () => {
     if (wheelIdleTimerRef.current !== null) {
@@ -493,15 +624,61 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     viewRef.current?.deselect();
   }, []);
 
-  const navigate = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
+  const navigate = useCallback(async (action: 'prev' | 'next' | 'left' | 'right') => {
     dismissSelection();
     const view = viewRef.current;
     if (!view) return;
-    if (action === 'prev') void view.prev();
-    else if (action === 'next') void view.next();
-    else if (action === 'left') void view.goLeft();
-    else void view.goRight();
+    if (action === 'prev') await view.prev();
+    else if (action === 'next') await view.next();
+    else if (action === 'left') await view.goLeft();
+    else await view.goRight();
   }, [dismissSelection]);
+
+  const showTranslationPage = useCallback((index: number) => {
+    const bounded = Math.max(0, Math.min(translationPageCountRef.current - 1, index));
+    translationPageIndexRef.current = bounded;
+    setTranslationPageIndex(bounded);
+  }, []);
+
+  const navigateTranslation = useCallback((direction: 'prev' | 'next'): boolean => {
+    const currentSettings = settingsRef.current;
+    const active = !!currentSettings?.translationEnabled
+      && currentSettings.translationView === 'translated'
+      && translationBlocksRef.current.length > 0
+      && !translationSkippedRef.current;
+    if (!active) return false;
+    if (translationTransitionRef.current) return true;
+
+    const current = translationPageIndexRef.current;
+    const count = translationPageCountRef.current;
+    if (direction === 'next' && current < count - 1) {
+      showTranslationPage(current + 1);
+      return true;
+    }
+    if (direction === 'prev' && current > 0) {
+      showTranslationPage(current - 1);
+      return true;
+    }
+
+    translationLandingRef.current = direction === 'next' ? 'first' : 'last';
+    translationTransitionRef.current = true;
+    setTranslationTransitioning(true);
+    setTranslationLoading(true);
+    void navigate(direction).catch((cause) => {
+      translationTransitionRef.current = false;
+      translationLandingRef.current = null;
+      setTranslationTransitioning(false);
+      setTranslationLoading(false);
+      setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
+    });
+    return true;
+  }, [navigate, showTranslationPage, t]);
+
+  const navigateReader = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
+    const direction = action === 'prev' || action === 'left' ? 'prev' : 'next';
+    if (navigateTranslation(direction)) return;
+    void navigate(action);
+  }, [navigate, navigateTranslation]);
 
   const handleReaderWheel = useCallback((event: WheelEvent) => {
     if (settingsRef.current?.flow !== 'paginated') return;
@@ -540,8 +717,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     wheelDeltaRef.current = 0;
     wheelDirectionRef.current = 0;
     wheelLockUntilRef.current = now + READER_WHEEL_COOLDOWN_MS;
-    navigate(action);
-  }, [navigate]);
+    navigateReader(action);
+  }, [navigateReader]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -557,10 +734,15 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       translationAbortRef.current?.abort();
       translationAbortRef.current = null;
       translationInFlightKeyRef.current = null;
+      translationTransitionRef.current = false;
+      translationLandingRef.current = null;
+      setTranslationTransitioning(false);
       setTranslationLoading(false);
       setTranslationError(null);
       setTranslationSkipped(false);
       setTranslationBlocks([]);
+      setTranslationLayout(null);
+      showTranslationPage(0);
       return;
     }
 
@@ -568,7 +750,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       translationAbortRef.current?.abort();
       translationAbortRef.current = null;
       translationInFlightKeyRef.current = null;
+      translationTransitionRef.current = false;
+      translationLandingRef.current = null;
+      setTranslationTransitioning(false);
       setTranslationBlocks([]);
+      setTranslationLayout(null);
+      showTranslationPage(0);
       setTranslationLoading(false);
       setTranslationError(null);
       setTranslationSkipped(true);
@@ -576,33 +763,46 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     }
 
     const timer = window.setTimeout(async () => {
-      const blocks = extractVisiblePageBlocks(viewRef.current?.renderer);
-      if (!blocks.length) {
-        setTranslationBlocks([]);
+      const extraction = extractVisiblePage(viewRef.current?.renderer);
+      if (!extraction?.blocks.length) {
+        if (!translationTransitionRef.current) {
+          setTranslationBlocks([]);
+          setTranslationLayout(null);
+        }
         setTranslationLoading(false);
         setTranslationSkipped(false);
         setTranslationError(t('No visible text was found on this page.'));
         return;
       }
+      const { blocks, styles: sourceStyles, layout } = extraction;
       if (sourceAlreadyMatchesTarget(settings, bookLanguage, blocks)) {
         translationAbortRef.current?.abort();
         translationAbortRef.current = null;
         translationInFlightKeyRef.current = null;
+        translationTransitionRef.current = false;
+        translationLandingRef.current = null;
+        setTranslationTransitioning(false);
         setTranslationBlocks([]);
+        setTranslationLayout(null);
         setTranslationLoading(false);
         setTranslationError(null);
         setTranslationSkipped(true);
         return;
       }
 
+      const styled = (translated: ReaderTranslationBlock[]): StyledTranslationBlock[] =>
+        translated.map((block) => ({ ...block, style: sourceStyles[block.id] }));
       setTranslationSkipped(false);
       const key = translationPageKey(settings, blocks);
       const local = translationCacheRef.current.get(key);
       if (local) {
-        setTranslationBlocks(local);
+        setTranslationLayout(layout);
+        setTranslationBlocks(styled(local));
         setTranslationCached(true);
         setTranslationLoading(false);
         setTranslationError(null);
+        setTranslationTransitioning(false);
+        translationTransitionRef.current = false;
         return;
       }
       if (translationInFlightKeyRef.current === key) return;
@@ -611,7 +811,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       const controller = new AbortController();
       translationAbortRef.current = controller;
       translationInFlightKeyRef.current = key;
-      setTranslationBlocks([]);
+      if (!translationTransitionRef.current) {
+        setTranslationBlocks([]);
+        setTranslationLayout(layout);
+      }
       setTranslationLoading(true);
       setTranslationCached(false);
       setTranslationError(null);
@@ -629,8 +832,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         }, controller.signal);
         if (controller.signal.aborted) return;
         if (response.skipped) {
+          translationTransitionRef.current = false;
+          translationLandingRef.current = null;
+          setTranslationTransitioning(false);
           setTranslationSkipped(true);
           setTranslationBlocks([]);
+          setTranslationLayout(null);
           return;
         }
         translationCacheRef.current.set(key, response.blocks);
@@ -638,8 +845,11 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           const oldest = translationCacheRef.current.keys().next().value as string | undefined;
           if (oldest) translationCacheRef.current.delete(oldest);
         }
-        setTranslationBlocks(response.blocks);
+        setTranslationLayout(layout);
+        setTranslationBlocks(styled(response.blocks));
         setTranslationCached(response.cached);
+        setTranslationTransitioning(false);
+        translationTransitionRef.current = false;
       } catch (cause) {
         if (controller.signal.aborted) return;
         setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
@@ -657,7 +867,49 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, [bookLanguage, fmt, id, location.cfi, location.fraction, ready,
     settings?.translationEnabled, settings?.translationProfileId,
     settings?.translationPrompt, settings?.translationSourceLanguage,
-    settings?.translationTargetLanguage, settings?.translationView, t, translationRetry]);
+    settings?.translationTargetLanguage, settings?.translationView,
+    showTranslationPage, t, translationRetry]);
+
+  useLayoutEffect(() => {
+    const content = translationPagerContentRef.current;
+    if (!content || !translationLayout || !translationBlocks.length) {
+      translationPageCountRef.current = 1;
+      setTranslationPageCount(1);
+      showTranslationPage(0);
+      return;
+    }
+
+    let frame = 0;
+    const measure = () => {
+      const step = Math.max(1, translationLayout.contentWidth + translationLayout.columnGap);
+      const count = Math.max(1, Math.ceil(
+        (content.scrollWidth + translationLayout.columnGap - 0.5) / step,
+      ));
+      translationPageCountRef.current = count;
+      setTranslationPageCount(count);
+      const landing = translationLandingRef.current;
+      const nextIndex = landing === 'last'
+        ? count - 1
+        : landing === 'first'
+          ? 0
+          : Math.min(translationPageIndexRef.current, count - 1);
+      translationLandingRef.current = null;
+      showTranslationPage(nextIndex);
+    };
+    const schedule = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+    schedule();
+    void document.fonts?.ready?.then(schedule);
+    const observer = new ResizeObserver(schedule);
+    observer.observe(content);
+    if (stageRef.current) observer.observe(stageRef.current);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [showTranslationPage, translationBlocks, translationLayout]);
 
   useEffect(() => {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
@@ -794,10 +1046,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      navigate('left');
+      navigateReader('left');
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      navigate('right');
+      navigateReader('right');
     } else if (event.key === 'Escape') {
       setPanel(null);
       dismissSelection();
@@ -929,8 +1181,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     && settings.translationView === 'translated'
     && !!settings.translationProfileId;
   const translationOverlayVisible = translationRequested
-    && !translationSkipped && !translationLoading && !translationError
-    && translationBlocks.length > 0;
+    && !translationSkipped && !!translationLayout && translationBlocks.length > 0;
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
   const loading = bookQuery.isLoading || settingsQuery.isLoading || positionQuery.isLoading;
 
@@ -1037,7 +1288,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           {error && <EmptyState message={error} />}
           <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
           {translationRequested && (translationLoading || translationError || translationSkipped) && (
-            <div className={styles.translationStatus} role={translationError ? 'alert' : 'status'}>
+            <div className={styles.translationStatus} role={translationError ? 'alert' : 'status'}
+              data-transitioning={translationTransitioning ? 'true' : 'false'}>
               {translationLoading && (
                 <>
                   <SpinnerCentered size={20} />
@@ -1057,50 +1309,70 @@ export function Reader({ id, format }: { id: string; format?: string }) {
               )}
             </div>
           )}
-          {translationOverlayVisible && settings && (
+          {translationOverlayVisible && settings && translationLayout && (
             <div
               className={styles.translationOverlay}
               data-reader-translation-overlay
               aria-live="polite"
-              onWheel={(event) => {
-                const target = event.currentTarget;
-                const canScrollUp = target.scrollTop > 0;
-                const canScrollDown = target.scrollTop + target.clientHeight < target.scrollHeight - 1;
-                if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) {
-                  event.stopPropagation();
-                }
-              }}
               style={{
                 background: THEME[settings.theme].background,
                 color: THEME[settings.theme].text,
-                fontFamily: FONT_FAMILY[settings.font],
-                fontSize: `${settings.fontSize}%`,
-                lineHeight: String(settings.lineHeight / 100),
               }}
             >
-              <div className={styles.translationOverlayContent}
-                style={{ maxWidth: `${settings.maxInlineSize}px` }}>
-                <div className={styles.translationOverlayMeta}>
-                  <span><Languages size={15} aria-hidden="true" /> {t('Translation')}</span>
-                  {translationCached && <span>{t('Cached')}</span>}
+              <div className={styles.translationOverlayBadge}>
+                <span><Languages size={14} aria-hidden="true" /> {t('Translation')}</span>
+                <span>{translationPageIndex + 1}/{translationPageCount}</span>
+                {translationCached && <span>{t('Cached')}</span>}
+              </div>
+              <div
+                className={styles.translationPageShell}
+                style={{
+                  width: `${translationLayout.pageWidth}px`,
+                  height: `${translationLayout.pageHeight}px`,
+                }}
+              >
+                <div className={styles.translationPagerViewport}>
+                  <div
+                    ref={translationPagerContentRef}
+                    className={styles.translationPagerContent}
+                    style={{
+                      left: `${translationLayout.paddingInlineStart}px`,
+                      top: `${translationLayout.paddingBlockStart}px`,
+                      width: `${translationLayout.contentWidth}px`,
+                      height: `${translationLayout.contentHeight}px`,
+                      columnWidth: `${translationLayout.contentWidth}px`,
+                      columnGap: `${translationLayout.columnGap}px`,
+                      transform: `translate3d(${-translationPageIndex * (
+                        translationLayout.contentWidth + translationLayout.columnGap
+                      )}px, 0, 0)`,
+                      ...translationLayout.defaultStyle,
+                    }}
+                  >
+                    {translationBlocks.map((block) =>
+                      createElement(block.tag, {
+                        key: block.id,
+                        className: styles.translationBlock,
+                        'data-source-block-id': block.id,
+                        style: block.style,
+                      }, block.text),
+                    )}
+                  </div>
                 </div>
-                {translationBlocks.map((block) =>
-                  createElement(block.tag, { key: block.id, className: styles.translationBlock }, block.text),
-                )}
               </div>
             </div>
           )}
+
           {settings?.tapToTurn && settings.flow === 'paginated' && ready && !error && (
             <>
               <button className={`${styles.tapZone} ${styles.tapZoneLeft}`}
                 data-reader-wheel-page-zone
-                onClick={(event) => { navigate('left'); event.currentTarget.blur(); }}
+                onClick={(event) => { navigateReader('left'); event.currentTarget.blur(); }}
                 title={t('Previous page')} aria-label={t('Previous page')}>
                 <ChevronLeft size={30} aria-hidden="true" />
               </button>
               <button className={`${styles.tapZone} ${styles.tapZoneRight}`}
                 data-reader-wheel-page-zone
-                onClick={(event) => { navigate('right'); event.currentTarget.blur(); }}
+                onClick={(event) => { navigateReader('right'); event.currentTarget.blur(); }}
                 title={t('Next page')} aria-label={t('Next page')}>
                 <ChevronRight size={30} aria-hidden="true" />
               </button>
@@ -1109,7 +1381,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         </section>
       </div>
       <footer className={styles.bottomBar}>
-        <button className={styles.pageButton} onClick={() => navigate('prev')} title={t('Previous page')}>
+        <button className={styles.pageButton} onClick={() => navigateReader('prev')} title={t('Previous page')}>
           <ChevronLeft size={22} aria-hidden="true" />
         </button>
         <div className={styles.progressArea}>
@@ -1135,7 +1407,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             {sectionFractions.map((fraction) => <option key={fraction} value={Math.round(fraction * 1000)} />)}
           </datalist>
         </div>
-        <button className={styles.pageButton} onClick={() => navigate('next')} title={t('Next page')}>
+        <button className={styles.pageButton} onClick={() => navigateReader('next')} title={t('Next page')}>
           <ChevronRight size={22} aria-hidden="true" />
         </button>
       </footer>

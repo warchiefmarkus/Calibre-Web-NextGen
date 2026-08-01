@@ -313,8 +313,8 @@ def test_unified_reader_has_optional_tap_zones_and_dismisses_selection_on_naviga
     reader = (Path(FRONTEND_DIR) / "src/pages/Reader.tsx").read_text()
     css = (Path(FRONTEND_DIR) / "src/pages/Reader.module.css").read_text()
     assert "settings?.tapToTurn" in reader
-    assert "navigate('left')" in reader
-    assert "navigate('right')" in reader
+    assert "navigateReader('left')" in reader
+    assert "navigateReader('right')" in reader
     assert "dismissSelection();" in reader
     assert ".tapZone" in css
     assert "padding-inline-end: 38px" in css

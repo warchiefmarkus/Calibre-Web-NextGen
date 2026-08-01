@@ -240,68 +240,71 @@
   position: absolute;
   inset: 0;
   z-index: 3;
-  overflow: auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
   overscroll-behavior: contain;
-  padding: clamp(24px, 5vh, 64px) clamp(32px, 10vw, 140px);
 }
 
-.translationOverlayContent {
-  width: 100%;
-  min-height: 100%;
-  margin: 0 auto;
-}
-
-.translationOverlayMeta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 1.5rem;
-  padding-bottom: .65rem;
-  border-bottom: 1px solid var(--reader-border);
-  color: var(--reader-muted);
-  font-family: system-ui, sans-serif;
-  font-size: 12px;
-}
-
-.translationOverlayMeta span {
+.translationOverlayBadge {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-start: 50%;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 9px;
+  transform: translateX(-50%);
+  border: 1px solid var(--reader-border);
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: color-mix(in srgb, var(--reader-panel) 90%, transparent);
+  color: var(--reader-muted);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.translationOverlayBadge span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.translationPageShell {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.translationPagerViewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.translationPagerContent {
+  position: absolute;
+  column-fill: auto;
+  overflow: visible;
+  transform-origin: left top;
+  transition: transform 180ms ease-out;
+  will-change: transform;
 }
 
 .translationBlock {
-  margin-block: 0 1em;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  break-inside: auto;
+  orphans: 2;
+  widows: 2;
 }
 
-.translationOverlayContent h1,
-.translationOverlayContent h2,
-.translationOverlayContent h3,
-.translationOverlayContent h4,
-.translationOverlayContent h5,
-.translationOverlayContent h6 {
-  line-height: 1.25;
-  margin-block: 1.35em .7em;
-}
-
-.translationLoading,
-.translationFailure {
-  min-height: 45vh;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 14px;
-  text-align: center;
-}
-
-.translationFailure button {
-  border: 1px solid var(--reader-border);
-  border-radius: 8px;
-  padding: 8px 14px;
-  background: var(--reader-panel);
-  color: inherit;
-  cursor: pointer;
+.translationBlock:is(h1, h2, h3, h4, h5, h6) {
+  break-after: avoid-column;
 }
 
 .sidePanel {
@@ -720,8 +723,8 @@
 }
 
 @media (max-width: 760px) {
-  .translationOverlay {
-    padding: 24px clamp(42px, 13vw, 72px);
+  .translationOverlayBadge {
+    inset-block-start: 5px;
   }
 
   .translationProfileGrid {

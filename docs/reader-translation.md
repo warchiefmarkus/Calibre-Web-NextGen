@@ -11,9 +11,18 @@ page through an OpenAI-compatible `chat/completions` or `responses` endpoint.
 4. Enable automatic translation.
 5. Use **Original / Translation** in the reader toolbar to switch views.
 
-The original ebook DOM is never modified. A separate scrollable overlay renders
+The original ebook DOM is never modified. A separate fixed-height overlay renders
 the translated blocks, so CFI locations, progress, bookmarks, highlights, and
 reader pagination remain based on the original book.
+
+The overlay copies the computed typography and page geometry of the visible
+source blocks, including font family, pixel font size, line height, weight,
+style, alignment, indentation, and block margins. Longer translations are laid
+out as horizontal subpages with the same available height as the original page;
+there is no vertical reader scroll. Reaching the final translated subpage turns
+exactly one original Foliate page, keeps the previous overlay visible while the
+next translation loads, then opens the first translated subpage. Backward
+navigation restores the previous original page and its final translated subpage.
 
 Translations are cached per user using a hash of the book, visible source text,
 languages, model settings, and prompt. Changing any of those inputs creates a
@@ -73,7 +82,7 @@ so it should only be used on a trusted single-user installation.
 ## Limits
 
 - at most 80 visible blocks per request;
-- at most 24,000 source characters per page;
+- at most 8,000 source characters per visible page;
 - at most 8,000 characters per block;
 - provider timeout from 5 to 180 seconds;
 - provider responses are limited to 2 MiB;
