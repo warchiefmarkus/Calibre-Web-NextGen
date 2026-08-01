@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  apiGet, apiPost, apiDelete, apiUpload, apiPostForm, ApiError,
+  apiGet, apiPost, apiPatch, apiDelete, apiUpload, apiPostForm, ApiError,
   navigateToLogout, noteSessionIdentity,
   getMetadataProviders, setMetadataProviderActive,
 } from './api';
@@ -880,6 +880,55 @@ export interface ReaderSettings {
   maxInlineSize: number;
   animated: boolean;
   tapToTurn: boolean;
+  translationEnabled: boolean;
+  translationView: 'original' | 'translated';
+  translationSourceLanguage: string;
+  translationTargetLanguage: string;
+  translationProfileId: string;
+  translationPrompt: string;
+}
+
+export interface ReaderTranslationProfile {
+  id: string;
+  name: string;
+  base_url: string;
+  endpoint_path: string;
+  model: string;
+  temperature: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+  json_mode: boolean;
+  extra_headers: Record<string, string>;
+  has_api_key: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ReaderTranslationProfileInput {
+  name: string;
+  base_url: string;
+  endpoint_path: string;
+  api_key?: string;
+  clear_api_key?: boolean;
+  model: string;
+  temperature: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+  json_mode: boolean;
+  extra_headers: Record<string, string>;
+}
+
+export interface ReaderTranslationBlock {
+  id: string;
+  tag: string;
+  text: string;
+}
+
+export interface ReaderTranslationResponse {
+  blocks: ReaderTranslationBlock[];
+  cached: boolean;
+  profile_id: string;
+  model: string;
 }
 
 export interface ReaderBookmark {
@@ -915,6 +964,79 @@ export function useSaveReaderSettings() {
     mutationFn: (patch: Partial<ReaderSettings>) =>
       apiPost<{ reader: ReaderSettings }>('/api/v1/reader/settings', patch),
   });
+}
+
+const readerTranslationProfilesKey = ['reader-translation-profiles'] as const;
+
+export function useReaderTranslationProfiles() {
+  return useQuery<{ profiles: ReaderTranslationProfile[]; private_endpoints_allowed: boolean }>({
+    queryKey: readerTranslationProfilesKey,
+    queryFn: () => apiGet('/api/v1/reader/translation/profiles'),
+    staleTime: 30_000,
+    retry: retryUnlessUnauthorized,
+  });
+}
+
+export function useCreateReaderTranslationProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ReaderTranslationProfileInput) =>
+      apiPost<{ profile: ReaderTranslationProfile }>('/api/v1/reader/translation/profiles', payload),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey }),
+  });
+}
+
+export function useUpdateReaderTranslationProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Partial<ReaderTranslationProfileInput> }) =>
+      apiPatch<{ profile: ReaderTranslationProfile }>(
+        `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}`, payload,
+      ),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey }),
+  });
+}
+
+export function useDeleteReaderTranslationProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiDelete(`/api/v1/reader/translation/profiles/${encodeURIComponent(id)}`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey }),
+  });
+}
+
+export function useTestReaderTranslationProfile() {
+  return useMutation({
+    mutationFn: (id: string) => apiPost<{ ok: boolean; model: string; preview: string }>(
+      `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}/test`, {},
+    ),
+  });
+}
+
+export function useReaderTranslationModels() {
+  return useMutation({
+    mutationFn: (id: string) => apiGet<{ models: string[] }>(
+      `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}/models`,
+    ),
+  });
+}
+
+export function translateReaderPage(
+  bookId: string | number,
+  payload: {
+    profile_id: string;
+    format: string;
+    source_language: string;
+    target_language: string;
+    prompt: string;
+    blocks: ReaderTranslationBlock[];
+  },
+  signal?: AbortSignal,
+) {
+  return apiPost<ReaderTranslationResponse>(
+    `/api/v1/books/${bookId}/translation`, payload, { signal },
+  );
 }
 
 export function useBookmark(bookId: string | number, format = 'epub') {

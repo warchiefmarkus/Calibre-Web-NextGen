@@ -104,3 +104,35 @@ def test_spa_font_range_matches_canonical_contract():
     reader = (root / "frontend/src/pages/Reader.tsx").read_text()
     assert "const FONT_MIN = 75;" in reader
     assert "const FONT_MAX = 200;" in reader
+
+
+def test_translation_settings_are_typed_and_partial_updates_do_not_clear_profile():
+    out = sanitize_reader_settings({
+        "translationEnabled": True,
+        "translationView": "translated",
+        "translationSourceLanguage": "auto",
+        "translationTargetLanguage": "uk",
+        "translationProfileId": "profile-1",
+        "translationPrompt": "Translate faithfully.",
+    })
+    assert out == {
+        "translationEnabled": True,
+        "translationView": "translated",
+        "translationSourceLanguage": "auto",
+        "translationTargetLanguage": "uk",
+        "translationProfileId": "profile-1",
+        "translationPrompt": "Translate faithfully.",
+    }
+    assert "translationProfileId" not in sanitize_reader_settings({"fontSize": 110})
+
+
+def test_translation_settings_reject_invalid_values_and_bound_prompt_length():
+    out = sanitize_reader_settings({
+        "translationEnabled": "yes",
+        "translationView": "side-by-side",
+        "translationSourceLanguage": "not a language",
+        "translationTargetLanguage": "auto",
+        "translationProfileId": "x" * 65,
+        "translationPrompt": "x" * 6001,
+    })
+    assert out == {}

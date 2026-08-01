@@ -12999,3 +12999,215 @@ msgstr "pagina’s"
 #: cps/spa_strings.py
 msgid "results"
 msgstr "resultaten"
+
+#: cps/spa_strings.py
+msgid "API key"
+msgstr "API-sleutel"
+
+#: cps/spa_strings.py
+msgid "API key saved"
+msgstr "API-sleutel opgeslagen"
+
+#: cps/spa_strings.py
+msgid "Additional HTTP headers (JSON)"
+msgstr "Extra HTTP-headers (JSON)"
+
+#: cps/spa_strings.py
+msgid "Additional headers must be a valid JSON object."
+msgstr "Extra headers moeten een geldig JSON-object zijn."
+
+#: cps/spa_strings.py
+msgid "Automatically translate the current page"
+msgstr "De huidige pagina automatisch vertalen"
+
+#: cps/spa_strings.py
+msgid "Available models"
+msgstr "Beschikbare modellen"
+
+#: cps/spa_strings.py
+msgid "Base URL"
+msgstr "Basis-URL"
+
+#: cps/spa_strings.py
+msgid "Cached"
+msgstr "In cache"
+
+#: cps/spa_strings.py
+msgid "Choose a model to edit the profile"
+msgstr "Kies een model om het profiel te bewerken"
+
+#: cps/spa_strings.py
+msgid "Configure page translation"
+msgstr "Paginavertaling configureren"
+
+#: cps/spa_strings.py
+msgid "Connection successful."
+msgstr "Verbinding geslaagd."
+
+#: cps/spa_strings.py
+msgid "Connection test failed."
+msgstr "Verbindingstest mislukt."
+
+#: cps/spa_strings.py
+msgid "Could not delete the translation profile."
+msgstr "Het vertaalprofiel kon niet worden verwijderd."
+
+#: cps/spa_strings.py
+msgid "Could not load models."
+msgstr "Modellen konden niet worden geladen."
+
+#: cps/spa_strings.py
+msgid "Could not save the translation profile."
+msgstr "Het vertaalprofiel kon niet worden opgeslagen."
+
+#: cps/spa_strings.py
+msgid "Custom OpenAI-compatible"
+msgstr "Aangepast OpenAI-compatibel"
+
+#: cps/spa_strings.py
+msgid "Delete this translation profile?"
+msgstr "Dit vertaalprofiel verwijderen?"
+
+#: cps/spa_strings.py
+msgid "Detect automatically"
+msgstr "Automatisch detecteren"
+
+#: cps/spa_strings.py
+msgid "Endpoint path"
+msgstr "Endpointpad"
+
+#: cps/spa_strings.py
+msgid "Groq"
+msgstr "Groq"
+
+#: cps/spa_strings.py
+msgid "LLM profile"
+msgstr "LLM-profiel"
+
+#: cps/spa_strings.py
+msgid "Leave blank to keep the saved key"
+msgstr "Laat leeg om de opgeslagen sleutel te behouden"
+
+#: cps/spa_strings.py
+msgid "Leave blank to use the built-in literary translation prompt."
+msgstr "Laat leeg om de ingebouwde prompt voor literaire vertaling te gebruiken."
+
+#: cps/spa_strings.py
+msgid "Load models"
+msgstr "Modellen laden"
+
+#: cps/spa_strings.py
+msgid "Loading translation profiles…"
+msgstr "Vertaalprofielen laden…"
+
+#: cps/spa_strings.py
+msgid "Max output tokens"
+msgstr "Maximale uitvoertokens"
+
+#: cps/spa_strings.py
+msgid "Mistral"
+msgstr "Mistral"
+
+#: cps/spa_strings.py
+msgid "Model"
+msgstr "Model"
+
+#: cps/spa_strings.py
+msgid "No API key"
+msgstr "Geen API-sleutel"
+
+#: cps/spa_strings.py
+msgid "No profile selected"
+msgstr "Geen profiel geselecteerd"
+
+#: cps/spa_strings.py
+msgid "No visible text was found on this page."
+msgstr "Er is geen zichtbare tekst op deze pagina gevonden."
+
+#: cps/spa_strings.py
+msgid "Ollama"
+msgstr "Ollama"
+
+#: cps/spa_strings.py
+msgid "OpenRouter"
+msgstr "OpenRouter"
+
+#: cps/spa_strings.py
+msgid "Original"
+msgstr "Origineel"
+
+#: cps/spa_strings.py
+msgid "Page language view"
+msgstr "Taalweergave van pagina"
+
+#: cps/spa_strings.py
+msgid "Page translation"
+msgstr "Paginavertaling"
+
+#: cps/spa_strings.py
+msgid "Page translation failed."
+msgstr "Paginavertaling mislukt."
+
+#: cps/spa_strings.py
+msgid "Private endpoints are blocked. Set CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true on the server to use Ollama or another LAN model."
+msgstr "Privé-endpoints zijn geblokkeerd. Stel CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true in op de server om Ollama of een ander LAN-model te gebruiken."
+
+#: cps/spa_strings.py
+msgid "Profile name"
+msgstr "Profielnaam"
+
+#: cps/spa_strings.py
+msgid "Provider preset"
+msgstr "Providerinstelling"
+
+#: cps/spa_strings.py
+msgid "Request JSON output when supported"
+msgstr "JSON-uitvoer aanvragen wanneer ondersteund"
+
+#: cps/spa_strings.py
+msgid "Retry"
+msgstr "Opnieuw proberen"
+
+#: cps/spa_strings.py
+msgid "Source language"
+msgstr "Brontaal"
+
+#: cps/spa_strings.py
+msgid "Target language"
+msgstr "Doeltaal"
+
+#: cps/spa_strings.py
+msgid "Temperature"
+msgstr "Temperatuur"
+
+#: cps/spa_strings.py
+msgid "Test connection"
+msgstr "Verbinding testen"
+
+#: cps/spa_strings.py
+msgid "Timeout (seconds)"
+msgstr "Time-out (seconden)"
+
+#: cps/spa_strings.py
+msgid "Translating the current page…"
+msgstr "De huidige pagina wordt vertaald…"
+
+#: cps/spa_strings.py
+msgid "Translation"
+msgstr "Vertaling"
+
+#: cps/spa_strings.py
+msgid "Translation profile deleted."
+msgstr "Vertaalprofiel verwijderd."
+
+#: cps/spa_strings.py
+msgid "Translation profile saved."
+msgstr "Vertaalprofiel opgeslagen."
+
+#: cps/spa_strings.py
+msgid "Translation prompt"
+msgstr "Vertaalprompt"
+
+#: cps/spa_strings.py
+msgid "{count} models loaded."
+msgstr "{count} modellen geladen."

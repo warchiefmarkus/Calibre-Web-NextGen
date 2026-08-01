@@ -687,6 +687,70 @@ class ReaderBookmark(Base):
     )
 
 
+class ReaderTranslationProfile(Base):
+    """Per-user OpenAI-compatible LLM profile for reader page translation.
+
+    API keys are encrypted with the same installation Fernet key used by the
+    application configuration. The cleartext value is never serialized back to
+    the browser.
+    """
+    __tablename__ = "reader_translation_profile"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id = Column(String(36), nullable=False)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(80), nullable=False)
+    base_url = Column(String(2048), nullable=False)
+    endpoint_path = Column(String(255), nullable=False, default="chat/completions")
+    api_key_encrypted = Column(Text, nullable=True)
+    model = Column(String(255), nullable=False)
+    temperature = Column(Float, nullable=False, default=0.2)
+    max_output_tokens = Column(Integer, nullable=False, default=4096)
+    timeout_seconds = Column(Integer, nullable=False, default=60)
+    json_mode = Column(Boolean, nullable=False, default=True)
+    extra_headers = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "profile_id",
+                         name="uq_reader_translation_profile_user_id"),
+        UniqueConstraint("user_id", "name",
+                         name="uq_reader_translation_profile_user_name"),
+    )
+
+
+class ReaderTranslationCache(Base):
+    """Server-side translation cache keyed by normalized page request hash."""
+    __tablename__ = "reader_translation_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    book_id = Column(Integer, nullable=False)
+    format = Column(String(collation="NOCASE"), nullable=False)
+    profile_id = Column(String(36), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    response_json = Column(Text, nullable=False)
+    source_chars = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "request_hash",
+                         name="uq_reader_translation_cache_user_hash"),
+        Index("ix_reader_translation_cache_user_book_format",
+              "user_id", "book_id", "format"),
+    )
+
+
 class BookCoverLock(Base):
     """Per-book flag that prevents the cover from being overwritten by the
     metadata-fetch path on the edit page. Set/cleared from the cover-picker

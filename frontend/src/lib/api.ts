@@ -782,7 +782,7 @@ export async function apiGet<T>(path: string, options?: ApiRequestOptions): Prom
 export async function apiPost<T>(
   path: string,
   body?: unknown,
-  requestOptions?: Pick<RequestInit, 'keepalive'> & ApiRequestOptions,
+  requestOptions?: Pick<RequestInit, 'keepalive' | 'signal'> & ApiRequestOptions,
 ): Promise<T> {
   const doPost = async (csrf: string): Promise<Response> => {
     const { auth: _auth, ...fetchOptions } = requestOptions ?? {};

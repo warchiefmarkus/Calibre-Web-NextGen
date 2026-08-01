@@ -13461,3 +13461,215 @@ msgstr "pages"
 #: cps/spa_strings.py
 msgid "results"
 msgstr "résultats"
+
+#: cps/spa_strings.py
+msgid "API key"
+msgstr "Clé API"
+
+#: cps/spa_strings.py
+msgid "API key saved"
+msgstr "Clé API enregistrée"
+
+#: cps/spa_strings.py
+msgid "Additional HTTP headers (JSON)"
+msgstr "En-têtes HTTP supplémentaires (JSON)"
+
+#: cps/spa_strings.py
+msgid "Additional headers must be a valid JSON object."
+msgstr "Les en-têtes supplémentaires doivent former un objet JSON valide."
+
+#: cps/spa_strings.py
+msgid "Automatically translate the current page"
+msgstr "Traduire automatiquement la page actuelle"
+
+#: cps/spa_strings.py
+msgid "Available models"
+msgstr "Modèles disponibles"
+
+#: cps/spa_strings.py
+msgid "Base URL"
+msgstr "URL de base"
+
+#: cps/spa_strings.py
+msgid "Cached"
+msgstr "En cache"
+
+#: cps/spa_strings.py
+msgid "Choose a model to edit the profile"
+msgstr "Choisir un modèle pour modifier le profil"
+
+#: cps/spa_strings.py
+msgid "Configure page translation"
+msgstr "Configurer la traduction de page"
+
+#: cps/spa_strings.py
+msgid "Connection successful."
+msgstr "Connexion réussie."
+
+#: cps/spa_strings.py
+msgid "Connection test failed."
+msgstr "Le test de connexion a échoué."
+
+#: cps/spa_strings.py
+msgid "Could not delete the translation profile."
+msgstr "Impossible de supprimer le profil de traduction."
+
+#: cps/spa_strings.py
+msgid "Could not load models."
+msgstr "Impossible de charger les modèles."
+
+#: cps/spa_strings.py
+msgid "Could not save the translation profile."
+msgstr "Impossible d’enregistrer le profil de traduction."
+
+#: cps/spa_strings.py
+msgid "Custom OpenAI-compatible"
+msgstr "Personnalisé compatible OpenAI"
+
+#: cps/spa_strings.py
+msgid "Delete this translation profile?"
+msgstr "Supprimer ce profil de traduction ?"
+
+#: cps/spa_strings.py
+msgid "Detect automatically"
+msgstr "Détecter automatiquement"
+
+#: cps/spa_strings.py
+msgid "Endpoint path"
+msgstr "Chemin du point de terminaison"
+
+#: cps/spa_strings.py
+msgid "Groq"
+msgstr "Groq"
+
+#: cps/spa_strings.py
+msgid "LLM profile"
+msgstr "Profil LLM"
+
+#: cps/spa_strings.py
+msgid "Leave blank to keep the saved key"
+msgstr "Laisser vide pour conserver la clé enregistrée"
+
+#: cps/spa_strings.py
+msgid "Leave blank to use the built-in literary translation prompt."
+msgstr "Laisser vide pour utiliser l’invite de traduction littéraire intégrée."
+
+#: cps/spa_strings.py
+msgid "Load models"
+msgstr "Charger les modèles"
+
+#: cps/spa_strings.py
+msgid "Loading translation profiles…"
+msgstr "Chargement des profils de traduction…"
+
+#: cps/spa_strings.py
+msgid "Max output tokens"
+msgstr "Nombre maximal de jetons de sortie"
+
+#: cps/spa_strings.py
+msgid "Mistral"
+msgstr "Mistral"
+
+#: cps/spa_strings.py
+msgid "Model"
+msgstr "Modèle"
+
+#: cps/spa_strings.py
+msgid "No API key"
+msgstr "Aucune clé API"
+
+#: cps/spa_strings.py
+msgid "No profile selected"
+msgstr "Aucun profil sélectionné"
+
+#: cps/spa_strings.py
+msgid "No visible text was found on this page."
+msgstr "Aucun texte visible n’a été trouvé sur cette page."
+
+#: cps/spa_strings.py
+msgid "Ollama"
+msgstr "Ollama"
+
+#: cps/spa_strings.py
+msgid "OpenRouter"
+msgstr "OpenRouter"
+
+#: cps/spa_strings.py
+msgid "Original"
+msgstr "Original"
+
+#: cps/spa_strings.py
+msgid "Page language view"
+msgstr "Affichage de la langue de la page"
+
+#: cps/spa_strings.py
+msgid "Page translation"
+msgstr "Traduction de page"
+
+#: cps/spa_strings.py
+msgid "Page translation failed."
+msgstr "La traduction de la page a échoué."
+
+#: cps/spa_strings.py
+msgid "Private endpoints are blocked. Set CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true on the server to use Ollama or another LAN model."
+msgstr "Les points de terminaison privés sont bloqués. Définissez CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true sur le serveur pour utiliser Ollama ou un autre modèle du réseau local."
+
+#: cps/spa_strings.py
+msgid "Profile name"
+msgstr "Nom du profil"
+
+#: cps/spa_strings.py
+msgid "Provider preset"
+msgstr "Préréglage du fournisseur"
+
+#: cps/spa_strings.py
+msgid "Request JSON output when supported"
+msgstr "Demander une sortie JSON lorsqu’elle est prise en charge"
+
+#: cps/spa_strings.py
+msgid "Retry"
+msgstr "Réessayer"
+
+#: cps/spa_strings.py
+msgid "Source language"
+msgstr "Langue source"
+
+#: cps/spa_strings.py
+msgid "Target language"
+msgstr "Langue cible"
+
+#: cps/spa_strings.py
+msgid "Temperature"
+msgstr "Température"
+
+#: cps/spa_strings.py
+msgid "Test connection"
+msgstr "Tester la connexion"
+
+#: cps/spa_strings.py
+msgid "Timeout (seconds)"
+msgstr "Délai d’attente (secondes)"
+
+#: cps/spa_strings.py
+msgid "Translating the current page…"
+msgstr "Traduction de la page actuelle…"
+
+#: cps/spa_strings.py
+msgid "Translation"
+msgstr "Traduction"
+
+#: cps/spa_strings.py
+msgid "Translation profile deleted."
+msgstr "Profil de traduction supprimé."
+
+#: cps/spa_strings.py
+msgid "Translation profile saved."
+msgstr "Profil de traduction enregistré."
+
+#: cps/spa_strings.py
+msgid "Translation prompt"
+msgstr "Invite de traduction"
+
+#: cps/spa_strings.py
+msgid "{count} models loaded."
+msgstr "{count} modèles chargés."

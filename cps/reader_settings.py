@@ -2,10 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Canonical validation and defaults for per-user web-reader appearance."""
 
+import re
+
 READER_THEMES = {"lightTheme", "darkTheme", "sepiaTheme", "blackTheme"}
 READER_FONTS = {"default", "Yahei", "SimSun", "KaiTi", "Arial"}
 READER_SPREADS = {"spread", "nonespread"}
 READER_FLOWS = {"paginated", "scrolled"}
+READER_TRANSLATION_VIEWS = {"original", "translated"}
+READER_LANGUAGE_RE = r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$"
 
 READER_DEFAULTS = {
     "theme": "lightTheme",
@@ -20,6 +24,12 @@ READER_DEFAULTS = {
     "maxInlineSize": 720,
     "animated": True,
     "tapToTurn": True,
+    "translationEnabled": False,
+    "translationView": "original",
+    "translationSourceLanguage": "auto",
+    "translationTargetLanguage": "uk",
+    "translationProfileId": "",
+    "translationPrompt": "",
 }
 
 
@@ -46,6 +56,24 @@ def sanitize_reader_settings(payload):
         out["spread"] = payload["spread"]
     if payload.get("flow") in READER_FLOWS:
         out["flow"] = payload["flow"]
+    if payload.get("translationView") in READER_TRANSLATION_VIEWS:
+        out["translationView"] = payload["translationView"]
+
+    source_language = str(payload.get("translationSourceLanguage") or "").strip()
+    if source_language == "auto" or re.fullmatch(READER_LANGUAGE_RE, source_language):
+        out["translationSourceLanguage"] = source_language
+    target_language = str(payload.get("translationTargetLanguage") or "").strip()
+    if re.fullmatch(READER_LANGUAGE_RE, target_language):
+        out["translationTargetLanguage"] = target_language
+
+    if "translationProfileId" in payload:
+        profile_id = str(payload.get("translationProfileId") or "").strip()
+        if len(profile_id) <= 64:
+            out["translationProfileId"] = profile_id
+    prompt = payload.get("translationPrompt")
+    if isinstance(prompt, str) and len(prompt) <= 6000:
+        out["translationPrompt"] = prompt.strip()
+
     for key, lo, hi in (
         ("fontSize", 75, 200),
         ("margin", 0, 80),
@@ -56,7 +84,7 @@ def sanitize_reader_settings(payload):
         value = reader_setting_int(payload.get(key), lo, hi)
         if value is not None:
             out[key] = value
-    for key in ("reflow", "animated", "tapToTurn"):
+    for key in ("reflow", "animated", "tapToTurn", "translationEnabled"):
         value = payload.get(key)
         if isinstance(value, bool):
             out[key] = value

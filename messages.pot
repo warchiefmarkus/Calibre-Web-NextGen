@@ -12046,3 +12046,215 @@ msgstr ""
 #, python-brace-format
 msgid "{count} pages"
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "API key"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "API key saved"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Additional HTTP headers (JSON)"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Additional headers must be a valid JSON object."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Automatically translate the current page"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Available models"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Base URL"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Cached"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Choose a model to edit the profile"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Configure page translation"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Connection successful."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Connection test failed."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not delete the translation profile."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not load models."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not save the translation profile."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Custom OpenAI-compatible"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Delete this translation profile?"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Detect automatically"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Endpoint path"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Groq"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "LLM profile"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Leave blank to keep the saved key"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Leave blank to use the built-in literary translation prompt."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Load models"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Loading translation profiles…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Max output tokens"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Mistral"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Model"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No API key"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No profile selected"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No visible text was found on this page."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Ollama"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "OpenRouter"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Original"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Page language view"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Page translation"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Page translation failed."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Private endpoints are blocked. Set CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true on the server to use Ollama or another LAN model."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Profile name"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Provider preset"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Request JSON output when supported"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Retry"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Source language"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Target language"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Temperature"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Test connection"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Timeout (seconds)"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Translating the current page…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Translation"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Translation profile deleted."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Translation profile saved."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Translation prompt"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "{count} models loaded."
+msgstr ""

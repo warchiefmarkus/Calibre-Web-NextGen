@@ -12071,3 +12071,215 @@ msgstr "Показувати вибір серії"
 
 #~ msgid "Click the cover to load metadata to the form"
 #~ msgstr "Натисніть на обкладинку, щоб отримати метадані"
+
+#: cps/spa_strings.py
+msgid "API key"
+msgstr "API-ключ"
+
+#: cps/spa_strings.py
+msgid "API key saved"
+msgstr "API-ключ збережено"
+
+#: cps/spa_strings.py
+msgid "Additional HTTP headers (JSON)"
+msgstr "Додаткові HTTP-заголовки (JSON)"
+
+#: cps/spa_strings.py
+msgid "Additional headers must be a valid JSON object."
+msgstr "Додаткові заголовки мають бути коректним JSON-об’єктом."
+
+#: cps/spa_strings.py
+msgid "Automatically translate the current page"
+msgstr "Автоматично перекладати поточну сторінку"
+
+#: cps/spa_strings.py
+msgid "Available models"
+msgstr "Доступні моделі"
+
+#: cps/spa_strings.py
+msgid "Base URL"
+msgstr "Базова URL-адреса"
+
+#: cps/spa_strings.py
+msgid "Cached"
+msgstr "З кешу"
+
+#: cps/spa_strings.py
+msgid "Choose a model to edit the profile"
+msgstr "Виберіть модель для редагування профілю"
+
+#: cps/spa_strings.py
+msgid "Configure page translation"
+msgstr "Налаштувати переклад сторінки"
+
+#: cps/spa_strings.py
+msgid "Connection successful."
+msgstr "Підключення успішне."
+
+#: cps/spa_strings.py
+msgid "Connection test failed."
+msgstr "Перевірка підключення не вдалася."
+
+#: cps/spa_strings.py
+msgid "Could not delete the translation profile."
+msgstr "Не вдалося видалити профіль перекладу."
+
+#: cps/spa_strings.py
+msgid "Could not load models."
+msgstr "Не вдалося завантажити моделі."
+
+#: cps/spa_strings.py
+msgid "Could not save the translation profile."
+msgstr "Не вдалося зберегти профіль перекладу."
+
+#: cps/spa_strings.py
+msgid "Custom OpenAI-compatible"
+msgstr "Власний OpenAI-сумісний"
+
+#: cps/spa_strings.py
+msgid "Delete this translation profile?"
+msgstr "Видалити цей профіль перекладу?"
+
+#: cps/spa_strings.py
+msgid "Detect automatically"
+msgstr "Визначати автоматично"
+
+#: cps/spa_strings.py
+msgid "Endpoint path"
+msgstr "Шлях endpoint"
+
+#: cps/spa_strings.py
+msgid "Groq"
+msgstr "Groq"
+
+#: cps/spa_strings.py
+msgid "LLM profile"
+msgstr "Профіль LLM"
+
+#: cps/spa_strings.py
+msgid "Leave blank to keep the saved key"
+msgstr "Залиште порожнім, щоб зберегти поточний ключ"
+
+#: cps/spa_strings.py
+msgid "Leave blank to use the built-in literary translation prompt."
+msgstr "Залиште порожнім, щоб використовувати вбудований промпт літературного перекладу."
+
+#: cps/spa_strings.py
+msgid "Load models"
+msgstr "Завантажити моделі"
+
+#: cps/spa_strings.py
+msgid "Loading translation profiles…"
+msgstr "Завантаження профілів перекладу…"
+
+#: cps/spa_strings.py
+msgid "Max output tokens"
+msgstr "Максимум вихідних токенів"
+
+#: cps/spa_strings.py
+msgid "Mistral"
+msgstr "Mistral"
+
+#: cps/spa_strings.py
+msgid "Model"
+msgstr "Модель"
+
+#: cps/spa_strings.py
+msgid "No API key"
+msgstr "API-ключ відсутній"
+
+#: cps/spa_strings.py
+msgid "No profile selected"
+msgstr "Профіль не вибрано"
+
+#: cps/spa_strings.py
+msgid "No visible text was found on this page."
+msgstr "На цій сторінці не знайдено видимого тексту."
+
+#: cps/spa_strings.py
+msgid "Ollama"
+msgstr "Ollama"
+
+#: cps/spa_strings.py
+msgid "OpenRouter"
+msgstr "OpenRouter"
+
+#: cps/spa_strings.py
+msgid "Original"
+msgstr "Оригінал"
+
+#: cps/spa_strings.py
+msgid "Page language view"
+msgstr "Режим мови сторінки"
+
+#: cps/spa_strings.py
+msgid "Page translation"
+msgstr "Переклад сторінки"
+
+#: cps/spa_strings.py
+msgid "Page translation failed."
+msgstr "Не вдалося перекласти сторінку."
+
+#: cps/spa_strings.py
+msgid "Private endpoints are blocked. Set CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true on the server to use Ollama or another LAN model."
+msgstr "Приватні endpoint заблоковано. Щоб використовувати Ollama або іншу модель у локальній мережі, задайте на сервері CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true."
+
+#: cps/spa_strings.py
+msgid "Profile name"
+msgstr "Назва профілю"
+
+#: cps/spa_strings.py
+msgid "Provider preset"
+msgstr "Шаблон провайдера"
+
+#: cps/spa_strings.py
+msgid "Request JSON output when supported"
+msgstr "Запитувати JSON-відповідь, якщо вона підтримується"
+
+#: cps/spa_strings.py
+msgid "Retry"
+msgstr "Повторити"
+
+#: cps/spa_strings.py
+msgid "Source language"
+msgstr "Мова оригіналу"
+
+#: cps/spa_strings.py
+msgid "Target language"
+msgstr "Мова перекладу"
+
+#: cps/spa_strings.py
+msgid "Temperature"
+msgstr "Температура"
+
+#: cps/spa_strings.py
+msgid "Test connection"
+msgstr "Перевірити підключення"
+
+#: cps/spa_strings.py
+msgid "Timeout (seconds)"
+msgstr "Тайм-аут (секунди)"
+
+#: cps/spa_strings.py
+msgid "Translating the current page…"
+msgstr "Переклад поточної сторінки…"
+
+#: cps/spa_strings.py
+msgid "Translation"
+msgstr "Переклад"
+
+#: cps/spa_strings.py
+msgid "Translation profile deleted."
+msgstr "Профіль перекладу видалено."
+
+#: cps/spa_strings.py
+msgid "Translation profile saved."
+msgstr "Профіль перекладу збережено."
+
+#: cps/spa_strings.py
+msgid "Translation prompt"
+msgstr "Промпт перекладу"
+
+#: cps/spa_strings.py
+msgid "{count} models loaded."
+msgstr "Завантажено моделей: {count}."
