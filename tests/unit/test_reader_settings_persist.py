@@ -19,12 +19,14 @@ def test_keeps_each_valid_field():
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
         "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
         "animated": False, "tapToTurn": False, "justifyText": True,
+        "translationCacheEnabled": False,
     })
     assert out == {
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
         "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
         "animated": False, "tapToTurn": False, "justifyText": True,
+        "translationCacheEnabled": False,
     }
 
 
@@ -70,6 +72,8 @@ def test_flow_and_boolean_coercion():
     assert sanitize_reader_settings({"tapToTurn": "false"})["tapToTurn"] is False
     assert sanitize_reader_settings({"justifyText": True})["justifyText"] is True
     assert sanitize_reader_settings({"justifyText": "false"})["justifyText"] is False
+    assert sanitize_reader_settings({"translationCacheEnabled": True})["translationCacheEnabled"] is True
+    assert sanitize_reader_settings({"translationCacheEnabled": "false"})["translationCacheEnabled"] is False
 
 
 def test_non_dict_payload_is_empty():

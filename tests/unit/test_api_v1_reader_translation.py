@@ -189,3 +189,50 @@ def test_translate_page_rejects_more_than_one_visible_page_of_text():
     assert status == 413
     assert json.loads(response.get_data())["error"]["code"] == "page_too_large"
     provider.assert_not_called()
+
+
+def test_translate_page_cache_disabled_ignores_existing_cache_and_does_not_write():
+    from cps.api import reader_translation as mod
+
+    cached = SimpleNamespace(response_json=json.dumps([
+        {"id": "a", "tag": "p", "text": "Старий кеш"},
+    ]))
+    mock_ub = MagicMock()
+    mock_ub.session.query.return_value.filter.return_value.first.return_value = cached
+    translated = [{"id": "a", "tag": "p", "text": "Новий переклад"}]
+    request_body = {
+        "profile_id": "profile-1", "format": "epub",
+        "source_language": "en", "target_language": "uk", "prompt": "",
+        "cache_enabled": False,
+        "blocks": [{"id": "a", "tag": "p", "text": "Source"}],
+    }
+    with _ctx("/api/v1/books/5/translation", method="POST", body=request_body):
+        with patch.object(mod, "current_user", _user()), patch.object(mod, "ub", mock_ub), \
+             patch.object(mod, "_get_profile", return_value=_profile()), _visible(mod), \
+             patch.object(mod, "translate_page", return_value=translated) as provider:
+            response = inspect.unwrap(mod.translate_reader_page)(5)
+    payload = json.loads(response.get_data())
+    assert payload["cached"] is False
+    assert payload["blocks"] == translated
+    provider.assert_called_once()
+    mock_ub.session.query.assert_not_called()
+    mock_ub.session.add.assert_not_called()
+    mock_ub.session.commit.assert_not_called()
+
+
+def test_translate_page_rejects_non_boolean_cache_setting():
+    from cps.api import reader_translation as mod
+
+    request_body = {
+        "profile_id": "profile-1", "target_language": "uk",
+        "cache_enabled": "false",
+        "blocks": [{"id": "a", "tag": "p", "text": "Source"}],
+    }
+    with _ctx("/api/v1/books/5/translation", method="POST", body=request_body):
+        with patch.object(mod, "current_user", _user()), \
+             patch.object(mod, "_get_profile", return_value=_profile()), _visible(mod), \
+             patch.object(mod, "translate_page") as provider:
+            response, status = inspect.unwrap(mod.translate_reader_page)(5)
+    assert status == 400
+    assert json.loads(response.get_data())["error"]["code"] == "invalid_cache_setting"
+    provider.assert_not_called()

@@ -579,6 +579,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     translationSkippedRef.current = translationSkipped;
   }, [translationSkipped]);
 
+  useEffect(() => {
+    if (settings && !settings.translationCacheEnabled) {
+      translationCacheRef.current.clear();
+    }
+  }, [settings?.translationCacheEnabled]);
+
   useEffect(() => () => {
     if (wheelIdleTimerRef.current !== null) {
       window.clearTimeout(wheelIdleTimerRef.current);
@@ -828,7 +834,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         translated.map((block) => ({ ...block, style: sourceStyles[block.id] }));
       setTranslationSkipped(false);
       const key = translationPageKey(settings, blocks);
-      const local = translationCacheRef.current.get(key);
+      const local = settings.translationCacheEnabled
+        ? translationCacheRef.current.get(key)
+        : undefined;
       if (local) {
         setTranslationLayout(layout);
         setTranslationBlocks(styled(local));
@@ -860,6 +868,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             : configuredSource,
           target_language: settings.translationTargetLanguage,
           prompt: settings.translationPrompt,
+          cache_enabled: settings.translationCacheEnabled,
           blocks,
         }, controller.signal);
         if (controller.signal.aborted) return;
@@ -872,10 +881,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           setTranslationLayout(null);
           return;
         }
-        translationCacheRef.current.set(key, response.blocks);
-        if (translationCacheRef.current.size > 100) {
-          const oldest = translationCacheRef.current.keys().next().value as string | undefined;
-          if (oldest) translationCacheRef.current.delete(oldest);
+        if (settings.translationCacheEnabled) {
+          translationCacheRef.current.set(key, response.blocks);
+          if (translationCacheRef.current.size > 100) {
+            const oldest = translationCacheRef.current.keys().next().value as string | undefined;
+            if (oldest) translationCacheRef.current.delete(oldest);
+          }
         }
         setTranslationLayout(layout);
         setTranslationBlocks(styled(response.blocks));
@@ -1213,6 +1224,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           : configuredSource,
         target_language: currentSettings.translationTargetLanguage,
         prompt: currentSettings.translationPrompt,
+        cache_enabled: false,
         blocks: [{ id: 'selection', tag: 'span', text: selection.text }],
       });
       if (response.skipped) {

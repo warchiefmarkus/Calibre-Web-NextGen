@@ -12307,3 +12307,7 @@ msgstr "Книга вже написана цільовою мовою."
 #: cps/spa_strings.py
 msgid "The selected text is already in the target language."
 msgstr "Виділений текст уже написаний цільовою мовою."
+
+#: cps/spa_strings.py
+msgid "Cache full translated pages"
+msgstr "Кешувати повні перекладені сторінки"

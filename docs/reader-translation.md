@@ -37,8 +37,11 @@ events caused by the temporary DOM patch are not saved, so CFI and reading
 progress remain based on the untouched ebook.
 
 Translations are cached per user using a hash of the book, visible source text,
-languages, model settings, and prompt. Changing any of those inputs creates a
-new cache entry.
+languages, provider endpoint, model settings, and prompt. Changing any of those
+inputs creates a new cache entry. The reader setting **Cache full translated
+pages** controls both the browser session cache and persistent server cache.
+Disabling it bypasses existing entries and prevents new full-page entries from
+being written; inline selected-text translations are never persisted.
 
 Visible pages are translated in bounded batches (up to 8 blocks and roughly
 3,500 source characters per provider request). If a model returns an incomplete

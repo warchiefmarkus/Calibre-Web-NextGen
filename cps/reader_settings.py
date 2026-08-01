@@ -26,6 +26,7 @@ READER_DEFAULTS = {
     "tapToTurn": True,
     "justifyText": False,
     "translationEnabled": False,
+    "translationCacheEnabled": True,
     "translationView": "original",
     "translationSourceLanguage": "auto",
     "translationTargetLanguage": "uk",
@@ -85,7 +86,7 @@ def sanitize_reader_settings(payload):
         value = reader_setting_int(payload.get(key), lo, hi)
         if value is not None:
             out[key] = value
-    for key in ("reflow", "animated", "tapToTurn", "justifyText", "translationEnabled"):
+    for key in ("reflow", "animated", "tapToTurn", "justifyText", "translationEnabled", "translationCacheEnabled"):
         value = payload.get(key)
         if isinstance(value, bool):
             out[key] = value

@@ -13235,3 +13235,7 @@ msgstr "Het boek is al in de doeltaal."
 #: cps/spa_strings.py
 msgid "The selected text is already in the target language."
 msgstr "De geselecteerde tekst is al in de doeltaal."
+
+#: cps/spa_strings.py
+msgid "Cache full translated pages"
+msgstr "Volledig vertaalde pagina's cachen"

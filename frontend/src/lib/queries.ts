@@ -882,6 +882,7 @@ export interface ReaderSettings {
   tapToTurn: boolean;
   justifyText: boolean;
   translationEnabled: boolean;
+  translationCacheEnabled: boolean;
   translationView: 'original' | 'translated';
   translationSourceLanguage: string;
   translationTargetLanguage: string;
@@ -1040,6 +1041,7 @@ export function translateReaderPage(
     source_language: string;
     target_language: string;
     prompt: string;
+    cache_enabled: boolean;
     blocks: ReaderTranslationBlock[];
   },
   signal?: AbortSignal,

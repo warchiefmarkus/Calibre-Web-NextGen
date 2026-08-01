@@ -13697,3 +13697,7 @@ msgstr "Le livre est déjà dans la langue cible."
 #: cps/spa_strings.py
 msgid "The selected text is already in the target language."
 msgstr "Le texte sélectionné est déjà dans la langue cible."
+
+#: cps/spa_strings.py
+msgid "Cache full translated pages"
+msgstr "Mettre en cache les pages entièrement traduites"

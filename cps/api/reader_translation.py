@@ -385,6 +385,9 @@ def translate_reader_page(book_id):
     target_language = str(payload.get("target_language") or "").strip()[:64]
     prompt = str(payload.get("prompt") or "").strip()
     fmt = str(payload.get("format") or "epub").strip().lower()[:16]
+    cache_enabled = payload.get("cache_enabled", True)
+    if not isinstance(cache_enabled, bool):
+        return _err("invalid_cache_setting", "cache_enabled must be true or false.", 400)
     if not target_language:
         return _err("invalid_language", "Target language is required.", 400)
     if len(prompt) > _MAX_PROMPT_CHARS:
@@ -410,6 +413,25 @@ def translate_reader_page(book_id):
             "blocks": blocks,
             "cached": False,
             "skipped": True,
+            "profile_id": profile.profile_id,
+            "model": profile.model,
+        })
+
+    if not cache_enabled:
+        try:
+            with _TRANSLATION_RUN_SLOTS:
+                translated = translate_page(
+                    profile,
+                    source_language=source_language,
+                    target_language=target_language,
+                    prompt=prompt,
+                    blocks=blocks,
+                )
+        except ReaderTranslationError as exc:
+            return _err(exc.code, str(exc), exc.status)
+        return jsonify({
+            "blocks": translated,
+            "cached": False,
             "profile_id": profile.profile_id,
             "model": profile.model,
         })

@@ -292,6 +292,12 @@ export function ReaderTranslationSettings({ settings, update }: {
         {t('Automatically translate the current page')}
       </label>
 
+      <label className={styles.checkboxLabel}>
+        <input type="checkbox" checked={settings.translationCacheEnabled}
+          onChange={(event) => update({ translationCacheEnabled: event.target.checked })} />
+        {t('Cache full translated pages')}
+      </label>
+
       <label>{t('Source language')}
         <select value={settings.translationSourceLanguage}
           onChange={(event) => update({ translationSourceLanguage: event.target.value })}>
