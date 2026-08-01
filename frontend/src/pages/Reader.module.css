@@ -208,22 +208,24 @@
 
 .translationStatus {
   position: absolute;
-  inset-block-start: 12px;
+  inset-block-start: 50%;
   inset-inline-start: 50%;
   z-index: 5;
-  max-width: min(680px, calc(100% - 120px));
+  max-width: min(420px, calc(100% - 80px));
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   border: 1px solid var(--reader-border);
   border-radius: 10px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: color-mix(in srgb, var(--reader-panel) 94%, transparent);
-  box-shadow: 0 4px 18px rgb(0 0 0 / 18%);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 22%);
   color: var(--reader-text);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.35;
+  text-align: center;
 }
 
 .translationStatus button {
@@ -246,33 +248,6 @@
   overscroll-behavior: contain;
 }
 
-.translationOverlayBadge {
-  position: absolute;
-  inset-block-start: 8px;
-  inset-inline-start: 50%;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  transform: translateX(-50%);
-  border: 1px solid var(--reader-border);
-  border-radius: 999px;
-  padding: 4px 9px;
-  background: color-mix(in srgb, var(--reader-panel) 90%, transparent);
-  color: var(--reader-muted);
-  box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
-  font-family: system-ui, sans-serif;
-  font-size: 11px;
-  line-height: 1;
-  pointer-events: none;
-}
-
-.translationOverlayBadge span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
 .translationPageShell {
   position: relative;
   max-width: 100%;
@@ -293,6 +268,17 @@
   transform-origin: left top;
   transition: transform 180ms ease-out;
   will-change: transform;
+  user-select: text;
+}
+
+.translationPagerContent ::selection {
+  background: rgba(255, 214, 64, .72);
+  color: #1f1f1f;
+}
+
+.translationPagerContent ::-moz-selection {
+  background: rgba(255, 214, 64, .72);
+  color: #1f1f1f;
 }
 
 .translationBlock {
@@ -467,6 +453,12 @@
   padding: 14px;
 }
 
+.translationPanel {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
 .settingsPanel label {
   display: grid;
   gap: 6px;
@@ -556,6 +548,18 @@
   white-space: nowrap;
 }
 
+.selectionBar button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.selectionError {
+  flex-basis: 100% !important;
+  color: #b43c3c;
+  font-size: 12px;
+  white-space: normal !important;
+}
+
 .saveError {
   position: fixed;
   right: 12px;
@@ -592,24 +596,22 @@
   .progressArea { width: calc(100vw - 92px); }
 }
 
-.translationSettingsSection {
-  display: grid;
-  gap: 12px;
-  padding-top: 14px;
-  border-top: 1px solid var(--reader-border);
-}
-
-.translationSettingsSection h3 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  font-size: 15px;
-}
-
 .translationSettings {
   display: grid;
   gap: 12px;
+}
+
+.translationSettings label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.translationSettings output {
+  justify-self: end;
+  color: var(--reader-muted);
+  font-weight: 400;
 }
 
 .translationSettings input:not([type='checkbox']):not([type='range']),
@@ -723,10 +725,6 @@
 }
 
 @media (max-width: 760px) {
-  .translationOverlayBadge {
-    inset-block-start: 5px;
-  }
-
   .translationProfileGrid {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -1077,3 +1077,4 @@ _("OpenCode Go")
 
 _("NVIDIA NIM")
 _("The book is already in the target language.")
+_("The selected text is already in the target language.")

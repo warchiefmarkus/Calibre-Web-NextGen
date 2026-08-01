@@ -5,7 +5,7 @@ page through an OpenAI-compatible `chat/completions` or `responses` endpoint.
 
 ## Reader workflow
 
-1. Open **Reader settings → Page translation**.
+1. Open the dedicated **Page translation** panel from the language button in the reader toolbar.
 2. Add an LLM profile or select an existing profile.
 3. Choose source and target languages.
 4. Enable automatic translation.
@@ -23,6 +23,16 @@ there is no vertical reader scroll. Reaching the final translated subpage turns
 exactly one original Foliate page, keeps the previous overlay visible while the
 next translation loads, then opens the first translated subpage. Backward
 navigation restores the previous original page and its final translated subpage.
+The translated page has no cache/status strip; only a centered compact
+**Translation** status is shown while a request is pending. Text selection uses
+the same readable yellow highlight as the original Foliate document.
+
+Selecting text in the original page exposes a temporary **Translation** action
+beside Highlight and Add note. The selected range is translated as one cached
+LLM block and replaced only in the current in-memory Foliate document. The
+original fragment is retained and restored before page, chapter, bookmark, or
+progress navigation. Relocate events caused by the temporary DOM patch are not
+saved, so CFI and reading progress remain based on the untouched ebook.
 
 Translations are cached per user using a hash of the book, visible source text,
 languages, model settings, and prompt. Changing any of those inputs creates a

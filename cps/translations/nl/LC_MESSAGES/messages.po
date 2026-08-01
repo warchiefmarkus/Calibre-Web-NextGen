@@ -13227,3 +13227,7 @@ msgstr "NVIDIA NIM"
 #: cps/spa_strings.py
 msgid "The book is already in the target language."
 msgstr "Het boek is al in de doeltaal."
+
+#: cps/spa_strings.py
+msgid "The selected text is already in the target language."
+msgstr "De geselecteerde tekst is al in de doeltaal."

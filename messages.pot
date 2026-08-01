@@ -12274,3 +12274,7 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "The book is already in the target language."
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "The selected text is already in the target language."
+msgstr ""

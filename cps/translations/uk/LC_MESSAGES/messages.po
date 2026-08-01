@@ -12299,3 +12299,7 @@ msgstr "NVIDIA NIM"
 #: cps/spa_strings.py
 msgid "The book is already in the target language."
 msgstr "Книга вже написана цільовою мовою."
+
+#: cps/spa_strings.py
+msgid "The selected text is already in the target language."
+msgstr "Виділений текст уже написаний цільовою мовою."
