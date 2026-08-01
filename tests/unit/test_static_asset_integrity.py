@@ -318,8 +318,8 @@ def test_unified_reader_has_optional_tap_zones_and_dismisses_selection_on_naviga
     assert "dismissSelection();" in reader
     assert ".tapZone" in css
     assert "padding-inline-end: 38px" in css
-    assert "`${next.margin}px`" in reader
-    assert "`${next.maxInlineSize}px`" in reader
+    assert "`${effectiveMargin}px`" in reader
+    assert "`${effectiveInlineSize}px`" in reader
     assert "`${pageGapPercent}%`" in reader
 
 

@@ -112,6 +112,18 @@ const THEME: Record<ReaderSettings['theme'], { background: string; text: string;
   darkTheme: { background: '#202124', text: '#e8eaed', link: '#8ab4f8' },
   blackTheme: { background: '#000000', text: '#eeeeee', link: '#8ab4f8' },
 };
+
+const READER_WHEEL_THRESHOLD_PX = 48;
+const READER_WHEEL_COOLDOWN_MS = 320;
+const READER_WHEEL_IDLE_RESET_MS = 160;
+
+function allowsWheelPageTurn(target: EventTarget | null): boolean {
+  const element = target as { closest?: (selector: string) => Element | null } | null;
+  if (!element?.closest) return true;
+  if (element.closest('[data-reader-wheel-page-zone]')) return true;
+  return !element.closest('input, textarea, select, button, [contenteditable="true"], [role="slider"]');
+}
+
 function formatLanguageMap(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value && typeof value === 'object') {
@@ -207,10 +219,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const { schedule: schedulePosition, saveError } = useReadingPositionSaver(id, fmt, 450);
 
   const hostRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
   const searchRunRef = useRef(0);
   const annotationsRef = useRef<Map<string, FoliateAnnotation>>(new Map());
   const currentRef = useRef<FoliateLocation>({ fraction: 0 });
+  const settingsRef = useRef<ReaderSettings | null>(null);
+  const wheelDeltaRef = useRef(0);
+  const wheelDirectionRef = useRef(0);
+  const wheelLockUntilRef = useRef(0);
+  const wheelIdleTimerRef = useRef<number | null>(null);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -228,6 +246,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [annotations, setAnnotations] = useState<FoliateAnnotation[]>([]);
   const [selectedAnnotation, setSelectedAnnotation] = useState<FoliateAnnotation | null>(null);
   const [speaking, setSpeaking] = useState(false);
+
+  useEffect(() => () => {
+    if (wheelIdleTimerRef.current !== null) {
+      window.clearTimeout(wheelIdleTimerRef.current);
+    }
+  }, []);
 
   const applySettings = useCallback((next: ReaderSettings) => {
     const view = viewRef.current;
@@ -262,6 +286,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setSettings((current) => {
       if (!current) return current;
       const next = { ...current, ...patch };
+      settingsRef.current = next;
       applySettings(next);
       saveSettings.mutate(patch);
       return next;
@@ -299,6 +324,54 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     else if (action === 'left') void view.goLeft();
     else void view.goRight();
   }, [dismissSelection]);
+
+  const handleReaderWheel = useCallback((event: WheelEvent) => {
+    if (settingsRef.current?.flow !== 'paginated') return;
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (!allowsWheelPageTurn(event.target) || event.deltaY === 0) return;
+
+    event.preventDefault();
+    const now = performance.now();
+    if (now < wheelLockUntilRef.current) return;
+
+    const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? 16
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? Math.max(1, window.innerHeight)
+        : 1;
+    const delta = event.deltaY * scale;
+    const direction = Math.sign(delta);
+    if (direction !== wheelDirectionRef.current) {
+      wheelDeltaRef.current = 0;
+      wheelDirectionRef.current = direction;
+    }
+    wheelDeltaRef.current += delta;
+
+    if (wheelIdleTimerRef.current !== null) {
+      window.clearTimeout(wheelIdleTimerRef.current);
+    }
+    wheelIdleTimerRef.current = window.setTimeout(() => {
+      wheelDeltaRef.current = 0;
+      wheelDirectionRef.current = 0;
+      wheelIdleTimerRef.current = null;
+    }, READER_WHEEL_IDLE_RESET_MS);
+
+    if (Math.abs(wheelDeltaRef.current) < READER_WHEEL_THRESHOLD_PX) return;
+    const action = wheelDeltaRef.current > 0 ? 'next' : 'prev';
+    wheelDeltaRef.current = 0;
+    wheelDirectionRef.current = 0;
+    wheelLockUntilRef.current = now + READER_WHEEL_COOLDOWN_MS;
+    navigate(action);
+  }, [navigate]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    stage.addEventListener('wheel', handleReaderWheel, { passive: false });
+    return () => stage.removeEventListener('wheel', handleReaderWheel);
+  }, [handleReaderWheel]);
+
   useEffect(() => {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
     let cancelled = false;
@@ -310,6 +383,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setReady(false);
     setError(null);
     const initialSettings = settingsQuery.data.reader;
+    settingsRef.current = initialSettings;
     setSettings(initialSettings);
 
     const onRelocate = (event: Event) => {
@@ -335,6 +409,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       doc.addEventListener('mouseup', readSelection);
       doc.addEventListener('keyup', readSelection);
       doc.addEventListener('keydown', onReaderKeyDown);
+      doc.addEventListener('wheel', handleReaderWheel, { passive: false });
     };
     const onLoad = (event: Event) => {
       const detail = (event as CustomEvent<{ doc: Document; index: number }>).detail;
@@ -424,7 +499,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     };
   }, [applySettings, bookQuery.data?.title, fmt, id, positionQuery.data?.bookmark,
     positionQuery.data?.position_fraction, positionQuery.isFetched, selectedFormat,
-    settingsQuery.data, schedulePosition, dismissSelection, t]);
+    settingsQuery.data, schedulePosition, dismissSelection, handleReaderWheel, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === 'ArrowLeft') {
@@ -640,20 +715,26 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           updateAnnotationNote={(annotation) => void updateAnnotationNote(annotation)}
           settings={settings} updateSettings={updateSettings}
         />}
-        <section className={styles.stage} aria-label={t('Book content')}>
+        <section
+          ref={stageRef}
+          className={styles.stage}
+          aria-label={t('Book content')}
+        >
           {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
           {error && <EmptyState message={error} />}
           <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
           {settings?.tapToTurn && settings.flow === 'paginated' && ready && !error && (
             <>
               <button className={`${styles.tapZone} ${styles.tapZoneLeft}`}
-                onClick={() => navigate('left')} title={t('Previous page')}
-                aria-label={t('Previous page')}>
+                data-reader-wheel-page-zone
+                onClick={(event) => { navigate('left'); event.currentTarget.blur(); }}
+                title={t('Previous page')} aria-label={t('Previous page')}>
                 <ChevronLeft size={30} aria-hidden="true" />
               </button>
               <button className={`${styles.tapZone} ${styles.tapZoneRight}`}
-                onClick={() => navigate('right')} title={t('Next page')}
-                aria-label={t('Next page')}>
+                data-reader-wheel-page-zone
+                onClick={(event) => { navigate('right'); event.currentTarget.blur(); }}
+                title={t('Next page')} aria-label={t('Next page')}>
                 <ChevronRight size={30} aria-hidden="true" />
               </button>
             </>
