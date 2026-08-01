@@ -474,6 +474,12 @@
   background: var(--surface-2);
 }
 
+.chatGptIcon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
 /* Destructive whole-book delete (fork #803). Same shape as .downloadBtn, danger-tinted. */
 .actionDanger {
   display: inline-flex;

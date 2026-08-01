@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import { Link, useParams, useLocation } from 'wouter';
-import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, BookOpen, Trash2, RefreshCw, ExternalLink } from 'lucide-react';
+import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, BookOpen, Trash2, RefreshCw } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faOpenai } from '@fortawesome/free-brands-svg-icons';
 import {
   useBook, useToggleRead, useToggleFavorite, useToggleArchived, useToggleHidden,
   useSendToEreader, useMe, useAccount, useUpdateMetadata, useDeleteBook, useReloadMetadata,
@@ -430,7 +432,7 @@ export function BookDetail() {
               aria-label={`ChatGPT: Порекомендуй схожі книги — ${book.title}`}
               data-testid="chatgpt-similar-books"
             >
-              <ExternalLink size={14} aria-hidden="true" focusable={false} />
+              <FontAwesomeIcon icon={faOpenai} className={styles.chatGptIcon} aria-hidden="true" />
               ChatGPT
             </a>
 
