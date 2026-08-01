@@ -101,6 +101,7 @@
 }
 
 .form {
+  margin-bottom: var(--sp-5);
   padding: var(--sp-5);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);

@@ -12684,16 +12684,16 @@ msgid "Document OCR"
 msgstr "Document-OCR"
 
 #: cps/spa_strings.py
-msgid "AI search"
-msgstr "AI-zoeken"
+msgid "RAG search"
+msgstr "RAG-zoeken"
 
 #: cps/spa_strings.py
-msgid "AI search failed."
-msgstr "AI-zoekopdracht mislukt."
+msgid "RAG search failed."
+msgstr "RAG-zoekopdracht mislukt."
 
 #: cps/spa_strings.py
-msgid "AI search is not available for this account."
-msgstr "AI-zoeken is niet beschikbaar voor dit account."
+msgid "RAG search is not available for this account."
+msgstr "RAG-zoeken is niet beschikbaar voor dit account."
 
 #: cps/spa_strings.py
 msgid "Add bookmark"

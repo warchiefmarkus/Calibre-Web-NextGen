@@ -11588,15 +11588,15 @@ msgid "Show Read/Unread Section"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "AI search"
+msgid "RAG search"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "AI search failed."
+msgid "RAG search failed."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "AI search is not available for this account."
+msgid "RAG search is not available for this account."
 msgstr ""
 
 #: cps/spa_strings.py

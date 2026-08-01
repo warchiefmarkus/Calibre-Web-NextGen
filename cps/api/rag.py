@@ -28,9 +28,9 @@ def _err(code: str, message: str, status: int):
 
 def _guard():
     if not deployment_profile.enable_rag_ui():
-        return _err("feature_disabled", "AI search is disabled", 404)
+        return _err("feature_disabled", "RAG search is disabled", 404)
     if not current_user.is_authenticated or current_user.is_anonymous:
-        return _err("forbidden", "AI search requires a signed-in user", 403)
+        return _err("forbidden", "RAG search requires a signed-in user", 403)
     return None
 
 
@@ -329,7 +329,7 @@ def rag_search():
     if not raw.get("success", True):
         return _err(
             "rag_search_failed",
-            str(raw.get("error") or "AI search failed"),
+            str(raw.get("error") or "RAG search failed"),
             503,
         )
     results = raw.get("results") if isinstance(raw.get("results"), list) else []

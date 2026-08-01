@@ -75,8 +75,8 @@ export function AiSearch() {
   if (!enabled) {
     return (
       <section className={styles.container}>
-        <h1 className={styles.title}>{t('AI search')}</h1>
-        <EmptyState message={t('AI search is not available for this account.')} />
+        <h1 className={styles.title}>{t('RAG search')}</h1>
+        <EmptyState message={t('RAG search is not available for this account.')} />
       </section>
     );
   }
@@ -112,7 +112,7 @@ export function AiSearch() {
         <div>
           <h1 className={styles.title}>
             <Sparkles size={27} aria-hidden="true" focusable={false} />
-            {t('AI search')}
+            {t('RAG search')}
           </h1>
           <p className={styles.subtitle}>
             {t('Search inside the full text of your indexed books, not only titles and metadata.')}
@@ -125,6 +125,86 @@ export function AiSearch() {
           </div>
         )}
       </header>
+
+      <form className={styles.form} onSubmit={submit}>
+        <label className={styles.queryField}>
+          <span>{t('What do you want to find?')}</span>
+          <textarea
+            className={styles.textarea}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t('Describe an idea, scene, fact, quote, technology, or topic…')}
+            rows={4}
+            maxLength={1000}
+            required
+          />
+        </label>
+
+        <div className={styles.controls}>
+          <label className={styles.field}>
+            <span>{t('Search mode')}</span>
+            <select className={styles.select} value={mode}
+              onChange={(event) => setMode(event.target.value as RagSearchMode)}>
+              {MODES.map((value) => (
+                <option key={value} value={value}>{t(value)}</option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.field}>
+            <span>{t('Result limit')}</span>
+            <select className={styles.select} value={limit}
+              onChange={(event) => setLimit(Number(event.target.value))}>
+              {LIMITS.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <details className={styles.advanced}>
+          <summary className={styles.advancedSummary}>
+            <SlidersHorizontal size={16} aria-hidden="true" focusable={false} />
+            {t('Filters')}
+          </summary>
+          <div className={styles.filterGrid}>
+            <label className={styles.field}>
+              <span>{t('Authors')}</span>
+              <input className={styles.input} value={authors}
+                onChange={(event) => setAuthors(event.target.value)}
+                placeholder={t('Comma-separated names')} />
+            </label>
+            <label className={styles.field}>
+              <span>{t('Tags')}</span>
+              <input className={styles.input} value={tags}
+                onChange={(event) => setTags(event.target.value)}
+                placeholder={t('Comma-separated tags')} />
+            </label>
+            <div className={styles.formatField}>
+              <span>{t('Formats')}</span>
+              <div className={styles.formatList}>
+                {(options.data?.formats ?? []).map((format) => (
+                  <button key={format} type="button"
+                    className={formats.includes(format) ? styles.formatChipActive : styles.formatChip}
+                    aria-pressed={formats.includes(format)}
+                    onClick={() => toggleFormat(format)}>
+                    {format}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className={styles.checkbox}>
+              <input type="checkbox" checked={includeAdjacent}
+                onChange={(event) => setIncludeAdjacent(event.target.checked)} />
+              <span>{t('Include neighboring text for context')}</span>
+            </label>
+          </div>
+        </details>
+
+        <div className={styles.searchActions}>
+          <Button type="submit" disabled={search.isPending || query.trim().length < 2}>
+            {search.isPending ? <Spinner size={16} /> : <Search size={16} aria-hidden="true" focusable={false} />}
+            {search.isPending ? t('Searching…') : t('Search book contents')}
+          </Button>
+        </div>
+      </form>
 
       {status.error && (
         <div className={styles.warning} role="alert">
@@ -215,7 +295,12 @@ export function AiSearch() {
               updateOcrConfig.mutate(ocrMaxPages, {
                 onSuccess: (result) => {
                   setOcrMaxPages(result.ocr_max_pages);
-                  setOcrConfigMessage(t('OCR page limit saved.'));
+                  const queued = result.requeue?.requeued_count ?? 0;
+                  setOcrConfigMessage(
+                    queued > 0
+                      ? `${t('OCR page limit saved.')} ${queued} ${t('RAG queued')}.`
+                      : t('OCR page limit saved.'),
+                  );
                 },
                 onError: (error) => setOcrConfigMessage(
                   error instanceof Error ? error.message : t('Could not save OCR settings.'),
@@ -247,91 +332,11 @@ export function AiSearch() {
         </details>
       )}
 
-      <form className={styles.form} onSubmit={submit}>
-        <label className={styles.queryField}>
-          <span>{t('What do you want to find?')}</span>
-          <textarea
-            className={styles.textarea}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t('Describe an idea, scene, fact, quote, technology, or topic…')}
-            rows={4}
-            maxLength={1000}
-            required
-          />
-        </label>
-
-        <div className={styles.controls}>
-          <label className={styles.field}>
-            <span>{t('Search mode')}</span>
-            <select className={styles.select} value={mode}
-              onChange={(event) => setMode(event.target.value as RagSearchMode)}>
-              {MODES.map((value) => (
-                <option key={value} value={value}>{t(value)}</option>
-              ))}
-            </select>
-          </label>
-          <label className={styles.field}>
-            <span>{t('Result limit')}</span>
-            <select className={styles.select} value={limit}
-              onChange={(event) => setLimit(Number(event.target.value))}>
-              {LIMITS.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-          </label>
-        </div>
-
-        <details className={styles.advanced}>
-          <summary className={styles.advancedSummary}>
-            <SlidersHorizontal size={16} aria-hidden="true" focusable={false} />
-            {t('Filters')}
-          </summary>
-          <div className={styles.filterGrid}>
-            <label className={styles.field}>
-              <span>{t('Authors')}</span>
-              <input className={styles.input} value={authors}
-                onChange={(event) => setAuthors(event.target.value)}
-                placeholder={t('Comma-separated names')} />
-            </label>
-            <label className={styles.field}>
-              <span>{t('Tags')}</span>
-              <input className={styles.input} value={tags}
-                onChange={(event) => setTags(event.target.value)}
-                placeholder={t('Comma-separated tags')} />
-            </label>
-            <div className={styles.formatField}>
-              <span>{t('Formats')}</span>
-              <div className={styles.formatList}>
-                {(options.data?.formats ?? []).map((format) => (
-                  <button key={format} type="button"
-                    className={formats.includes(format) ? styles.formatChipActive : styles.formatChip}
-                    aria-pressed={formats.includes(format)}
-                    onClick={() => toggleFormat(format)}>
-                    {format}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <label className={styles.checkbox}>
-              <input type="checkbox" checked={includeAdjacent}
-                onChange={(event) => setIncludeAdjacent(event.target.checked)} />
-              <span>{t('Include neighboring text for context')}</span>
-            </label>
-          </div>
-        </details>
-
-        <div className={styles.searchActions}>
-          <Button type="submit" disabled={search.isPending || query.trim().length < 2}>
-            {search.isPending ? <Spinner size={16} /> : <Search size={16} aria-hidden="true" focusable={false} />}
-            {search.isPending ? t('Searching…') : t('Search book contents')}
-          </Button>
-        </div>
-      </form>
-
       <section className={styles.results} aria-live="polite" aria-busy={search.isPending}>
         {search.isPending ? (
           <SpinnerCentered size={34} />
         ) : search.error ? (
-          <EmptyState message={search.error instanceof Error ? search.error.message : t('AI search failed.')} />
+          <EmptyState message={search.error instanceof Error ? search.error.message : t('RAG search failed.')} />
         ) : search.data && results.length === 0 ? (
           <EmptyState message={t('No matching passages were found.')} />
         ) : results.length > 0 ? (

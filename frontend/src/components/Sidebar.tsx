@@ -259,7 +259,7 @@ export function Sidebar({ open, onClose, onNavigate }: SidebarProps) {
                     onClick={onNavigate}
                   >
                     <Sparkles size={18} className={styles.icon} aria-hidden="true" focusable={false} />
-                    <span>{t('AI search')}</span>
+                    <span>{t('RAG search')}</span>
                   </Link>
                 </li>
               )}

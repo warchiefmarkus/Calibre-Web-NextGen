@@ -285,6 +285,16 @@ export interface RagOcrConfig {
   minimum: number;
   maximum: number;
   confirmation_required_above_limit: boolean;
+  previous_ocr_max_pages?: number;
+  requeue?: {
+    previous_limit: number;
+    new_limit: number;
+    scanned: number;
+    requeued_count: number;
+    requeued_book_ids: number[];
+    job_ids: number[];
+  };
+  worker?: { started: boolean; method?: string; reason?: string } | null;
 }
 
 export interface BookOcrResult {
