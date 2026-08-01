@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""OpenAI-compatible translation backend for the Foliate web reader.
+"""Multi-protocol LLM translation backend for the Foliate web reader.
 
 Secrets stay server-side. Public endpoints are fetched through the bundled
 Advocate SSRF guard; private/local endpoints (for example Ollama) require the
@@ -169,9 +169,27 @@ def _allow_private_endpoints() -> bool:
     }
 
 
+def _is_trusted_opencode_endpoint(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "opencode.ai"
+        and parsed.port in (None, 443)
+        and parsed.path.startswith("/zen/")
+    )
+
+
 def _request(method: str, url: str, **kwargs: Any) -> requests.Response:
     kwargs.setdefault("allow_redirects", True)
     try:
+        if _is_trusted_opencode_endpoint(url):
+            # Advocate currently pins opencode.ai to its first AAAA result on
+            # hosts without a usable IPv6 route, producing EAFNOSUPPORT before
+            # requests can fall back to IPv4. This exact HTTPS host/path is a
+            # built-in provider, so bypass the generic resolver while disabling
+            # redirects to retain a fixed, non-SSRF destination.
+            kwargs["allow_redirects"] = False
+            return requests.request(method, url, **kwargs)
         if _allow_private_endpoints():
             return requests.request(method, url, **kwargs)
         return cw_advocate.request(method, url, **kwargs)
@@ -189,8 +207,18 @@ def _request(method: str, url: str, **kwargs: Any) -> requests.Response:
 def _profile_headers(profile: Any) -> dict[str, str]:
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     api_key = decrypt_api_key(profile.api_key_encrypted)
+    endpoint = normalize_endpoint_path(profile.endpoint_path).lower()
     if api_key:
+        # Mixed gateways such as OpenCode Zen expose OpenAI, Anthropic, and
+        # Google-compatible model families behind one account key. Keep Bearer
+        # auth for their gateway/model-discovery layer and add the protocol-
+        # native header required by the selected inference endpoint.
         headers["Authorization"] = f"Bearer {api_key}"
+        if endpoint.endswith("messages"):
+            headers["x-api-key"] = api_key
+            headers["anthropic-version"] = "2023-06-01"
+        elif endpoint.endswith(":generatecontent"):
+            headers["x-goog-api-key"] = api_key
     headers.update(normalize_extra_headers(profile.extra_headers or {}))
     return headers
 
@@ -280,6 +308,53 @@ def _responses_content(payload: dict[str, Any]) -> str:
     if isinstance(payload.get("choices"), list):
         return _message_content(payload)
     raise ReaderTranslationError("The LLM response contains no text.", code="empty_provider_response", status=502)
+
+
+def _anthropic_content(payload: dict[str, Any]) -> str:
+    content = payload.get("content")
+    if not isinstance(content, list):
+        raise ReaderTranslationError(
+            "The Anthropic-compatible response contains no content blocks.",
+            code="empty_provider_response", status=502,
+        )
+    parts = [
+        item.get("text", "").strip()
+        for item in content
+        if isinstance(item, dict)
+        and item.get("type") == "text"
+        and isinstance(item.get("text"), str)
+        and item.get("text", "").strip()
+    ]
+    if parts:
+        return "\n".join(parts)
+    raise ReaderTranslationError(
+        "The Anthropic-compatible response contains no text.",
+        code="empty_provider_response", status=502,
+    )
+
+
+def _google_content(payload: dict[str, Any]) -> str:
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        raise ReaderTranslationError(
+            "The Google-compatible response contains no candidates.",
+            code="empty_provider_response", status=502,
+        )
+    content = candidates[0].get("content") if isinstance(candidates[0], dict) else None
+    raw_parts = content.get("parts") if isinstance(content, dict) else None
+    parts = [
+        item.get("text", "").strip()
+        for item in raw_parts or []
+        if isinstance(item, dict)
+        and isinstance(item.get("text"), str)
+        and item.get("text", "").strip()
+    ]
+    if parts:
+        return "\n".join(parts)
+    raise ReaderTranslationError(
+        "The Google-compatible response contains no text.",
+        code="empty_provider_response", status=502,
+    )
 
 
 def _strip_code_fence(value: str) -> str:
@@ -389,13 +464,64 @@ def _responses_payload(profile: Any, *, source_language: str, target_language: s
     }
 
 
+def _anthropic_payload(profile: Any, *, source_language: str, target_language: str,
+                       prompt: str, blocks: list[dict[str, str]]) -> dict[str, Any]:
+    chat = _chat_payload(
+        profile, source_language=source_language, target_language=target_language,
+        prompt=prompt, blocks=blocks, json_mode=False,
+    )
+    return {
+        "model": chat["model"],
+        "system": chat["messages"][0]["content"],
+        "messages": [{"role": "user", "content": chat["messages"][1]["content"]}],
+        "temperature": chat["temperature"],
+        "max_tokens": chat["max_tokens"],
+        "stream": False,
+    }
+
+
+def _google_payload(profile: Any, *, source_language: str, target_language: str,
+                    prompt: str, blocks: list[dict[str, str]]) -> dict[str, Any]:
+    chat = _chat_payload(
+        profile, source_language=source_language, target_language=target_language,
+        prompt=prompt, blocks=blocks, json_mode=False,
+    )
+    generation_config: dict[str, Any] = {
+        "temperature": chat["temperature"],
+        "maxOutputTokens": chat["max_tokens"],
+    }
+    if bool(profile.json_mode):
+        generation_config["responseMimeType"] = "application/json"
+    return {
+        "systemInstruction": {"parts": [{"text": chat["messages"][0]["content"]}]},
+        "contents": [{
+            "role": "user",
+            "parts": [{"text": chat["messages"][1]["content"]}],
+        }],
+        "generationConfig": generation_config,
+    }
+
+
 def translate_page(profile: Any, *, source_language: str, target_language: str,
                    prompt: str, blocks: list[dict[str, str]]) -> list[dict[str, str]]:
     timeout = max(5, min(180, int(profile.timeout_seconds or 60)))
+    endpoint = normalize_endpoint_path(profile.endpoint_path).lower()
+    responses_mode = endpoint.endswith("responses")
+    messages_mode = endpoint.endswith("messages")
+    google_mode = endpoint.endswith(":generatecontent")
     headers = _profile_headers(profile)
-    responses_mode = normalize_endpoint_path(profile.endpoint_path).lower().endswith("responses")
     if responses_mode:
         payload = _responses_payload(
+            profile, source_language=source_language, target_language=target_language,
+            prompt=prompt, blocks=blocks,
+        )
+    elif messages_mode:
+        payload = _anthropic_payload(
+            profile, source_language=source_language, target_language=target_language,
+            prompt=prompt, blocks=blocks,
+        )
+    elif google_mode:
+        payload = _google_payload(
             profile, source_language=source_language, target_language=target_language,
             prompt=prompt, blocks=blocks,
         )
@@ -406,12 +532,20 @@ def translate_page(profile: Any, *, source_language: str, target_language: str,
         )
     response = _request("POST", _endpoint_url(profile), headers=headers, json=payload, timeout=timeout)
     response_hint = (response.text or "").lower()[:2000] if response.status_code == 400 else ""
-    if (not responses_mode and response.status_code == 400 and "response_format" in payload
+    if (not responses_mode and not messages_mode and not google_mode
+            and response.status_code == 400 and "response_format" in payload
             and any(token in response_hint for token in ("response_format", "json_object", "json mode"))):
         payload.pop("response_format", None)
         response = _request("POST", _endpoint_url(profile), headers=headers, json=payload, timeout=timeout)
     response_payload = _response_json(response)
-    content = _responses_content(response_payload) if responses_mode else _message_content(response_payload)
+    if responses_mode:
+        content = _responses_content(response_payload)
+    elif messages_mode:
+        content = _anthropic_content(response_payload)
+    elif google_mode:
+        content = _google_content(response_payload)
+    else:
+        content = _message_content(response_payload)
     return parse_translation_content(content, blocks)
 
 

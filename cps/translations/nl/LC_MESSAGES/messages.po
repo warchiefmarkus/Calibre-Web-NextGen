@@ -13211,3 +13211,11 @@ msgstr "Vertaalprompt"
 #: cps/spa_strings.py
 msgid "{count} models loaded."
 msgstr "{count} modellen geladen."
+
+#: cps/spa_strings.py
+msgid "OpenCode Zen"
+msgstr "OpenCode Zen"
+
+#: cps/spa_strings.py
+msgid "OpenCode Go"
+msgstr "OpenCode Go"

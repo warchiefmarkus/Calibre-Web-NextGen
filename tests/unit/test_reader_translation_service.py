@@ -131,3 +131,110 @@ def test_responses_api_payload_and_output_are_supported(monkeypatch):
     assert seen["json"]["input"]
     assert seen["json"]["max_output_tokens"] == 2048
     assert "messages" not in seen["json"]
+
+
+def test_anthropic_messages_payload_headers_and_response_are_supported(monkeypatch):
+    import json
+    from cps.services import reader_translation as service
+
+    profile = _profile(endpoint_path="messages", model="claude-sonnet-4-6")
+    profile.api_key_encrypted = "encrypted"
+    profile.extra_headers = {}
+    profile.timeout_seconds = 30
+    seen = {}
+
+    class Response:
+        status_code = 200
+        ok = True
+        text = ""
+        content = b"{}"
+
+        @staticmethod
+        def json():
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "blocks": [{"id": "a", "text": "Переклад"}],
+                    }, ensure_ascii=False),
+                }],
+            }
+
+    def fake_request(method, url, **kwargs):
+        seen.update({"method": method, "url": url, **kwargs})
+        return Response()
+
+    monkeypatch.setattr(service, "decrypt_api_key", lambda _value: "zen-key")
+    monkeypatch.setattr(service, "_request", fake_request)
+    result = service.translate_page(
+        profile, source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": "Source"}],
+    )
+    assert result[0]["text"] == "Переклад"
+    assert seen["url"].endswith("/messages")
+    assert seen["headers"]["Authorization"] == "Bearer zen-key"
+    assert seen["headers"]["x-api-key"] == "zen-key"
+    assert seen["headers"]["anthropic-version"] == "2023-06-01"
+    assert seen["json"]["system"]
+    assert seen["json"]["messages"][0]["role"] == "user"
+
+
+def test_google_generate_content_payload_headers_and_response_are_supported(monkeypatch):
+    import json
+    from cps.services import reader_translation as service
+
+    profile = _profile(
+        endpoint_path="models/gemini-3.5-flash:generateContent",
+        model="gemini-3.5-flash",
+    )
+    profile.api_key_encrypted = "encrypted"
+    profile.extra_headers = {}
+    profile.timeout_seconds = 30
+    seen = {}
+
+    class Response:
+        status_code = 200
+        ok = True
+        text = ""
+        content = b"{}"
+
+        @staticmethod
+        def json():
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "text": json.dumps({
+                                "blocks": [{"id": "a", "text": "Переклад"}],
+                            }, ensure_ascii=False),
+                        }],
+                    },
+                }],
+            }
+
+    def fake_request(method, url, **kwargs):
+        seen.update({"method": method, "url": url, **kwargs})
+        return Response()
+
+    monkeypatch.setattr(service, "decrypt_api_key", lambda _value: "zen-key")
+    monkeypatch.setattr(service, "_request", fake_request)
+    result = service.translate_page(
+        profile, source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": "Source"}],
+    )
+    assert result[0]["text"] == "Переклад"
+    assert seen["url"].endswith("/models/gemini-3.5-flash:generateContent")
+    assert seen["headers"]["x-goog-api-key"] == "zen-key"
+    assert seen["json"]["systemInstruction"]["parts"][0]["text"]
+    assert seen["json"]["generationConfig"]["responseMimeType"] == "application/json"
+
+
+def test_only_exact_https_opencode_zen_routes_bypass_generic_ssrf_resolver():
+    from cps.services.reader_translation import _is_trusted_opencode_endpoint
+
+    assert _is_trusted_opencode_endpoint("https://opencode.ai/zen/v1/models")
+    assert _is_trusted_opencode_endpoint("https://opencode.ai/zen/go/v1/chat/completions")
+    assert not _is_trusted_opencode_endpoint("http://opencode.ai/zen/v1/models")
+    assert not _is_trusted_opencode_endpoint("https://evil.opencode.ai/zen/v1/models")
+    assert not _is_trusted_opencode_endpoint("https://opencode.ai.evil.test/zen/v1/models")
+    assert not _is_trusted_opencode_endpoint("https://opencode.ai/docs/zen")

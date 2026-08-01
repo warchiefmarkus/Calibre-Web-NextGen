@@ -15,11 +15,34 @@ import { useT } from '../lib/i18n';
 import styles from './Reader.module.css';
 
 const PROVIDERS = {
-  custom: { label: 'Custom OpenAI-compatible', base_url: '', endpoint_path: 'chat/completions' },
-  openrouter: { label: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', endpoint_path: 'chat/completions' },
-  groq: { label: 'Groq', base_url: 'https://api.groq.com/openai/v1', endpoint_path: 'chat/completions' },
-  mistral: { label: 'Mistral', base_url: 'https://api.mistral.ai/v1', endpoint_path: 'chat/completions' },
-  ollama: { label: 'Ollama', base_url: 'http://127.0.0.1:11434/v1', endpoint_path: 'chat/completions' },
+  custom: {
+    label: 'Custom OpenAI-compatible', base_url: '', endpoint_path: 'chat/completions',
+    model: '', discover: false,
+  },
+  opencode_zen: {
+    label: 'OpenCode Zen', base_url: 'https://opencode.ai/zen/v1', endpoint_path: 'chat/completions',
+    model: 'deepseek-v4-flash-free', discover: true,
+  },
+  opencode_go: {
+    label: 'OpenCode Go', base_url: 'https://opencode.ai/zen/go/v1', endpoint_path: 'chat/completions',
+    model: 'glm-5.2', discover: true,
+  },
+  openrouter: {
+    label: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', endpoint_path: 'chat/completions',
+    model: '', discover: false,
+  },
+  groq: {
+    label: 'Groq', base_url: 'https://api.groq.com/openai/v1', endpoint_path: 'chat/completions',
+    model: '', discover: false,
+  },
+  mistral: {
+    label: 'Mistral', base_url: 'https://api.mistral.ai/v1', endpoint_path: 'chat/completions',
+    model: '', discover: false,
+  },
+  ollama: {
+    label: 'Ollama', base_url: 'http://127.0.0.1:11434/v1', endpoint_path: 'chat/completions',
+    model: '', discover: false,
+  },
 } as const;
 
 type ProviderKey = keyof typeof PROVIDERS;
@@ -61,6 +84,26 @@ function profileToForm(profile: ReaderTranslationProfile): ReaderTranslationProf
 function providerFor(baseUrl: string): ProviderKey {
   const found = Object.entries(PROVIDERS).find(([, value]) => value.base_url === baseUrl);
   return (found?.[0] as ProviderKey | undefined) ?? 'custom';
+}
+
+function endpointForModel(provider: ProviderKey, model: string, fallback: string): string {
+  // OpenCode's /models feeds currently expose model IDs but not the protocol
+  // endpoint. Keep the documented family mapping here so discovery can still
+  // configure mixed Responses, Messages, Gemini, and Chat Completions models.
+  const id = model.trim().toLowerCase();
+  if (!id) return fallback;
+  if (provider === 'opencode_zen') {
+    if (id.startsWith('gpt-')) return 'responses';
+    if (id.startsWith('claude-') || id.startsWith('qwen')) return 'messages';
+    if (id.startsWith('gemini-')) return `models/${model.trim()}:generateContent`;
+    return 'chat/completions';
+  }
+  if (provider === 'opencode_go') {
+    if (id.startsWith('gpt-')) return 'responses';
+    if (id.startsWith('minimax-') || id.startsWith('qwen')) return 'messages';
+    return 'chat/completions';
+  }
+  return fallback;
 }
 
 export function ReaderTranslationSettings({ settings, update }: {
@@ -124,12 +167,17 @@ export function ReaderTranslationSettings({ settings, update }: {
   const chooseProvider = (key: ProviderKey) => {
     setProvider(key);
     const preset = PROVIDERS[key];
-    setForm((current) => ({
-      ...current,
-      base_url: preset.base_url || current.base_url,
-      endpoint_path: preset.endpoint_path,
-      name: current.name || (key === 'custom' ? '' : preset.label),
-    }));
+    setModels([]);
+    setForm((current) => {
+      const model = preset.model || current.model;
+      return {
+        ...current,
+        base_url: preset.base_url || current.base_url,
+        endpoint_path: endpointForModel(key, model, preset.endpoint_path),
+        model,
+        name: current.name || (key === 'custom' ? '' : preset.label),
+      };
+    });
   };
 
   const save = async () => {
@@ -146,14 +194,25 @@ export function ReaderTranslationSettings({ settings, update }: {
     }
     const payload = { ...form, extra_headers: extraHeaders };
     try {
+      let savedProfile: ReaderTranslationProfile;
       if (editingId === 'new') {
         const response = await createProfile.mutateAsync(payload);
+        savedProfile = response.profile;
         update({ translationProfileId: response.profile.id });
       } else if (editingId) {
-        await updateProfile.mutateAsync({ id: editingId, payload });
+        const response = await updateProfile.mutateAsync({ id: editingId, payload });
+        savedProfile = response.profile;
+      } else {
+        return;
       }
       setEditingId(null);
-      setNotice(t('Translation profile saved.'));
+      if (PROVIDERS[provider].discover) {
+        const discovered = await modelsMutation.mutateAsync(savedProfile.id);
+        setModels(discovered.models);
+        setNotice(t('{count} models loaded.', { count: discovered.models.length }));
+      } else {
+        setNotice(t('Translation profile saved.'));
+      }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : t('Could not save the translation profile.'));
     }
@@ -259,9 +318,16 @@ export function ReaderTranslationSettings({ settings, update }: {
               onChange={(event) => {
                 const model = event.target.value;
                 if (!model) return;
+                const selectedProvider = providerFor(selectedProfile.base_url);
                 setEditingId(selectedProfile.id);
-                setProvider(providerFor(selectedProfile.base_url));
-                setForm({ ...profileToForm(selectedProfile), model });
+                setProvider(selectedProvider);
+                setForm({
+                  ...profileToForm(selectedProfile),
+                  model,
+                  endpoint_path: endpointForModel(
+                    selectedProvider, model, selectedProfile.endpoint_path,
+                  ),
+                });
                 setHeadersText(JSON.stringify(selectedProfile.extra_headers ?? {}, null, 2));
               }}>
               <option value="">{t('Choose a model to edit the profile')}</option>
@@ -299,7 +365,14 @@ export function ReaderTranslationSettings({ settings, update }: {
           </label>
           <label>{t('Model')}
             <input value={form.model} list="reader-translation-models"
-              onChange={(event) => setForm({ ...form, model: event.target.value })} />
+              onChange={(event) => {
+                const model = event.target.value;
+                setForm((current) => ({
+                  ...current,
+                  model,
+                  endpoint_path: endpointForModel(provider, model, current.endpoint_path),
+                }));
+              }} />
             <datalist id="reader-translation-models">
               {models.map((model) => <option key={model} value={model} />)}
             </datalist>

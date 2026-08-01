@@ -28,10 +28,18 @@ POST {base_url}/{endpoint_path}
 Authorization: Bearer {api_key}
 ```
 
-The default endpoint path is `chat/completions`. When the configured path ends
-in `responses`, the backend automatically switches to the Responses API request
-and response envelope. Presets are included for OpenRouter, Groq, Mistral, and
-Ollama, while all fields remain editable.
+The default endpoint path is `chat/completions`. The backend also supports
+OpenAI Responses (`responses`), Anthropic Messages (`messages`), and Google
+Generate Content (`models/<model>:generateContent`) request/response envelopes.
+Presets are included for OpenCode Zen, OpenCode Go, OpenRouter, Groq, Mistral,
+and Ollama, while all fields remain editable.
+
+OpenCode Zen and OpenCode Go use their public `/models` feeds for discovery.
+Saving either preset automatically loads the current server-side model list.
+When a discovered model is selected, the reader chooses the protocol documented
+for that OpenCode model family: GPT uses Responses, Claude/Qwen/MiniMax use
+Messages where applicable, Gemini uses Generate Content, and the remaining
+open models use Chat Completions.
 
 API keys are encrypted with the installation Fernet key and are never returned
 to the browser. Additional headers reject authorization, cookie, token, secret,

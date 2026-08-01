@@ -1072,3 +1072,5 @@ _("Translation prompt")
 _("{count} models loaded.")
 
 _("Add")
+_("OpenCode Zen")
+_("OpenCode Go")
