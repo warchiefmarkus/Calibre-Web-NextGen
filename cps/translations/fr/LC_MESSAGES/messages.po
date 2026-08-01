@@ -13701,3 +13701,7 @@ msgstr "Le texte sélectionné est déjà dans la langue cible."
 #: cps/spa_strings.py
 msgid "Cache full translated pages"
 msgstr "Mettre en cache les pages entièrement traduites"
+
+#: cps/spa_strings.py
+msgid "Preload one translated page ahead"
+msgstr "Précharger une page traduite à l’avance"

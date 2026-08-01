@@ -298,6 +298,13 @@ export function ReaderTranslationSettings({ settings, update }: {
         {t('Cache full translated pages')}
       </label>
 
+      <label className={styles.checkboxLabel}>
+        <input type="checkbox" checked={settings.translationPreloadNextPage}
+          disabled={!settings.translationEnabled || !settings.translationCacheEnabled}
+          onChange={(event) => update({ translationPreloadNextPage: event.target.checked })} />
+        {t('Preload one translated page ahead')}
+      </label>
+
       <label>{t('Source language')}
         <select value={settings.translationSourceLanguage}
           onChange={(event) => update({ translationSourceLanguage: event.target.value })}>

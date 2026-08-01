@@ -48,6 +48,9 @@ type FoliateAnnotation = {
 type FoliateRenderer = HTMLElement & {
   setStyles?: (css: string | [string, string]) => void;
   getContents?: () => Array<{ doc: Document; index: number }>;
+  page?: number;
+  pages?: number;
+  size?: number;
 };
 type FoliateView = HTMLElement & {
   book?: {
@@ -206,6 +209,12 @@ type VisibleTranslationPage = {
   layout: TranslationPageLayout;
 };
 
+type TranslationPreloadJob = {
+  key: string;
+  settings: ReaderSettings;
+  blocks: ReaderTranslationBlock[];
+};
+
 const LANGUAGE_ALIASES: Record<string, string> = {
   ua: 'uk', ukr: 'uk', ukrainian: 'uk',
   eng: 'en', english: 'en',
@@ -224,9 +233,21 @@ function normalizeLanguageCode(value: unknown): string {
   return LANGUAGE_ALIASES[normalized] ?? LANGUAGE_ALIASES[primary] ?? primary;
 }
 
-function translationViewport(renderer: FoliateRenderer, doc: Document): TranslationViewport | null {
+function canExtractTranslationPageOffset(renderer: FoliateRenderer, pageOffset: number): boolean {
+  if (pageOffset === 0) return true;
+  if (pageOffset !== 1 || renderer.getAttribute('flow') !== 'paginated') return false;
+  const page = Number(renderer.page);
+  const pages = Number(renderer.pages);
+  const size = Number(renderer.size);
+  return Number.isFinite(page) && Number.isFinite(pages) && Number.isFinite(size)
+    && size > 0 && page + pageOffset <= pages - 2;
+}
+
+function translationViewport(
+  renderer: FoliateRenderer, doc: Document, pageOffset = 0,
+): TranslationViewport | null {
   const frame = doc.defaultView?.frameElement;
-  if (!(frame instanceof HTMLElement)) return null;
+  if (!(frame instanceof HTMLElement) || !canExtractTranslationPageOffset(renderer, pageOffset)) return null;
   const rendererRect = renderer.getBoundingClientRect();
   const frameRect = frame.getBoundingClientRect();
   if (renderer.getAttribute('flow') !== 'paginated') {
@@ -242,11 +263,17 @@ function translationViewport(renderer: FoliateRenderer, doc: Document): Translat
 
   // Foliate lays an entire section out as one very wide iframe. The iframe's
   // innerWidth is therefore the width of every column, not the visible page.
-  // Limit extraction to the centred current page/spread inside the renderer.
+  // Limit extraction to the centred current page/spread. For preloading, shift
+  // only the extraction viewport by one paginator step; the renderer, CFI, and
+  // saved reading position remain untouched.
+  const writingMode = doc.defaultView?.getComputedStyle(doc.documentElement).writingMode ?? '';
+  if (pageOffset && writingMode.startsWith('vertical')) return null;
   const pageWidth = Math.max(1, doc.documentElement.getBoundingClientRect().width);
   const maxColumns = Math.max(1, Number(renderer.getAttribute('max-column-count') || 1));
   const visibleWidth = Math.min(rendererRect.width, pageWidth * maxColumns);
-  const left = rendererRect.left + (rendererRect.width - visibleWidth) / 2;
+  const direction = renderer.getAttribute('dir') === 'rtl' ? -1 : 1;
+  const shift = pageOffset * Math.max(1, Number(renderer.size) || rendererRect.width) * direction;
+  const left = rendererRect.left + (rendererRect.width - visibleWidth) / 2 + shift;
   return {
     frameRect,
     rendererRect,
@@ -528,7 +555,7 @@ function clampLayoutInset(value: number, pageSize: number, fallback: number): nu
   return Math.max(0, Math.min(pageSize * 0.3, value));
 }
 
-function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage | null {
+function extractVisiblePage(renderer?: FoliateRenderer, pageOffset = 0): VisibleTranslationPage | null {
   if (!renderer) return null;
   const contents = renderer.getContents?.() ?? [];
   const blocks: ReaderTranslationBlock[] = [];
@@ -543,7 +570,7 @@ function extractVisiblePage(renderer?: FoliateRenderer): VisibleTranslationPage 
 
   for (const content of [...contents].sort((a, b) => a.index - b.index)) {
     const doc = content.doc;
-    const viewport = translationViewport(renderer, doc);
+    const viewport = translationViewport(renderer, doc, pageOffset);
     if (!viewport) continue;
     layoutViewport ??= viewport;
     layoutDoc ??= doc;
@@ -810,6 +837,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const wheelIdleTimerRef = useRef<number | null>(null);
   const translationAbortRef = useRef<AbortController | null>(null);
   const translationInFlightKeyRef = useRef<string | null>(null);
+  const translationPreloadAbortRef = useRef<AbortController | null>(null);
+  const translationPreloadInFlightKeyRef = useRef<string | null>(null);
+  const translationPreloadQueuedRef = useRef<TranslationPreloadJob | null>(null);
+  const translationPreloadRunnerRef = useRef<(job: TranslationPreloadJob) => void>(() => undefined);
   const translationCacheRef = useRef<Map<string, ReaderTranslationBlock[]>>(new Map());
   const translationPagerContentRef = useRef<HTMLDivElement>(null);
   const translationBlocksRef = useRef<StyledTranslationBlock[]>([]);
@@ -869,6 +900,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       window.clearTimeout(wheelIdleTimerRef.current);
     }
     translationAbortRef.current?.abort();
+    translationPreloadAbortRef.current?.abort();
   }, []);
 
   const applySettings = useCallback((next: ReaderSettings) => {
@@ -910,6 +942,110 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       return next;
     });
   }, [applySettings, saveSettings]);
+
+  const cacheTranslatedPage = useCallback((key: string, blocks: ReaderTranslationBlock[]) => {
+    translationCacheRef.current.set(key, blocks);
+    if (translationCacheRef.current.size > 100) {
+      const oldest = translationCacheRef.current.keys().next().value as string | undefined;
+      if (oldest) translationCacheRef.current.delete(oldest);
+    }
+  }, []);
+
+  const runTranslationPreload = useCallback((job: TranslationPreloadJob) => {
+    const currentSettings = settingsRef.current;
+    const enabled = !!currentSettings?.translationEnabled
+      && currentSettings.translationView === 'translated'
+      && currentSettings.translationCacheEnabled
+      && currentSettings.translationPreloadNextPage
+      && currentSettings.flow === 'paginated'
+      && !!currentSettings.translationProfileId;
+    const currentConfigMatches = !!currentSettings
+      && currentSettings.translationProfileId === job.settings.translationProfileId
+      && currentSettings.translationSourceLanguage === job.settings.translationSourceLanguage
+      && currentSettings.translationTargetLanguage === job.settings.translationTargetLanguage
+      && currentSettings.translationPrompt === job.settings.translationPrompt;
+    if (!enabled || !currentConfigMatches || translationCacheRef.current.has(job.key)
+        || translationInFlightKeyRef.current === job.key
+        || translationPreloadInFlightKeyRef.current === job.key) return;
+
+    if (translationPreloadInFlightKeyRef.current) {
+      translationPreloadQueuedRef.current = job;
+      return;
+    }
+
+    const controller = new AbortController();
+    translationPreloadAbortRef.current = controller;
+    translationPreloadInFlightKeyRef.current = job.key;
+    const configuredSource = normalizeLanguageCode(job.settings.translationSourceLanguage);
+    void translateReaderPage(id, {
+      profile_id: job.settings.translationProfileId,
+      format: fmt,
+      source_language: configuredSource === 'auto' || !configuredSource
+        ? bookLanguage || 'auto'
+        : configuredSource,
+      target_language: job.settings.translationTargetLanguage,
+      prompt: job.settings.translationPrompt,
+      cache_enabled: true,
+      blocks: job.blocks,
+    }, controller.signal).then((response) => {
+      if (!controller.signal.aborted && !response.skipped) {
+        cacheTranslatedPage(job.key, response.blocks);
+      }
+    }).catch(() => {
+      // Preloading is opportunistic. Current-page translation remains the
+      // authoritative path and will surface any provider error to the user.
+    }).finally(() => {
+      if (translationPreloadInFlightKeyRef.current === job.key) {
+        translationPreloadInFlightKeyRef.current = null;
+      }
+      if (translationPreloadAbortRef.current === controller) {
+        translationPreloadAbortRef.current = null;
+      }
+      const queued = translationPreloadQueuedRef.current;
+      translationPreloadQueuedRef.current = null;
+      if (queued && queued.key !== job.key) {
+        window.queueMicrotask(() => translationPreloadRunnerRef.current(queued));
+      }
+    });
+  }, [bookLanguage, cacheTranslatedPage, fmt, id]);
+
+  useEffect(() => {
+    translationPreloadRunnerRef.current = runTranslationPreload;
+  }, [runTranslationPreload]);
+
+  const scheduleNextTranslationPreload = useCallback((activeSettings: ReaderSettings) => {
+    if (!activeSettings.translationEnabled
+        || activeSettings.translationView !== 'translated'
+        || !activeSettings.translationCacheEnabled
+        || !activeSettings.translationPreloadNextPage
+        || activeSettings.flow !== 'paginated'
+        || !activeSettings.translationProfileId) return;
+
+    const extraction = extractVisiblePage(viewRef.current?.renderer, 1);
+    const blocks = extraction?.blocks ?? [];
+    if (!blocks.length || sourceAlreadyMatchesTarget(activeSettings, bookLanguage, blocks)) return;
+    const key = translationPageKey(activeSettings, blocks);
+    if (translationCacheRef.current.has(key)
+        || translationInFlightKeyRef.current === key
+        || translationPreloadInFlightKeyRef.current === key) return;
+    translationPreloadRunnerRef.current({
+      key,
+      settings: { ...activeSettings },
+      blocks,
+    });
+  }, [bookLanguage]);
+
+  useEffect(() => {
+    // Any translation configuration change invalidates an active speculative
+    // request. The next completed current page will schedule a fresh preload.
+    translationPreloadAbortRef.current?.abort();
+    translationPreloadAbortRef.current = null;
+    translationPreloadInFlightKeyRef.current = null;
+    translationPreloadQueuedRef.current = null;
+  }, [settings?.flow, settings?.translationCacheEnabled, settings?.translationEnabled,
+    settings?.translationPreloadNextPage, settings?.translationProfileId,
+    settings?.translationPrompt, settings?.translationSourceLanguage,
+    settings?.translationTargetLanguage, settings?.translationView]);
 
   useEffect(() => {
     if (!settings) return;
@@ -1109,6 +1245,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTranslationSkipped(false);
         setTranslationTransitioning(false);
         translationTransitionRef.current = false;
+        scheduleNextTranslationPreload(settings);
         return;
       }
       if (sourceAlreadyMatchesTarget(settings, bookLanguage, blocks)) {
@@ -1146,6 +1283,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTranslationError(null);
         setTranslationTransitioning(false);
         translationTransitionRef.current = false;
+        scheduleNextTranslationPreload(settings);
         return;
       }
       if (translationInFlightKeyRef.current === key) return;
@@ -1186,17 +1324,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           return;
         }
         if (settings.translationCacheEnabled) {
-          translationCacheRef.current.set(key, response.blocks);
-          if (translationCacheRef.current.size > 100) {
-            const oldest = translationCacheRef.current.keys().next().value as string | undefined;
-            if (oldest) translationCacheRef.current.delete(oldest);
-          }
+          cacheTranslatedPage(key, response.blocks);
         }
         setTranslationLayout(layout);
         setTranslationSegments(segments);
         setTranslationBlocks(styled(response.blocks));
         setTranslationTransitioning(false);
         translationTransitionRef.current = false;
+        scheduleNextTranslationPreload(settings);
       } catch (cause) {
         if (controller.signal.aborted) return;
         setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
@@ -1213,9 +1348,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     return () => window.clearTimeout(timer);
   }, [bookLanguage, fmt, id, location.cfi, location.fraction, ready,
     settings?.translationEnabled, settings?.translationProfileId,
-    settings?.translationCacheEnabled, settings?.translationPrompt, settings?.translationSourceLanguage,
+    settings?.translationCacheEnabled, settings?.translationPreloadNextPage,
+    settings?.translationPrompt, settings?.translationSourceLanguage,
     settings?.translationTargetLanguage, settings?.translationView,
-    showTranslationPage, t, translationRetry]);
+    cacheTranslatedPage, scheduleNextTranslationPreload, showTranslationPage, t, translationRetry]);
 
   useLayoutEffect(() => {
     const content = translationPagerContentRef.current;

@@ -883,6 +883,7 @@ export interface ReaderSettings {
   justifyText: boolean;
   translationEnabled: boolean;
   translationCacheEnabled: boolean;
+  translationPreloadNextPage: boolean;
   translationView: 'original' | 'translated';
   translationSourceLanguage: string;
   translationTargetLanguage: string;

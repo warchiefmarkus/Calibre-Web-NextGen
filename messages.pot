@@ -12286,3 +12286,7 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Cache full translated pages"
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "Preload one translated page ahead"
+msgstr ""

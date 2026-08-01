@@ -55,6 +55,17 @@ pages** controls both the browser session cache and persistent server cache.
 Disabling it bypasses existing entries and prevents new full-page entries from
 being written; inline selected-text translations are never persisted.
 
+When **Preload one translated page ahead** is enabled together with automatic
+translation and full-page caching, the reader extracts the next paginated
+Foliate page from the already loaded section after the current page is ready. It
+shifts only an offscreen extraction viewport; it does not call next/previous,
+change the reader CFI, save progress, or display a loading indicator. The
+background result is stored in both browser and server caches. Only one preload
+request runs at a time and the newest requested page replaces an older queued
+page. Provider errors remain silent and the normal current-page request remains
+authoritative. Preloading is skipped in scrolling/vertical-writing layouts and
+at a section boundary where the next section is not already loaded.
+
 Visible pages are translated in bounded batches (up to 8 blocks and roughly
 3,500 source characters per provider request). If a model returns an incomplete
 block list, the backend automatically retries smaller halves. If one formatted

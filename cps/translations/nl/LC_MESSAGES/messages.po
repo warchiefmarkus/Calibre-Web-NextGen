@@ -13239,3 +13239,7 @@ msgstr "De geselecteerde tekst is al in de doeltaal."
 #: cps/spa_strings.py
 msgid "Cache full translated pages"
 msgstr "Volledig vertaalde pagina's cachen"
+
+#: cps/spa_strings.py
+msgid "Preload one translated page ahead"
+msgstr "Eén vertaalde pagina vooruit laden"
