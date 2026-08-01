@@ -11,7 +11,7 @@ import { Pill } from '../components/Pill';
 import { AddToShelf } from '../components/AddToShelf';
 import { StarRating } from '../components/StarRating';
 import { MoreByAuthor } from '../components/MoreByAuthor';
-import { AUTHOR_SEPARATOR } from '../lib/authors';
+import { AUTHOR_SEPARATOR, formatAuthors } from '../lib/authors';
 import { SpinnerCentered, Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef } from '../lib/api';
@@ -26,7 +26,7 @@ function formatBytes(bytes: number): string {
 }
 
 function chatGptSimilarBooksUrl(title: string, authors: EntityRef[]): string {
-  const authorNames = authors.map((author) => author.name.trim()).filter(Boolean).join(', ');
+  const authorNames = formatAuthors(authors.map((author) => author.name.trim()).filter(Boolean));
   const prompt = authorNames
     ? `Порекомендуй схожі книги: "${title}" — ${authorNames}`
     : `Порекомендуй схожі книги: "${title}"`;
