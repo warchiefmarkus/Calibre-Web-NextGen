@@ -1,6 +1,6 @@
 """Per-user web-reader display settings (task #31).
 
-Reader settings (theme/font/fontSize/spread/flow/reflow/margin/lineHeight/column width/tap zones) are persisted under
+Reader settings (theme/font/fontSize/spread/flow/reflow/margin/lineHeight/column width/justification/tap zones) are persisted under
 view_settings['reader'] so they follow a user across devices. sanitize_reader_settings()
 is the gate that keeps a crafted POST from storing junk on the user row — pin
 its whitelist + clamping. RED on main (the function doesn't exist there); GREEN
@@ -18,13 +18,13 @@ def test_keeps_each_valid_field():
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
         "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
-        "animated": False, "tapToTurn": False,
+        "animated": False, "tapToTurn": False, "justifyText": True,
     })
     assert out == {
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
         "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
-        "animated": False, "tapToTurn": False,
+        "animated": False, "tapToTurn": False, "justifyText": True,
     }
 
 
@@ -68,6 +68,8 @@ def test_flow_and_boolean_coercion():
     assert sanitize_reader_settings({"animated": "false"})["animated"] is False
     assert sanitize_reader_settings({"tapToTurn": True})["tapToTurn"] is True
     assert sanitize_reader_settings({"tapToTurn": "false"})["tapToTurn"] is False
+    assert sanitize_reader_settings({"justifyText": True})["justifyText"] is True
+    assert sanitize_reader_settings({"justifyText": "false"})["justifyText"] is False
 
 
 def test_non_dict_payload_is_empty():

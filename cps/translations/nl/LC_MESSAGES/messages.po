@@ -4689,6 +4689,10 @@ msgstr "Bibliotheekinstellingen"
 msgid "Line height"
 msgstr "Regelhoogte"
 
+#: cps/spa_strings.py
+msgid "Justify text"
+msgstr "Tekst uitvullen"
+
 #: cps/spa_strings.py:634
 msgid "Load more"
 msgstr "Meer laden"

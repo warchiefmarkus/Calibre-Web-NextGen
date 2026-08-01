@@ -880,6 +880,7 @@ export interface ReaderSettings {
   maxInlineSize: number;
   animated: boolean;
   tapToTurn: boolean;
+  justifyText: boolean;
   translationEnabled: boolean;
   translationView: 'original' | 'translated';
   translationSourceLanguage: string;

@@ -139,7 +139,9 @@ function allowsWheelPageTurn(target: EventTarget | null): boolean {
 
 function isReaderTypingTarget(target: EventTarget | null): boolean {
   const element = target as { closest?: (selector: string) => Element | null } | null;
-  return !!element?.closest?.('input, textarea, select, [contenteditable="true"]');
+  return !!element?.closest?.(
+    'textarea, select, [contenteditable="true"], input:not([type="checkbox"]):not([type="radio"]):not([type="range"])',
+  );
 }
 
 const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre';
@@ -478,11 +480,15 @@ function readerCss(settings: ReaderSettings, compactViewport = false): string {
     pre, code { white-space: pre-wrap !important; }
     table { inline-size: 100% !important; table-layout: fixed !important; }
   ` : '';
+  const textAlignment = settings.justifyText
+    ? 'body, p, li, blockquote { text-align: justify !important; text-align-last: auto !important; }'
+    : 'body { text-align: left !important; }';
   return `
     :root { color-scheme: ${settings.theme === 'lightTheme' || settings.theme === 'sepiaTheme' ? 'light' : 'dark'}; }
     html, body { background: ${theme.background} !important; color: ${theme.text} !important; }
     body { font-family: ${FONT_FAMILY[settings.font]} !important; font-size: ${settings.fontSize}% !important;
-      line-height: ${settings.lineHeight / 100} !important; text-align: left !important; }
+      line-height: ${settings.lineHeight / 100} !important; }
+    ${textAlignment}
     a { color: ${theme.link} !important; }
     img, svg, video { max-width: 100% !important; }
     ${compactReflow}
@@ -1096,6 +1102,19 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
       navigateReader('right');
+    } else if (!event.repeat && (event.key === '+' || event.code === 'NumpadAdd'
+        || (event.code === 'Equal' && event.shiftKey))) {
+      event.preventDefault();
+      const currentSettings = settingsRef.current;
+      if (currentSettings) {
+        updateSettings({ fontSize: Math.min(FONT_MAX, currentSettings.fontSize + 1) });
+      }
+    } else if (!event.repeat && (event.key === '-' || event.code === 'NumpadSubtract')) {
+      event.preventDefault();
+      const currentSettings = settingsRef.current;
+      if (currentSettings) {
+        updateSettings({ fontSize: Math.max(FONT_MIN, currentSettings.fontSize - 1) });
+      }
     } else if (!event.repeat && event.key.toLowerCase() === 't') {
       event.preventDefault();
       const currentSettings = settingsRef.current;
@@ -1710,6 +1729,11 @@ function ReaderSettingsPanel({ settings, update }: {
       <label>{t('Text width')} <output>{settings.maxInlineSize}px</output>
         <input type="range" min={420} max={1200} step={20} value={settings.maxInlineSize}
           onChange={(event) => update({ maxInlineSize: Number(event.target.value) })} />
+      </label>
+      <label className={styles.checkboxLabel}>
+        <input type="checkbox" checked={settings.justifyText}
+          onChange={(event) => update({ justifyText: event.target.checked })} />
+        {t('Justify text')}
       </label>
       <label className={styles.checkboxLabel}>
         <input type="checkbox" checked={settings.animated}
