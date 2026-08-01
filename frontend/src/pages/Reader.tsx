@@ -1,5 +1,7 @@
 import { Fragment, createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'wouter';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faOpenai } from '@fortawesome/free-brands-svg-icons';
 import {
   AlignJustify, Bookmark, BookOpen, ChevronLeft, ChevronRight,
   Columns2, Highlighter, Languages, List, Maximize, Search, Settings,
@@ -10,7 +12,7 @@ import { SpinnerCentered } from '../components/Spinner';
 import { apiDelete, apiGet, apiPatch, apiPost, resourceUrl } from '../lib/api';
 import {
   useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
-  useReaderBookmarks, useReaderSettings,
+  useReaderBookmarks, useReaderSettings, useReaderTranslationProfiles,
   useSaveReaderSettings, translateReaderPage, type ReaderBookmark, type ReaderSettings,
   type ReaderTranslationBlock, type ReaderTranslationResponse, type ReaderTranslationRun,
   type ReaderTranslationRunMark,
@@ -230,6 +232,10 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   deu: 'de', ger: 'de', german: 'de',
   fra: 'fr', fre: 'fr', french: 'fr',
 };
+
+function chatGptSelectedTextUrl(text: string): string {
+  return `https://chatgpt.com/?q=${encodeURIComponent(text.trim())}`;
+}
 
 function normalizeLanguageCode(value: unknown): string {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -823,6 +829,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
   const fmt = selectedFormat?.format.toLowerCase() ?? requested?.toLowerCase() ?? 'epub';
   const settingsQuery = useReaderSettings();
+  const translationProfilesQuery = useReaderTranslationProfiles();
   const positionQuery = useBookmark(id, fmt);
   const bookmarksQuery = useReaderBookmarks(id, fmt);
   const saveSettings = useSaveReaderSettings();
@@ -844,7 +851,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const wheelIdleTimerRef = useRef<number | null>(null);
   const translationAbortRef = useRef<AbortController | null>(null);
   const translationInFlightKeyRef = useRef<string | null>(null);
+  const translationStartedAtRef = useRef<number | null>(null);
   const translationPreloadAbortRef = useRef<AbortController | null>(null);
+  const translationPreloadStartedAtRef = useRef<number | null>(null);
   const translationPreloadInFlightKeyRef = useRef<string | null>(null);
   const translationPreloadQueuedRef = useRef<TranslationPreloadJob | null>(null);
   const translationPreloadTaskRef = useRef<TranslationPreloadTask | null>(null);
@@ -888,6 +897,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [translationSkipped, setTranslationSkipped] = useState(false);
   const [selectionTranslationLoading, setSelectionTranslationLoading] = useState(false);
   const [selectionTranslationError, setSelectionTranslationError] = useState<string | null>(null);
+
+  const translationRequestTimeoutMs = useMemo(() => {
+    const profile = translationProfilesQuery.data?.profiles.find(
+      (item) => item.id === settings?.translationProfileId,
+    );
+    const seconds = Math.max(5, Math.min(180, Number(profile?.timeout_seconds ?? 60)));
+    return seconds * 1000 + 5000;
+  }, [settings?.translationProfileId, translationProfilesQuery.data?.profiles]);
 
   useEffect(() => {
     translationBlocksRef.current = translationBlocks;
@@ -959,6 +976,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     }
   }, []);
 
+  const cancelTranslationPreload = useCallback(() => {
+    translationPreloadAbortRef.current?.abort();
+    translationPreloadAbortRef.current = null;
+    translationPreloadInFlightKeyRef.current = null;
+    translationPreloadStartedAtRef.current = null;
+    translationPreloadQueuedRef.current = null;
+    translationPreloadTaskRef.current = null;
+    setTranslationPreloading(false);
+  }, []);
+
   const runTranslationPreload = useCallback((job: TranslationPreloadJob) => {
     const currentSettings = settingsRef.current;
     const enabled = !!currentSettings?.translationEnabled
@@ -984,6 +1011,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     const controller = new AbortController();
     translationPreloadAbortRef.current = controller;
     translationPreloadInFlightKeyRef.current = job.key;
+    translationPreloadStartedAtRef.current = Date.now();
     setTranslationPreloading(true);
     const configuredSource = normalizeLanguageCode(job.settings.translationSourceLanguage);
     const promise = translateReaderPage(id, {
@@ -1009,6 +1037,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     }).finally(() => {
       if (translationPreloadInFlightKeyRef.current === job.key) {
         translationPreloadInFlightKeyRef.current = null;
+        translationPreloadStartedAtRef.current = null;
       }
       if (translationPreloadAbortRef.current === controller) {
         translationPreloadAbortRef.current = null;
@@ -1054,16 +1083,45 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   useEffect(() => {
     // Any translation configuration change invalidates an active speculative
     // request. The next completed current page will schedule a fresh preload.
-    translationPreloadAbortRef.current?.abort();
-    translationPreloadAbortRef.current = null;
-    translationPreloadInFlightKeyRef.current = null;
-    translationPreloadQueuedRef.current = null;
-    translationPreloadTaskRef.current = null;
-    setTranslationPreloading(false);
-  }, [settings?.flow, settings?.translationCacheEnabled, settings?.translationEnabled,
+    cancelTranslationPreload();
+  }, [cancelTranslationPreload, settings?.flow, settings?.translationCacheEnabled, settings?.translationEnabled,
     settings?.translationPreloadNextPage, settings?.translationProfileId,
     settings?.translationPrompt, settings?.translationSourceLanguage,
     settings?.translationTargetLanguage, settings?.translationView]);
+
+  useEffect(() => {
+    if (!translationLoading && !translationPreloading) return;
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const foregroundStarted = translationStartedAtRef.current;
+      if (translationLoading
+          && !translationInFlightKeyRef.current
+          && !translationTransitionRef.current) {
+        translationStartedAtRef.current = null;
+        setTranslationLoading(false);
+      } else if (translationLoading && foregroundStarted !== null
+          && now - foregroundStarted > translationRequestTimeoutMs) {
+        translationAbortRef.current?.abort();
+        translationAbortRef.current = null;
+        translationInFlightKeyRef.current = null;
+        translationStartedAtRef.current = null;
+        cancelTranslationPreload();
+        setTranslationLoading(false);
+        setTranslationError(t('Page translation timed out.'));
+      }
+
+      const preloadStarted = translationPreloadStartedAtRef.current;
+      if (translationPreloading && !translationPreloadInFlightKeyRef.current) {
+        translationPreloadStartedAtRef.current = null;
+        setTranslationPreloading(false);
+      } else if (translationPreloading && preloadStarted !== null
+          && now - preloadStarted > translationRequestTimeoutMs) {
+        cancelTranslationPreload();
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cancelTranslationPreload, t, translationLoading, translationPreloading,
+    translationRequestTimeoutMs]);
 
   useEffect(() => {
     if (!settings) return;
@@ -1202,6 +1260,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     if (!ready || !settings?.translationEnabled
         || settings.translationView !== 'translated'
         || !settings.translationProfileId) {
+      cancelTranslationPreload();
       translationAbortRef.current?.abort();
       translationAbortRef.current = null;
       translationInFlightKeyRef.current = null;
@@ -1218,6 +1277,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     }
 
     if (sourceAlreadyMatchesTarget(settings, bookLanguage)) {
+      cancelTranslationPreload();
       translationAbortRef.current?.abort();
       translationAbortRef.current = null;
       translationInFlightKeyRef.current = null;
@@ -1262,6 +1322,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         return;
       }
       if (sourceAlreadyMatchesTarget(settings, bookLanguage, blocks)) {
+        cancelTranslationPreload();
         translationAbortRef.current?.abort();
         translationAbortRef.current = null;
         translationInFlightKeyRef.current = null;
@@ -1319,8 +1380,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (translationInFlightKeyRef.current === key) return;
 
       const preloadTask = translationPreloadTaskRef.current;
+      if (preloadTask && preloadTask.key !== key) {
+        cancelTranslationPreload();
+      }
       if (preloadTask?.key === key) {
         translationInFlightKeyRef.current = key;
+        translationStartedAtRef.current = translationPreloadStartedAtRef.current ?? Date.now();
         if (!translationTransitionRef.current) {
           setTranslationBlocks([]);
           setTranslationSegments([]);
@@ -1333,11 +1398,13 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           if (!preloadTask.controller.signal.aborted) applyTranslationResponse(response);
         } catch (cause) {
           if (!preloadTask.controller.signal.aborted) {
+            cancelTranslationPreload();
             setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
           }
         } finally {
           if (translationInFlightKeyRef.current === key) {
             translationInFlightKeyRef.current = null;
+            translationStartedAtRef.current = null;
             setTranslationLoading(false);
           }
         }
@@ -1348,6 +1415,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       const controller = new AbortController();
       translationAbortRef.current = controller;
       translationInFlightKeyRef.current = key;
+      translationStartedAtRef.current = Date.now();
       if (!translationTransitionRef.current) {
         setTranslationBlocks([]);
         setTranslationSegments([]);
@@ -1372,9 +1440,13 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         applyTranslationResponse(response);
       } catch (cause) {
         if (controller.signal.aborted) return;
+        cancelTranslationPreload();
         setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
       } finally {
-        if (translationInFlightKeyRef.current === key) translationInFlightKeyRef.current = null;
+        if (translationInFlightKeyRef.current === key) {
+          translationInFlightKeyRef.current = null;
+          translationStartedAtRef.current = null;
+        }
         if (translationAbortRef.current === controller) translationAbortRef.current = null;
         if (!controller.signal.aborted) setTranslationLoading(false);
       }
@@ -1389,7 +1461,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     settings?.translationCacheEnabled, settings?.translationPreloadNextPage,
     settings?.translationPrompt, settings?.translationSourceLanguage,
     settings?.translationTargetLanguage, settings?.translationView,
-    cacheTranslatedPage, scheduleNextTranslationPreload, showTranslationPage, t, translationRetry]);
+    cacheTranslatedPage, cancelTranslationPreload, scheduleNextTranslationPreload,
+    showTranslationPage, t, translationRetry]);
 
   useLayoutEffect(() => {
     const content = translationPagerContentRef.current;
@@ -1677,6 +1750,13 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setPendingSelection(null);
   };
 
+  const openSelectedTextInChatGpt = () => {
+    const text = pendingSelection?.text.trim();
+    if (!text) return;
+    const opened = window.open(chatGptSelectedTextUrl(text), '_blank', 'noopener,noreferrer');
+    if (opened) opened.opener = null;
+  };
+
   const translateSelectedText = async () => {
     const selection = pendingSelection;
     const source = pendingSelectionRangeRef.current;
@@ -1806,10 +1886,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const translationRequested = !!settings?.translationEnabled
     && settings.translationView === 'translated'
     && !!settings.translationProfileId;
-  const translationActivity = translationRequested
-    && (translationLoading || translationPreloading);
   const translationOverlayVisible = translationRequested
     && !translationSkipped && !!translationLayout && translationSegments.length > 0;
+  const translationActivity = translationRequested
+    && (translationLoading || (translationPreloading && translationOverlayVisible));
   const translatedBlockById = new Map(translationBlocks.map((block) => [block.id, block]));
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
   const loading = bookQuery.isLoading || settingsQuery.isLoading || positionQuery.isLoading;
@@ -1866,7 +1946,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
                 aria-busy={translationActivity}
                 data-translation-activity={translationLoading
                   ? 'translation'
-                  : translationPreloading
+                  : translationPreloading && translationOverlayVisible
                     ? 'preload'
                     : 'idle'}
                 aria-label={t('Translation')} title={`${t('Translation')} (T)`}>
@@ -1905,6 +1985,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           <button onClick={() => void translateSelectedText()}
             disabled={selectionTranslationLoading}>
             <Languages size={17} aria-hidden="true" /> {t('Translation')}
+          </button>
+          <button onClick={openSelectedTextInChatGpt}
+            title={t('Open selected text in ChatGPT')}
+            aria-label={t('Open selected text in ChatGPT')}>
+            <FontAwesomeIcon icon={faOpenai} className={styles.selectionChatGptIcon} aria-hidden="true" />
+            ChatGPT
           </button>
           <button onClick={dismissSelection}>
             <X size={17} aria-hidden="true" /> {t('Cancel')}

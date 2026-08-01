@@ -40,9 +40,11 @@ a current-page translation or one-page-ahead preload is active, a compact progre
 ring is drawn around the translation icon in the top Original/Translation switch. Text
 selection uses the same readable yellow highlight as the original Foliate document.
 
-Selecting text in the original page exposes a temporary **Translation** action
-beside Highlight and Add note. The selected range is translated as one
-LLM block and replaced only in the current in-memory Foliate document. The
+Selecting text in the original page exposes temporary **Translation** and
+**ChatGPT** actions beside Highlight and Add note. ChatGPT opens a new web chat
+with the exact selected text in the `q` parameter and never sends it through the
+reader translation provider. The Translation action sends the selected range as
+one LLM block and replaces it only in the current in-memory Foliate document. The
 original fragment is retained and restored before page, chapter, bookmark, or
 progress navigation. Leading and trailing whitespace from the selected range is
 kept around the translated text so adjacent words do not become joined. Relocate
@@ -68,8 +70,13 @@ HTTP request. Only one preload request runs at a time, and the newest requested
 page replaces an older queued
 page. Provider errors remain silent while the page is only speculative; if the
 reader opens that page and joins the request, the same error is surfaced as a
-foreground translation error. Preloading is skipped in scrolling/vertical-writing layouts and
-at a section boundary where the next section is not already loaded.
+foreground translation error. Opening a different page or receiving a foreground
+provider error cancels obsolete preload work. The toolbar activity state is also
+reconciled against active request refs once per second and aborts work that exceeds
+the selected profile timeout plus a five-second client grace period, preventing a
+stale spinner after an aborted or disconnected request. Preloading is skipped in
+scrolling/vertical-writing layouts and at a section boundary where the next section
+is not already loaded.
 
 Visible pages are translated in bounded batches (up to 8 blocks and roughly
 3,500 source characters per provider request). The profile timeout is an overall

@@ -578,7 +578,7 @@
   top: 62px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(720px, calc(100vw - 24px));
+  width: min(860px, calc(100vw - 24px));
   display: flex;
   align-items: center;
   gap: 7px;
@@ -606,6 +606,12 @@
 .selectionBar button:disabled {
   opacity: .55;
   cursor: wait;
+}
+
+.selectionChatGptIcon {
+  inline-size: 17px;
+  block-size: 17px;
+  flex: 0 0 auto;
 }
 
 .selectionError {

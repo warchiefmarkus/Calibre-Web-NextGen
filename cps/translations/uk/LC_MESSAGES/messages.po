@@ -12315,3 +12315,11 @@ msgstr "Кешувати повні перекладені сторінки"
 #: cps/spa_strings.py
 msgid "Preload one translated page ahead"
 msgstr "Попередньо перекладати одну наступну сторінку"
+
+#: cps/spa_strings.py
+msgid "Open selected text in ChatGPT"
+msgstr "Відкрити виділений текст у ChatGPT"
+
+#: cps/spa_strings.py
+msgid "Page translation timed out."
+msgstr "Час очікування перекладу сторінки вичерпано."

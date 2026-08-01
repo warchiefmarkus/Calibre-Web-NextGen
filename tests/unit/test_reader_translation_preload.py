@@ -72,7 +72,7 @@ def test_toolbar_ring_reports_both_foreground_translation_and_preload_activity()
     assert "const [translationPreloading, setTranslationPreloading] = useState(false)" in READER
     assert "setTranslationPreloading(true)" in READER
     assert "setTranslationPreloading(false)" in READER
-    assert "translationLoading || translationPreloading" in READER
+    assert "translationLoading || (translationPreloading && translationOverlayVisible)" in READER
     assert "? 'translation'" in READER
     assert "'preload'" in READER
     assert "aria-busy={translationActivity}" in READER
@@ -86,3 +86,22 @@ def test_aborted_joined_preload_always_releases_foreground_spinner():
     assert "translationInFlightKeyRef.current === key" in finalizer
     assert "setTranslationLoading(false)" in finalizer
     assert "if (!preloadTask.controller.signal.aborted) setTranslationLoading(false)" not in finalizer
+
+
+def test_stale_activity_is_reconciled_and_foreground_errors_cancel_preload():
+    assert "translationStartedAtRef" in READER
+    assert "translationPreloadStartedAtRef" in READER
+    assert "translationRequestTimeoutMs" in READER
+    assert "Page translation timed out." in READER
+    assert "cancelTranslationPreload();" in READER
+    assert "translationPreloading && translationOverlayVisible" in READER
+    assert "!translationInFlightKeyRef.current" in READER
+    assert "!translationPreloadInFlightKeyRef.current" in READER
+
+
+def test_different_foreground_page_cancels_stale_preload_before_request():
+    section = READER.split("const preloadTask = translationPreloadTaskRef.current", 1)[1].split(
+        "if (preloadTask?.key === key)", 1
+    )[0]
+    assert "preloadTask.key !== key" in section
+    assert "cancelTranslationPreload();" in section

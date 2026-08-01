@@ -12290,3 +12290,11 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Preload one translated page ahead"
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "Open selected text in ChatGPT"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Page translation timed out."
+msgstr ""

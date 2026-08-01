@@ -13705,3 +13705,11 @@ msgstr "Mettre en cache les pages entièrement traduites"
 #: cps/spa_strings.py
 msgid "Preload one translated page ahead"
 msgstr "Précharger une page traduite à l’avance"
+
+#: cps/spa_strings.py
+msgid "Open selected text in ChatGPT"
+msgstr "Ouvrir le texte sélectionné dans ChatGPT"
+
+#: cps/spa_strings.py
+msgid "Page translation timed out."
+msgstr "Le délai de traduction de la page a expiré."

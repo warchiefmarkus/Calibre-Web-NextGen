@@ -581,3 +581,11 @@ def test_translate_page_reuses_one_deadline_during_incomplete_retry(monkeypatch)
     assert [item["text"] for item in result] == ["T:A", "T:B"]
     assert len(deadlines) >= 2
     assert len(set(deadlines)) == 1
+
+
+def test_big_pickle_translation_batches_are_sequential_to_avoid_rate_limit_bursts():
+    from cps.services.reader_translation import _translation_parallel_workers
+
+    assert _translation_parallel_workers(_profile(model="big-pickle"), 5) == 1
+    assert _translation_parallel_workers(_profile(model="other-model"), 5) == 3
+    assert _translation_parallel_workers(_profile(model="other-model"), 2) == 2

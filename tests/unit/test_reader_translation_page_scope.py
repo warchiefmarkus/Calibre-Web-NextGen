@@ -67,7 +67,7 @@ def test_translation_activity_uses_the_toolbar_icon_ring():
     assert "translationOverlayBadge" not in READER
     assert ".translationOverlayBadge" not in CSS
     assert "const translationActivity = translationRequested" in READER
-    assert "translationLoading || translationPreloading" in READER
+    assert "translationLoading || (translationPreloading && translationOverlayVisible)" in READER
     assert "aria-busy={translationActivity}" in READER
     assert "data-translation-activity={translationLoading" in READER
     assert "styles.translationToggleIconBusy" in READER

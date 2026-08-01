@@ -13243,3 +13243,11 @@ msgstr "Volledig vertaalde pagina's cachen"
 #: cps/spa_strings.py
 msgid "Preload one translated page ahead"
 msgstr "Eén vertaalde pagina vooruit laden"
+
+#: cps/spa_strings.py
+msgid "Open selected text in ChatGPT"
+msgstr "Geselecteerde tekst openen in ChatGPT"
+
+#: cps/spa_strings.py
+msgid "Page translation timed out."
+msgstr "De paginavertaling heeft de tijdslimiet overschreden."

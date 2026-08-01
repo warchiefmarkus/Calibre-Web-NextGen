@@ -685,6 +685,16 @@ _TRANSLATION_RETRY_MAX_DEPTH = 8
 _TRANSLATION_PARALLEL_BATCHES = 3
 
 
+def _translation_parallel_workers(profile: Any | None, batch_count: int) -> int:
+    model = str(getattr(profile, "model", "") or "").strip().lower()
+    # OpenCode Zen's big-pickle route rate-limits bursts aggressively. Running
+    # its page batches sequentially prevents one page/preload from generating
+    # a fan-out of simultaneous 429 responses.
+    if model == "big-pickle":
+        return 1
+    return max(1, min(_TRANSLATION_PARALLEL_BATCHES, batch_count))
+
+
 def _translation_batch_limits(profile: Any | None) -> tuple[int, int]:
     # big-pickle currently resolves to a reasoning-heavy DeepSeek route. It
     # spends a large share of max_tokens on reasoning_content and frequently
@@ -942,7 +952,7 @@ def translate_page(profile: Any, *, source_language: str, target_language: str,
     ]
     completed: dict[int, list[dict[str, str]]] = {}
     for index, outcome in parallel.fan_out(
-        jobs, max_workers=min(_TRANSLATION_PARALLEL_BATCHES, len(jobs)),
+        jobs, max_workers=_translation_parallel_workers(profile, len(jobs)),
     ):
         if outcome.exception is not None:
             raise outcome.exception
