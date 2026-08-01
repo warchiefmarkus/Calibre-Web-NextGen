@@ -13681,3 +13681,7 @@ msgstr "OpenCode Zen"
 #: cps/spa_strings.py
 msgid "OpenCode Go"
 msgstr "OpenCode Go"
+
+#: cps/spa_strings.py
+msgid "NVIDIA NIM"
+msgstr "NVIDIA NIM"

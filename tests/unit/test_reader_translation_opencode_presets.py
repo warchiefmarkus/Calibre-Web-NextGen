@@ -23,3 +23,10 @@ def test_opencode_model_families_select_the_documented_protocol():
     assert "id.startsWith('claude-') || id.startsWith('qwen')" in source
     assert "return `models/${model.trim()}:generateContent`;" in source
     assert "id.startsWith('minimax-') || id.startsWith('qwen')" in source
+
+
+def test_nvidia_nim_preset_uses_public_model_discovery():
+    source = (ROOT / "frontend/src/pages/ReaderTranslationSettings.tsx").read_text()
+    assert "label: 'NVIDIA NIM'" in source
+    assert "base_url: 'https://integrate.api.nvidia.com/v1'" in source
+    assert "model: 'nvidia/nemotron-3-nano-30b-a3b'" in source

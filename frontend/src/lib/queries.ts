@@ -931,6 +931,13 @@ export interface ReaderTranslationResponse {
   model: string;
 }
 
+export interface ReaderTranslationModelInfo {
+  id: string;
+  owner?: string;
+  context_length?: number;
+  description?: string;
+}
+
 export interface ReaderBookmark {
   bookmark_id: string;
   book_id: number;
@@ -1016,9 +1023,10 @@ export function useTestReaderTranslationProfile() {
 
 export function useReaderTranslationModels() {
   return useMutation({
-    mutationFn: (id: string) => apiGet<{ models: string[] }>(
-      `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}/models`,
-    ),
+    mutationFn: (id: string) => apiGet<{
+      models: string[];
+      details: ReaderTranslationModelInfo[];
+    }>(`/api/v1/reader/translation/profiles/${encodeURIComponent(id)}/models`),
   });
 }
 

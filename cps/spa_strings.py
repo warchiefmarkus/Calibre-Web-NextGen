@@ -1074,3 +1074,5 @@ _("{count} models loaded.")
 _("Add")
 _("OpenCode Zen")
 _("OpenCode Go")
+
+_("NVIDIA NIM")

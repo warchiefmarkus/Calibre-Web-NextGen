@@ -8,6 +8,7 @@ import {
   useTestReaderTranslationProfile,
   useUpdateReaderTranslationProfile,
   type ReaderSettings,
+  type ReaderTranslationModelInfo,
   type ReaderTranslationProfile,
   type ReaderTranslationProfileInput,
 } from '../lib/queries';
@@ -26,6 +27,10 @@ const PROVIDERS = {
   opencode_go: {
     label: 'OpenCode Go', base_url: 'https://opencode.ai/zen/go/v1', endpoint_path: 'chat/completions',
     model: 'glm-5.2', discover: true,
+  },
+  nvidia_nim: {
+    label: 'NVIDIA NIM', base_url: 'https://integrate.api.nvidia.com/v1', endpoint_path: 'chat/completions',
+    model: 'nvidia/nemotron-3-nano-30b-a3b', discover: true,
   },
   openrouter: {
     label: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', endpoint_path: 'chat/completions',
@@ -86,6 +91,20 @@ function providerFor(baseUrl: string): ProviderKey {
   return (found?.[0] as ProviderKey | undefined) ?? 'custom';
 }
 
+function maxOutputTokensForModel(model: string, configured: number): number {
+  return model.trim().toLowerCase() === 'big-pickle' ? Math.max(configured, 8192) : configured;
+}
+
+function modelOptionLabel(model: string, details: ReaderTranslationModelInfo[]): string {
+  const detail = details.find((item) => item.id === model);
+  if (!detail) return model;
+  const suffix = [
+    detail.owner,
+    detail.context_length ? `${detail.context_length.toLocaleString()} ctx` : '',
+  ].filter(Boolean).join(' · ');
+  return suffix ? `${model} — ${suffix}` : model;
+}
+
 function endpointForModel(provider: ProviderKey, model: string, fallback: string): string {
   // OpenCode's /models feeds currently expose model IDs but not the protocol
   // endpoint. Keep the documented family mapping here so discovery can still
@@ -126,6 +145,7 @@ export function ReaderTranslationSettings({ settings, update }: {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
+  const [modelDetails, setModelDetails] = useState<ReaderTranslationModelInfo[]>([]);
   const [promptDraft, setPromptDraft] = useState(settings.translationPrompt);
 
   const selectedProfile = useMemo(
@@ -151,6 +171,7 @@ export function ReaderTranslationSettings({ settings, update }: {
     setFormError(null);
     setNotice(null);
     setModels([]);
+    setModelDetails([]);
   };
 
   const beginEdit = () => {
@@ -162,12 +183,14 @@ export function ReaderTranslationSettings({ settings, update }: {
     setFormError(null);
     setNotice(null);
     setModels([]);
+    setModelDetails([]);
   };
 
   const chooseProvider = (key: ProviderKey) => {
     setProvider(key);
     const preset = PROVIDERS[key];
     setModels([]);
+    setModelDetails([]);
     setForm((current) => {
       const model = preset.model || current.model;
       return {
@@ -175,6 +198,7 @@ export function ReaderTranslationSettings({ settings, update }: {
         base_url: preset.base_url || current.base_url,
         endpoint_path: endpointForModel(key, model, preset.endpoint_path),
         model,
+        max_output_tokens: maxOutputTokensForModel(model, current.max_output_tokens),
         name: current.name || (key === 'custom' ? '' : preset.label),
       };
     });
@@ -209,6 +233,7 @@ export function ReaderTranslationSettings({ settings, update }: {
       if (PROVIDERS[provider].discover) {
         const discovered = await modelsMutation.mutateAsync(savedProfile.id);
         setModels(discovered.models);
+        setModelDetails(discovered.details ?? []);
         setNotice(t('{count} models loaded.', { count: discovered.models.length }));
       } else {
         setNotice(t('Translation profile saved.'));
@@ -248,6 +273,7 @@ export function ReaderTranslationSettings({ settings, update }: {
     try {
       const response = await modelsMutation.mutateAsync(selectedProfile.id);
       setModels(response.models);
+      setModelDetails(response.details ?? []);
       setNotice(t('{count} models loaded.', { count: response.models.length }));
     } catch (error) {
       setFormError(error instanceof Error ? error.message : t('Could not load models.'));
@@ -324,6 +350,9 @@ export function ReaderTranslationSettings({ settings, update }: {
                 setForm({
                   ...profileToForm(selectedProfile),
                   model,
+                  max_output_tokens: maxOutputTokensForModel(
+                    model, selectedProfile.max_output_tokens,
+                  ),
                   endpoint_path: endpointForModel(
                     selectedProvider, model, selectedProfile.endpoint_path,
                   ),
@@ -331,7 +360,9 @@ export function ReaderTranslationSettings({ settings, update }: {
                 setHeadersText(JSON.stringify(selectedProfile.extra_headers ?? {}, null, 2));
               }}>
               <option value="">{t('Choose a model to edit the profile')}</option>
-              {models.map((model) => <option key={model} value={model}>{model}</option>)}
+              {models.map((model) => (
+                <option key={model} value={model}>{modelOptionLabel(model, modelDetails)}</option>
+              ))}
             </select>
           )}
         </div>
@@ -370,11 +401,14 @@ export function ReaderTranslationSettings({ settings, update }: {
                 setForm((current) => ({
                   ...current,
                   model,
+                  max_output_tokens: maxOutputTokensForModel(model, current.max_output_tokens),
                   endpoint_path: endpointForModel(provider, model, current.endpoint_path),
                 }));
               }} />
             <datalist id="reader-translation-models">
-              {models.map((model) => <option key={model} value={model} />)}
+              {models.map((model) => (
+                <option key={model} value={model}>{modelOptionLabel(model, modelDetails)}</option>
+              ))}
             </datalist>
           </label>
           <div className={styles.translationProfileGrid}>

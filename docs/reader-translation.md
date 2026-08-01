@@ -38,8 +38,12 @@ Authorization: Bearer {api_key}
 The default endpoint path is `chat/completions`. The backend also supports
 OpenAI Responses (`responses`), Anthropic Messages (`messages`), and Google
 Generate Content (`models/<model>:generateContent`) request/response envelopes.
-Presets are included for OpenCode Zen, OpenCode Go, OpenRouter, Groq, Mistral,
-and Ollama, while all fields remain editable.
+Presets are included for OpenCode Zen, OpenCode Go, NVIDIA NIM, OpenRouter,
+Groq, Mistral, and Ollama, while all fields remain editable. NVIDIA NIM uses
+`https://integrate.api.nvidia.com/v1`, discovers the live hosted catalog through
+`GET /v1/models`, and defaults to `nvidia/nemotron-3-nano-30b-a3b`. The public
+catalog currently supplies model ID and publisher; context length and description
+are shown automatically when a compatible endpoint includes them.
 
 OpenCode Zen and OpenCode Go use their public `/models` feeds for discovery.
 Saving either preset automatically loads the current server-side model list.

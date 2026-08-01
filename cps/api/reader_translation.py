@@ -17,7 +17,7 @@ from ..cw_login import current_user
 from ..services.reader_translation import (
     ReaderTranslationError,
     encrypt_api_key,
-    list_models,
+    list_model_catalog,
     normalize_base_url,
     normalize_endpoint_path,
     normalize_extra_headers,
@@ -288,7 +288,11 @@ def get_reader_translation_models(profile_id):
     if profile is None:
         return _err("not_found", "Translation profile not found", 404)
     try:
-        return jsonify({"models": list_models(profile)})
+        catalog = list_model_catalog(profile)
+        return jsonify({
+            "models": [item["id"] for item in catalog],
+            "details": catalog,
+        })
     except ReaderTranslationError as exc:
         return _err(exc.code, str(exc), exc.status)
 

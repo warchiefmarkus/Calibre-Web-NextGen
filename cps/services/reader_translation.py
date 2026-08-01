@@ -180,16 +180,26 @@ def _is_trusted_opencode_endpoint(url: str) -> bool:
     )
 
 
+def _is_trusted_nvidia_endpoint(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "integrate.api.nvidia.com"
+        and parsed.port in (None, 443)
+        and parsed.path.startswith("/v1/")
+    )
+
+
 def _request(method: str, url: str, **kwargs: Any) -> requests.Response:
     kwargs.setdefault("allow_redirects", True)
 
     def _perform_request() -> requests.Response:
-        if _is_trusted_opencode_endpoint(url):
-            # Advocate currently pins opencode.ai to its first AAAA result on
-            # hosts without a usable IPv6 route, producing EAFNOSUPPORT before
-            # requests can fall back to IPv4. This exact HTTPS host/path is a
-            # built-in provider, so bypass the generic resolver while disabling
-            # redirects to retain a fixed, non-SSRF destination.
+        if _is_trusted_opencode_endpoint(url) or _is_trusted_nvidia_endpoint(url):
+            # Advocate's network-interface probe raises EAFNOSUPPORT inside the
+            # hardened service namespace on this host. These exact HTTPS
+            # host/path pairs are built-in providers, so bypass the generic
+            # resolver while disabling redirects to retain fixed non-SSRF
+            # destinations.
             kwargs["allow_redirects"] = False
             return requests.request(method, url, **kwargs)
         if _allow_private_endpoints():
@@ -421,12 +431,18 @@ def _translation_content_map(content: str, source_blocks: list[dict[str, str]]) 
 
 def parse_translation_content(content: str, source_blocks: list[dict[str, str]]) -> list[dict[str, str]]:
     translated = _translation_content_map(content, source_blocks)
-    missing_count = sum(1 for block in source_blocks if not translated.get(block["id"]))
-    if missing_count:
-        raise ReaderTranslationError(
-            f"The LLM response omitted {missing_count} of {len(source_blocks)} translated page blocks.",
+    missing = [block["id"] for block in source_blocks if not translated.get(block["id"])]
+    if missing:
+        error = ReaderTranslationError(
+            f"The LLM response omitted {len(missing)} of {len(source_blocks)} translated page blocks.",
             code="incomplete_translation", status=502,
         )
+        # Keep valid work attached to the exception so resilient retry can ask
+        # only for omitted blocks. Discarding the valid subset made reasoning
+        # models repeat the same page work for several minutes.
+        error.partial_translations = dict(translated)
+        error.missing_block_ids = list(missing)
+        raise error
     return [
         {
             "id": block["id"],
@@ -435,6 +451,16 @@ def parse_translation_content(content: str, source_blocks: list[dict[str, str]])
         }
         for block in source_blocks
     ]
+
+
+def _effective_max_output_tokens(profile: Any) -> int:
+    configured = int(getattr(profile, "max_output_tokens", 4096) or 4096)
+    # big-pickle exposes hidden reasoning_content inside the same completion
+    # budget. 4096 is often exhausted before all translated JSON blocks are
+    # emitted, so retain the user's value but enforce a safe minimum.
+    if str(getattr(profile, "model", "") or "").strip().lower() == "big-pickle":
+        return max(configured, 8192)
+    return configured
 
 
 def _chat_payload(profile: Any, *, source_language: str, target_language: str,
@@ -464,7 +490,7 @@ def _chat_payload(profile: Any, *, source_language: str, target_language: str,
             {"role": "user", "content": f"{instruction}\n\n{json.dumps(page_payload, ensure_ascii=False)}"},
         ],
         "temperature": float(profile.temperature if profile.temperature is not None else 0.2),
-        "max_tokens": int(profile.max_output_tokens or 4096),
+        "max_tokens": _effective_max_output_tokens(profile),
         "stream": False,
     }
     if json_mode:
@@ -530,17 +556,32 @@ _TRANSLATION_BATCH_MAX_BLOCKS = 8
 _TRANSLATION_BATCH_MAX_CHARS = 3500
 _TRANSLATION_FRAGMENT_MAX_CHARS = 2600
 _TRANSLATION_RETRY_MAX_DEPTH = 8
+_TRANSLATION_PARALLEL_BATCHES = 3
 
 
-def _partition_translation_blocks(blocks: list[dict[str, str]]) -> list[list[dict[str, str]]]:
+def _translation_batch_limits(profile: Any | None) -> tuple[int, int]:
+    # big-pickle currently resolves to a reasoning-heavy DeepSeek route. It
+    # spends a large share of max_tokens on reasoning_content and frequently
+    # omits later JSON blocks even for modest pages. Smaller initial batches
+    # avoid the expensive recursive retry path.
+    model = str(getattr(profile, "model", "") or "").strip().lower()
+    if model == "big-pickle":
+        return 2, 1200
+    return _TRANSLATION_BATCH_MAX_BLOCKS, _TRANSLATION_BATCH_MAX_CHARS
+
+
+def _partition_translation_blocks(
+    blocks: list[dict[str, str]], *, profile: Any | None = None,
+) -> list[list[dict[str, str]]]:
+    max_blocks, max_chars = _translation_batch_limits(profile)
     batches: list[list[dict[str, str]]] = []
     current: list[dict[str, str]] = []
     current_chars = 0
     for block in blocks:
         block_chars = len(block.get("text", ""))
         if current and (
-            len(current) >= _TRANSLATION_BATCH_MAX_BLOCKS
-            or current_chars + block_chars > _TRANSLATION_BATCH_MAX_CHARS
+            len(current) >= max_blocks
+            or current_chars + block_chars > max_chars
         ):
             batches.append(current)
             current = []
@@ -637,10 +678,28 @@ def _translate_batch_resilient(profile: Any, *, source_language: str, target_lan
     except ReaderTranslationError as exc:
         if exc.code != "incomplete_translation" or depth >= _TRANSLATION_RETRY_MAX_DEPTH:
             raise
+        partial = dict(getattr(exc, "partial_translations", {}) or {})
+        missing_blocks = [block for block in blocks if not partial.get(block["id"])]
         log.warning(
-            "LLM model %s returned an incomplete translation batch (%d blocks, %d chars); retrying smaller work",
-            profile.model, len(blocks), sum(len(block.get("text", "")) for block in blocks),
+            "LLM model %s omitted %d/%d translation blocks (%d chars); retrying only missing work",
+            profile.model, len(missing_blocks), len(blocks),
+            sum(len(block.get("text", "")) for block in missing_blocks),
         )
+        if partial and missing_blocks:
+            retried = _translate_batch_resilient(
+                profile, source_language=source_language, target_language=target_language,
+                prompt=prompt, blocks=missing_blocks, depth=depth + 1,
+            )
+            merged = dict(partial)
+            merged.update({item["id"]: item["text"] for item in retried})
+            return [
+                {
+                    "id": block["id"],
+                    "tag": block.get("tag", "p"),
+                    "text": merged[block["id"]][:20000],
+                }
+                for block in blocks
+            ]
         if len(blocks) > 1:
             middle = max(1, len(blocks) // 2)
             return _translate_batch_resilient(
@@ -678,13 +737,31 @@ def _translate_batch_resilient(profile: Any, *, source_language: str, target_lan
 
 def translate_page(profile: Any, *, source_language: str, target_language: str,
                    prompt: str, blocks: list[dict[str, str]]) -> list[dict[str, str]]:
-    translated: list[dict[str, str]] = []
-    for batch in _partition_translation_blocks(blocks):
-        translated.extend(_translate_batch_resilient(
+    batches = _partition_translation_blocks(blocks, profile=profile)
+    if len(batches) <= 1:
+        return _translate_batch_resilient(
             profile, source_language=source_language, target_language=target_language,
-            prompt=prompt, blocks=batch,
-        ))
-    return translated
+            prompt=prompt, blocks=batches[0] if batches else [],
+        ) if batches else []
+
+    jobs = [
+        (
+            index,
+            lambda batch=batch: _translate_batch_resilient(
+                profile, source_language=source_language, target_language=target_language,
+                prompt=prompt, blocks=batch,
+            ),
+        )
+        for index, batch in enumerate(batches)
+    ]
+    completed: dict[int, list[dict[str, str]]] = {}
+    for index, outcome in parallel.fan_out(
+        jobs, max_workers=min(_TRANSLATION_PARALLEL_BATCHES, len(jobs)),
+    ):
+        if outcome.exception is not None:
+            raise outcome.exception
+        completed[index] = outcome.value
+    return [item for index in range(len(batches)) for item in completed[index]]
 
 
 def test_profile(profile: Any) -> dict[str, Any]:
@@ -697,7 +774,13 @@ def test_profile(profile: Any) -> dict[str, Any]:
     return {"ok": True, "model": profile.model, "preview": translated[0]["text"][:200]}
 
 
-def list_models(profile: Any) -> list[str]:
+def list_model_catalog(profile: Any) -> list[dict[str, Any]]:
+    """Return normalized model discovery metadata from OpenAI-compatible feeds.
+
+    NVIDIA's hosted NIM endpoint currently exposes id/owned_by/created, while
+    self-hosted NIMs and some gateways may additionally expose context length or
+    descriptions. Preserve those optional fields without inventing capabilities.
+    """
     response = _request(
         "GET", _models_url(profile), headers=_profile_headers(profile),
         timeout=max(5, min(60, int(profile.timeout_seconds or 60))),
@@ -706,9 +789,30 @@ def list_models(profile: Any) -> list[str]:
     raw = payload.get("data", payload.get("models", []))
     if not isinstance(raw, list):
         return []
-    models = []
+    catalog: dict[str, dict[str, Any]] = {}
     for item in raw:
-        model_id = item.get("id") if isinstance(item, dict) else item
-        if isinstance(model_id, str) and model_id.strip():
-            models.append(model_id.strip())
-    return sorted(set(models), key=str.casefold)[:1000]
+        if isinstance(item, dict):
+            model_id = item.get("id")
+            owner = item.get("owned_by", item.get("owner"))
+            context_length = item.get(
+                "max_model_len", item.get("context_length", item.get("context_window"))
+            )
+            description = item.get("description", item.get("summary"))
+        else:
+            model_id = item
+            owner = context_length = description = None
+        if not isinstance(model_id, str) or not model_id.strip():
+            continue
+        normalized: dict[str, Any] = {"id": model_id.strip()}
+        if isinstance(owner, str) and owner.strip():
+            normalized["owner"] = owner.strip()
+        if isinstance(context_length, int) and context_length > 0:
+            normalized["context_length"] = context_length
+        if isinstance(description, str) and description.strip():
+            normalized["description"] = description.strip()[:500]
+        catalog[normalized["id"]] = normalized
+    return sorted(catalog.values(), key=lambda item: item["id"].casefold())[:1000]
+
+
+def list_models(profile: Any) -> list[str]:
+    return [item["id"] for item in list_model_catalog(profile)]

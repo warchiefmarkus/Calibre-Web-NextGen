@@ -335,3 +335,91 @@ def test_provider_http_is_offloaded_from_the_gevent_request_thread(monkeypatch):
     assert calls[0][0] == 'offload'
     assert calls[1][0:2] == ('GET', 'https://opencode.ai/zen/v1/models')
     assert calls[1][2]['allow_redirects'] is False
+
+
+def test_partial_translation_retries_only_missing_blocks(monkeypatch):
+    from cps.services import reader_translation as service
+
+    calls = []
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        calls.append([block["id"] for block in blocks])
+        if len(blocks) == 3:
+            error = ReaderTranslationError(
+                "partial", code="incomplete_translation", status=502,
+            )
+            error.partial_translations = {"a": "TA", "b": "TB"}
+            error.missing_block_ids = ["c"]
+            raise error
+        return [
+            {"id": block["id"], "tag": block["tag"], "text": f"T{block['id']}"}
+            for block in blocks
+        ]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    blocks = [
+        {"id": key, "tag": "p", "text": key.upper()}
+        for key in ("a", "b", "c")
+    ]
+    result = service.translate_page(
+        _profile(), source_language="en", target_language="uk", prompt="", blocks=blocks,
+    )
+    assert calls == [["a", "b", "c"], ["c"]]
+    assert [item["text"] for item in result] == ["TA", "TB", "Tc"]
+
+
+def test_big_pickle_uses_small_batches_and_larger_effective_output_budget():
+    from cps.services.reader_translation import (
+        _effective_max_output_tokens,
+        _partition_translation_blocks,
+    )
+
+    profile = _profile(model="big-pickle", max_output_tokens=4096)
+    blocks = [
+        {"id": f"b{index}", "tag": "p", "text": "x" * 500}
+        for index in range(7)
+    ]
+    batches = _partition_translation_blocks(blocks, profile=profile)
+    assert all(len(batch) <= 2 for batch in batches)
+    assert all(sum(len(item["text"]) for item in batch) <= 1200 for batch in batches)
+    assert _effective_max_output_tokens(profile) == 8192
+
+
+def test_model_catalog_preserves_available_metadata(monkeypatch):
+    from cps.services import reader_translation as service
+
+    class Response:
+        ok = True
+        status_code = 200
+        content = b'{}'
+        text = '{}'
+
+        @staticmethod
+        def json():
+            return {
+                "object": "list",
+                "data": [
+                    {"id": "nvidia/model-b", "owned_by": "nvidia"},
+                    {"id": "nvidia/model-a", "owned_by": "nvidia", "max_model_len": 131072},
+                ],
+            }
+
+    monkeypatch.setattr(service, "_request", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(service, "_profile_headers", lambda profile: {})
+    profile = _profile(timeout_seconds=30)
+    catalog = service.list_model_catalog(profile)
+    assert catalog == [
+        {"id": "nvidia/model-a", "owner": "nvidia", "context_length": 131072},
+        {"id": "nvidia/model-b", "owner": "nvidia"},
+    ]
+
+
+def test_only_exact_https_nvidia_nim_routes_bypass_generic_ssrf_resolver():
+    from cps.services.reader_translation import _is_trusted_nvidia_endpoint
+
+    assert _is_trusted_nvidia_endpoint("https://integrate.api.nvidia.com/v1/models")
+    assert _is_trusted_nvidia_endpoint("https://integrate.api.nvidia.com/v1/chat/completions")
+    assert not _is_trusted_nvidia_endpoint("http://integrate.api.nvidia.com/v1/models")
+    assert not _is_trusted_nvidia_endpoint("https://evil.integrate.api.nvidia.com/v1/models")
+    assert not _is_trusted_nvidia_endpoint("https://integrate.api.nvidia.com.evil.test/v1/models")
+    assert not _is_trusted_nvidia_endpoint("https://integrate.api.nvidia.com/other/models")

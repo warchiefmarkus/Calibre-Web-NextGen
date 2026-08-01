@@ -12266,3 +12266,7 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "OpenCode Go"
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "NVIDIA NIM"
+msgstr ""
