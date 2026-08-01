@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import { Link, useParams, useLocation } from 'wouter';
-import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, BookOpen, Trash2, RefreshCw } from 'lucide-react';
+import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, BookOpen, Trash2, RefreshCw, ExternalLink } from 'lucide-react';
 import {
   useBook, useToggleRead, useToggleFavorite, useToggleArchived, useToggleHidden,
   useSendToEreader, useMe, useAccount, useUpdateMetadata, useDeleteBook, useReloadMetadata,
@@ -23,6 +23,14 @@ import styles from './BookDetail.module.css';
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return mb >= 0.1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
+}
+
+function chatGptSimilarBooksUrl(title: string, authors: EntityRef[]): string {
+  const authorNames = authors.map((author) => author.name.trim()).filter(Boolean).join(', ');
+  const prompt = authorNames
+    ? `Порекомендуй схожі книги: "${title}" — ${authorNames}`
+    : `Порекомендуй схожі книги: "${title}"`;
+  return `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
 }
 
 function formatDate(date: string, alwaysReturnFullDate = false): string {
@@ -412,6 +420,19 @@ export function BookDetail() {
                 {t('Read now')}
               </Link>
             ) : null}
+
+            <a
+              href={chatGptSimilarBooksUrl(book.title, book.authors)}
+              className={styles.downloadBtn}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Порекомендуй схожі книги в ChatGPT"
+              aria-label={`ChatGPT: Порекомендуй схожі книги — ${book.title}`}
+              data-testid="chatgpt-similar-books"
+            >
+              <ExternalLink size={14} aria-hidden="true" focusable={false} />
+              ChatGPT
+            </a>
 
             <button
               className={book.read ? styles.readToggleActive : styles.readToggleGhost}
