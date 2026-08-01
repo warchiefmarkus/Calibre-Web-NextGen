@@ -30,8 +30,8 @@ def test_auto_translation_skips_matching_language_and_dedupes_settling_relocates
 def test_original_page_remains_visible_while_translation_is_pending():
     assert "const translationOverlayVisible = translationRequested" in READER
     assert "&& translationBlocks.length > 0" in READER
-    assert "className={styles.translationStatus}" in READER
-    assert ".translationStatus" in CSS
+    assert "className={styles.translationSpinner}" in READER
+    assert ".translationSpinner" in CSS
 
 
 def test_translation_overlay_reuses_computed_original_typography():
@@ -63,13 +63,18 @@ def test_translation_boundary_turns_the_original_page_and_lands_on_cached_edge()
     assert "landing === 'last'" in READER
 
 
-def test_translation_chrome_is_compact_and_has_no_cache_badge():
+def test_translation_loading_is_only_a_large_centered_spinner():
     assert "translationOverlayBadge" not in READER
     assert ".translationOverlayBadge" not in CSS
-    assert "<span>{t('Translation')}</span>" in READER
-    status = CSS.split('.translationStatus {', 1)[1].split('}', 1)[0]
-    assert 'inset-block-start: 50%' in status
-    assert 'translate(-50%, -50%)' in status
+    loading = READER.split("translationRequested && translationLoading", 1)[1].split(
+        "translationRequested && (translationError || translationSkipped)", 1
+    )[0]
+    assert "Spinner size={38}" in loading
+    assert "<span>" not in loading
+    spinner = CSS.split('.translationSpinner {', 1)[1].split('}', 1)[0]
+    assert 'inset-block-start: 50%' in spinner
+    assert 'translate(-50%, -50%)' in spinner
+    assert 'background:' not in spinner
 
 
 def test_translation_settings_have_a_dedicated_side_panel():
@@ -96,3 +101,22 @@ def test_selected_text_can_be_temporarily_replaced_without_saving_mutated_cfi():
     assert 'if (inlineTranslationPatchesRef.current.length) {' in READER
     assert 'if (sameLogicalPage) return;' in READER
     assert 'restoreInlineTranslations();' in READER
+
+
+def test_inline_translation_preserves_selected_boundary_whitespace():
+    assert "leadingWhitespace: rawText.match(/^\\s+/u)?.[0] ?? ''" in READER
+    assert "trailingWhitespace: rawText.match(/\\s+$/u)?.[0] ?? ''" in READER
+    assert "`${selection.leadingWhitespace}${translated}${selection.trailingWhitespace}`" in READER
+
+
+def test_page_translation_toggle_is_icon_only_and_has_t_hotkey():
+    toggle = READER.split('className={styles.translationToggle}', 1)[1].split('</div>', 1)[0]
+    assert '<BookOpen size={16}' in toggle
+    assert '<Languages size={16}' in toggle
+    assert ">{t('Original')}<" not in toggle
+    assert ">{t('Translation')}<" not in toggle
+    assert "event.key.toLowerCase() === 't'" in READER
+    assert "isReaderTypingTarget(event.target)" in READER
+    css = CSS.split('.translationToggle {', 1)[1].split('.translationSpinner {', 1)[0]
+    assert 'border-radius: 999px' in css
+    assert 'grid-template-columns: repeat(2, 32px)' in css

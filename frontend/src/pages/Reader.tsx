@@ -6,7 +6,7 @@ import {
   Square, StickyNote, Trash2, Volume2, X,
 } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState';
-import { SpinnerCentered } from '../components/Spinner';
+import { Spinner, SpinnerCentered } from '../components/Spinner';
 import { apiDelete, apiGet, apiPatch, apiPost, resourceUrl } from '../lib/api';
 import {
   useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
@@ -87,6 +87,8 @@ type ServerAnnotation = {
 type PendingReaderSelection = {
   value: string;
   text: string;
+  leadingWhitespace: string;
+  trailingWhitespace: string;
 };
 
 type InlineTranslationPatch = {
@@ -133,6 +135,11 @@ function allowsWheelPageTurn(target: EventTarget | null): boolean {
   if (!element?.closest) return true;
   if (element.closest('[data-reader-wheel-page-zone]')) return true;
   return !element.closest('input, textarea, select, button, [contenteditable="true"], [role="slider"]');
+}
+
+function isReaderTypingTarget(target: EventTarget | null): boolean {
+  const element = target as { closest?: (selector: string) => Element | null } | null;
+  return !!element?.closest?.('input, textarea, select, [contenteditable="true"]');
 }
 
 const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre';
@@ -970,11 +977,17 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           return;
         }
         const range = selection.getRangeAt(0).cloneRange();
-        const text = selection.toString().replace(/\s+/g, ' ').trim();
+        const rawText = selection.toString();
+        const text = rawText.replace(/\s+/g, ' ').trim();
         if (!text) return;
         pendingSelectionRangeRef.current = { range, doc };
         setSelectionTranslationError(null);
-        setPendingSelection({ value: view.getCFI(index, range), text });
+        setPendingSelection({
+          value: view.getCFI(index, range),
+          text,
+          leadingWhitespace: rawText.match(/^\s+/u)?.[0] ?? '',
+          trailingWhitespace: rawText.match(/\s+$/u)?.[0] ?? '',
+        });
       };
       doc.addEventListener('mouseup', readSelection);
       doc.addEventListener('keyup', readSelection);
@@ -1076,12 +1089,23 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     restoreInlineTranslations, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isReaderTypingTarget(event.target)) return;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
       navigateReader('left');
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
       navigateReader('right');
+    } else if (!event.repeat && event.key.toLowerCase() === 't') {
+      event.preventDefault();
+      const currentSettings = settingsRef.current;
+      if (!currentSettings?.translationProfileId) {
+        setPanel('translation');
+      } else if (currentSettings.translationView === 'translated') {
+        updateSettings({ translationView: 'original' });
+      } else {
+        updateSettings({ translationEnabled: true, translationView: 'translated' });
+      }
     } else if (event.key === 'Escape') {
       setPanel(null);
       dismissSelection();
@@ -1185,7 +1209,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       marker.setAttribute('data-reader-inline-translation', 'true');
       marker.lang = normalizeLanguageCode(currentSettings.translationTargetLanguage);
       marker.title = selection.text;
-      marker.textContent = translated;
+      marker.textContent = `${selection.leadingWhitespace}${translated}${selection.trailingWhitespace}`;
       marker.style.font = 'inherit';
       marker.style.color = 'inherit';
       marker.style.background = 'transparent';
@@ -1319,11 +1343,15 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             <div className={styles.translationToggle} role="group" aria-label={t('Page language view')}>
               <button type="button" className={settings.translationView === 'original' || translationSkipped ? styles.translationToggleActive : ''}
                 onClick={() => updateSettings({ translationView: 'original' })}
-                aria-pressed={settings.translationView === 'original' || translationSkipped}>{t('Original')}</button>
+                aria-pressed={settings.translationView === 'original' || translationSkipped}
+                aria-label={t('Original')} title={`${t('Original')} (T)`}>
+                <BookOpen size={16} aria-hidden="true" />
+              </button>
               <button type="button" className={settings.translationView === 'translated' && !translationSkipped ? styles.translationToggleActive : ''}
                 onClick={() => updateSettings({ translationEnabled: true, translationView: 'translated' })}
-                aria-pressed={settings.translationView === 'translated' && !translationSkipped}>
-                <Languages size={15} aria-hidden="true" /> {t('Translation')}
+                aria-pressed={settings.translationView === 'translated' && !translationSkipped}
+                aria-label={t('Translation')} title={`${t('Translation')} (T)`}>
+                <Languages size={16} aria-hidden="true" />
               </button>
             </div>
           )}
@@ -1386,15 +1414,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
           {error && <EmptyState message={error} />}
           <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
-          {translationRequested && (translationLoading || translationError || translationSkipped) && (
-            <div className={styles.translationStatus} role={translationError ? 'alert' : 'status'}
-              data-transitioning={translationTransitioning ? 'true' : 'false'}>
-              {translationLoading && (
-                <>
-                  <SpinnerCentered size={20} />
-                  <span>{t('Translation')}</span>
-                </>
-              )}
+          {translationRequested && translationLoading && (
+            <div className={styles.translationSpinner} role="status"
+              aria-label={t('Translation')} data-transitioning={translationTransitioning ? 'true' : 'false'}>
+              <Spinner size={38} />
+            </div>
+          )}
+          {translationRequested && (translationError || translationSkipped) && (
+            <div className={styles.translationStatus} role={translationError ? 'alert' : 'status'}>
               {translationSkipped && (
                 <span>{t('The book is already in the target language.')}</span>
               )}
