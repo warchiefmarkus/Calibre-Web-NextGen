@@ -53,7 +53,7 @@ type FoliateView = HTMLElement & {
   book?: {
     toc?: TocItem[];
     sections?: unknown[];
-    metadata?: { title?: unknown; author?: unknown; language?: string };
+    metadata?: { title?: unknown; author?: unknown; language?: string | string[] };
     dir?: string;
   };
   renderer?: FoliateRenderer;
@@ -127,20 +127,81 @@ function allowsWheelPageTurn(target: EventTarget | null): boolean {
 }
 
 const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre';
-const MAX_VISIBLE_TRANSLATION_CHARS = 24_000;
+const MAX_VISIBLE_TRANSLATION_CHARS = 8_000;
 const MAX_VISIBLE_TRANSLATION_BLOCKS = 80;
+const TRANSLATION_DEBOUNCE_MS = 500;
 
-function rectIntersectsViewport(rect: DOMRect, width: number, height: number): boolean {
+type TranslationViewport = {
+  frameRect: DOMRect;
+  viewportRect: { left: number; right: number; top: number; bottom: number };
+};
+
+const LANGUAGE_ALIASES: Record<string, string> = {
+  ua: 'uk', ukr: 'uk', ukrainian: 'uk',
+  eng: 'en', english: 'en',
+  rus: 'ru', russian: 'ru',
+  pol: 'pl', polish: 'pl',
+  deu: 'de', ger: 'de', german: 'de',
+  fra: 'fr', fre: 'fr', french: 'fr',
+};
+
+function normalizeLanguageCode(value: unknown): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') return '';
+  const normalized = raw.trim().toLowerCase().replace('_', '-');
+  if (!normalized) return '';
+  const primary = normalized.split('-')[0];
+  return LANGUAGE_ALIASES[normalized] ?? LANGUAGE_ALIASES[primary] ?? primary;
+}
+
+function translationViewport(renderer: FoliateRenderer, doc: Document): TranslationViewport | null {
+  const frame = doc.defaultView?.frameElement;
+  if (!(frame instanceof HTMLElement)) return null;
+  const rendererRect = renderer.getBoundingClientRect();
+  const frameRect = frame.getBoundingClientRect();
+  if (renderer.getAttribute('flow') !== 'paginated') {
+    return {
+      frameRect,
+      viewportRect: {
+        left: rendererRect.left, right: rendererRect.right,
+        top: rendererRect.top, bottom: rendererRect.bottom,
+      },
+    };
+  }
+
+  // Foliate lays an entire section out as one very wide iframe. The iframe's
+  // innerWidth is therefore the width of every column, not the visible page.
+  // Limit extraction to the centred current page/spread inside the renderer.
+  const pageWidth = Math.max(1, doc.documentElement.getBoundingClientRect().width);
+  const maxColumns = Math.max(1, Number(renderer.getAttribute('max-column-count') || 1));
+  const visibleWidth = Math.min(rendererRect.width, pageWidth * maxColumns);
+  const left = rendererRect.left + (rendererRect.width - visibleWidth) / 2;
+  return {
+    frameRect,
+    viewportRect: {
+      left,
+      right: left + visibleWidth,
+      top: rendererRect.top,
+      bottom: rendererRect.bottom,
+    },
+  };
+}
+
+function rectIntersectsViewport(rect: DOMRect, viewport: TranslationViewport): boolean {
+  const left = viewport.frameRect.left + rect.left;
+  const right = viewport.frameRect.left + rect.right;
+  const top = viewport.frameRect.top + rect.top;
+  const bottom = viewport.frameRect.top + rect.bottom;
   return rect.width > 0 && rect.height > 0
-    && rect.right > 0 && rect.bottom > 0
-    && rect.left < width && rect.top < height;
+    && right > viewport.viewportRect.left && left < viewport.viewportRect.right
+    && bottom > viewport.viewportRect.top && top < viewport.viewportRect.bottom;
 }
 
-function elementIntersectsViewport(element: Element, width: number, height: number): boolean {
-  return Array.from(element.getClientRects()).some((rect) => rectIntersectsViewport(rect, width, height));
+function elementIntersectsViewport(element: Element, viewport: TranslationViewport): boolean {
+  return Array.from(element.getClientRects()).some((rect) => rectIntersectsViewport(rect, viewport));
 }
 
-function visibleBlockText(element: Element, width: number, height: number): string {
+function visibleBlockText(element: Element, viewport: TranslationViewport): string {
   const doc = element.ownerDocument;
   const showText = doc.defaultView?.NodeFilter.SHOW_TEXT ?? 4;
   const walker = doc.createTreeWalker(element, showText);
@@ -155,7 +216,7 @@ function visibleBlockText(element: Element, width: number, height: number): stri
         const range = doc.createRange();
         range.setStart(node, start);
         range.setEnd(node, end);
-        if (Array.from(range.getClientRects()).some((rect) => rectIntersectsViewport(rect, width, height))) {
+        if (Array.from(range.getClientRects()).some((rect) => rectIntersectsViewport(rect, viewport))) {
           visible.push(match[0]);
         }
       }
@@ -166,34 +227,58 @@ function visibleBlockText(element: Element, width: number, height: number): stri
 }
 
 function extractVisiblePageBlocks(renderer?: FoliateRenderer): ReaderTranslationBlock[] {
-  const contents = renderer?.getContents?.() ?? [];
+  if (!renderer) return [];
+  const contents = renderer.getContents?.() ?? [];
   const blocks: ReaderTranslationBlock[] = [];
   let totalChars = 0;
-  for (const content of contents.sort((a, b) => a.index - b.index)) {
+  for (const content of [...contents].sort((a, b) => a.index - b.index)) {
     const doc = content.doc;
-    const width = doc.defaultView?.innerWidth || doc.documentElement.clientWidth || 1;
-    const height = doc.defaultView?.innerHeight || doc.documentElement.clientHeight || 1;
+    const viewport = translationViewport(renderer, doc);
+    if (!viewport) continue;
     const elements = Array.from(doc.body?.querySelectorAll(TRANSLATABLE_SELECTOR) ?? []);
     for (let index = 0; index < elements.length; index += 1) {
       if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) {
         return blocks;
       }
       const element = elements[index];
-      if (!elementIntersectsViewport(element, width, height)) continue;
-      // Prefer the innermost semantic block: a blockquote/li wrapping visible
-      // paragraphs would otherwise duplicate all of the same text.
+      if (!elementIntersectsViewport(element, viewport)) continue;
       if (Array.from(element.children).some((child) => child.matches(TRANSLATABLE_SELECTOR))) continue;
-      let text = visibleBlockText(element, width, height);
+      let text = visibleBlockText(element, viewport);
       if (!text) continue;
       const remaining = MAX_VISIBLE_TRANSLATION_CHARS - totalChars;
       if (text.length > remaining) text = text.slice(0, remaining).trimEnd();
       if (!text) return blocks;
-      const tag = element.tagName.toLowerCase();
-      blocks.push({ id: `d${content.index}-b${index}`, tag, text });
+      blocks.push({ id: `d${content.index}-b${index}`, tag: element.tagName.toLowerCase(), text });
       totalChars += text.length;
     }
   }
   return blocks;
+}
+
+function looksLikeUkrainian(blocks: ReaderTranslationBlock[]): boolean {
+  const text = blocks.map((block) => block.text).join(' ');
+  const cyrillic = text.match(/[А-Яа-яІіЇїЄєҐґЁёЫыЭэЪъ]/g)?.length ?? 0;
+  if (cyrillic < 40) return false;
+  const ukrainianLetters = text.match(/[ІіЇїЄєҐґ]/g)?.length ?? 0;
+  const russianExclusive = text.match(/[ЁёЫыЭэЪъ]/g)?.length ?? 0;
+  const words = text.toLowerCase().match(/[а-яіїєґ']+/g) ?? [];
+  const ukrainianWords = new Set(['і', 'та', 'що', 'це', 'як', 'для', 'який', 'яка', 'які', 'бути', 'від', 'після']);
+  const wordHits = words.filter((word) => ukrainianWords.has(word)).length;
+  return (ukrainianLetters >= 3 && ukrainianLetters >= russianExclusive * 2 + 1)
+    || (wordHits >= 4 && russianExclusive === 0);
+}
+
+function sourceAlreadyMatchesTarget(
+  settings: ReaderSettings,
+  bookLanguage: string,
+  blocks?: ReaderTranslationBlock[],
+): boolean {
+  const target = normalizeLanguageCode(settings.translationTargetLanguage);
+  const configuredSource = normalizeLanguageCode(settings.translationSourceLanguage);
+  if (!target) return false;
+  if (configuredSource && configuredSource !== 'auto') return configuredSource === target;
+  if (bookLanguage && bookLanguage === target) return true;
+  return target === 'uk' && !!blocks?.length && looksLikeUkrainian(blocks);
 }
 
 function translationPageKey(settings: ReaderSettings, blocks: ReaderTranslationBlock[]): string {
@@ -312,12 +397,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const wheelLockUntilRef = useRef(0);
   const wheelIdleTimerRef = useRef<number | null>(null);
   const translationAbortRef = useRef<AbortController | null>(null);
+  const translationInFlightKeyRef = useRef<string | null>(null);
   const translationCacheRef = useRef<Map<string, ReaderTranslationBlock[]>>(new Map());
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReaderPanel>(null);
   const [title, setTitle] = useState('');
+  const [bookLanguage, setBookLanguage] = useState('');
   const [toc, setToc] = useState<Array<TocItem & { depth: number }>>([]);
   const [sectionFractions, setSectionFractions] = useState<number[]>([]);
   const [location, setLocation] = useState<FoliateLocation>({ fraction: 0 });
@@ -335,6 +422,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translationRetry, setTranslationRetry] = useState(0);
   const [translationCached, setTranslationCached] = useState(false);
+  const [translationSkipped, setTranslationSkipped] = useState(false);
 
   useEffect(() => () => {
     if (wheelIdleTimerRef.current !== null) {
@@ -463,25 +551,51 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, [handleReaderWheel]);
 
   useEffect(() => {
-    translationAbortRef.current?.abort();
     if (!ready || !settings?.translationEnabled
         || settings.translationView !== 'translated'
         || !settings.translationProfileId) {
+      translationAbortRef.current?.abort();
+      translationAbortRef.current = null;
+      translationInFlightKeyRef.current = null;
       setTranslationLoading(false);
       setTranslationError(null);
+      setTranslationSkipped(false);
+      setTranslationBlocks([]);
       return;
     }
 
-    const controller = new AbortController();
-    translationAbortRef.current = controller;
+    if (sourceAlreadyMatchesTarget(settings, bookLanguage)) {
+      translationAbortRef.current?.abort();
+      translationAbortRef.current = null;
+      translationInFlightKeyRef.current = null;
+      setTranslationBlocks([]);
+      setTranslationLoading(false);
+      setTranslationError(null);
+      setTranslationSkipped(true);
+      return;
+    }
+
     const timer = window.setTimeout(async () => {
       const blocks = extractVisiblePageBlocks(viewRef.current?.renderer);
       if (!blocks.length) {
         setTranslationBlocks([]);
         setTranslationLoading(false);
+        setTranslationSkipped(false);
         setTranslationError(t('No visible text was found on this page.'));
         return;
       }
+      if (sourceAlreadyMatchesTarget(settings, bookLanguage, blocks)) {
+        translationAbortRef.current?.abort();
+        translationAbortRef.current = null;
+        translationInFlightKeyRef.current = null;
+        setTranslationBlocks([]);
+        setTranslationLoading(false);
+        setTranslationError(null);
+        setTranslationSkipped(true);
+        return;
+      }
+
+      setTranslationSkipped(false);
       const key = translationPageKey(settings, blocks);
       const local = translationCacheRef.current.get(key);
       if (local) {
@@ -491,21 +605,34 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTranslationError(null);
         return;
       }
+      if (translationInFlightKeyRef.current === key) return;
 
+      translationAbortRef.current?.abort();
+      const controller = new AbortController();
+      translationAbortRef.current = controller;
+      translationInFlightKeyRef.current = key;
       setTranslationBlocks([]);
       setTranslationLoading(true);
       setTranslationCached(false);
       setTranslationError(null);
       try {
+        const configuredSource = normalizeLanguageCode(settings.translationSourceLanguage);
         const response = await translateReaderPage(id, {
           profile_id: settings.translationProfileId,
           format: fmt,
-          source_language: settings.translationSourceLanguage,
+          source_language: configuredSource === 'auto' || !configuredSource
+            ? bookLanguage || 'auto'
+            : configuredSource,
           target_language: settings.translationTargetLanguage,
           prompt: settings.translationPrompt,
           blocks,
         }, controller.signal);
         if (controller.signal.aborted) return;
+        if (response.skipped) {
+          setTranslationSkipped(true);
+          setTranslationBlocks([]);
+          return;
+        }
         translationCacheRef.current.set(key, response.blocks);
         if (translationCacheRef.current.size > 100) {
           const oldest = translationCacheRef.current.keys().next().value as string | undefined;
@@ -517,16 +644,20 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         if (controller.signal.aborted) return;
         setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
       } finally {
+        if (translationInFlightKeyRef.current === key) translationInFlightKeyRef.current = null;
+        if (translationAbortRef.current === controller) translationAbortRef.current = null;
         if (!controller.signal.aborted) setTranslationLoading(false);
       }
-    }, 120);
+    }, TRANSLATION_DEBOUNCE_MS);
 
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-      if (translationAbortRef.current === controller) translationAbortRef.current = null;
-    };
-  }, [fmt, id, location.cfi, location.fraction, ready, settings, t, translationRetry]);
+    // Relocate can fire several times while Foliate settles the same page.
+    // Cancel only the pending debounce here. An in-flight request is kept until
+    // the next stable page signature is known; identical signatures are deduped.
+    return () => window.clearTimeout(timer);
+  }, [bookLanguage, fmt, id, location.cfi, location.fraction, ready,
+    settings?.translationEnabled, settings?.translationProfileId,
+    settings?.translationPrompt, settings?.translationSourceLanguage,
+    settings?.translationTargetLanguage, settings?.translationView, t, translationRetry]);
 
   useEffect(() => {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
@@ -538,6 +669,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     host.replaceChildren(view);
     setReady(false);
     setError(null);
+    setBookLanguage('');
     const initialSettings = settingsQuery.data.reader;
     settingsRef.current = initialSettings;
     setSettings(initialSettings);
@@ -569,6 +701,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     };
     const onLoad = (event: Event) => {
       const detail = (event as CustomEvent<{ doc: Document; index: number }>).detail;
+      setBookLanguage((current) => current || normalizeLanguageCode(detail.doc.documentElement.lang));
       attachSelection(detail.doc, detail.index);
     };
     const onDrawAnnotation = (event: Event) => {
@@ -607,6 +740,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         await view.open(new File([data], fileName(formatName), { type: MIME[formatName] ?? '' }));
         if (cancelled) return;
         applySettings(initialSettings);
+        setBookLanguage((current) => normalizeLanguageCode(view.book?.metadata?.language) || current);
         setTitle(formatLanguageMap(view.book?.metadata?.title) || bookQuery.data?.title || t('Untitled'));
         setToc(flattenToc(view.book?.toc ?? []));
         setSectionFractions(view.getSectionFractions());
@@ -791,9 +925,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
   const progress = Math.max(0, Math.min(1, location.fraction ?? 0));
   const percent = Math.round(progress * 100);
-  const translationVisible = !!settings?.translationEnabled
+  const translationRequested = !!settings?.translationEnabled
     && settings.translationView === 'translated'
     && !!settings.translationProfileId;
+  const translationOverlayVisible = translationRequested
+    && !translationSkipped && !translationLoading && !translationError
+    && translationBlocks.length > 0;
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
   const loading = bookQuery.isLoading || settingsQuery.isLoading || positionQuery.isLoading;
 
@@ -837,12 +974,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           </button>
           {settings?.translationProfileId ? (
             <div className={styles.translationToggle} role="group" aria-label={t('Page language view')}>
-              <button type="button" className={settings.translationView === 'original' ? styles.translationToggleActive : ''}
+              <button type="button" className={settings.translationView === 'original' || translationSkipped ? styles.translationToggleActive : ''}
                 onClick={() => updateSettings({ translationView: 'original' })}
-                aria-pressed={settings.translationView === 'original'}>{t('Original')}</button>
-              <button type="button" className={settings.translationView === 'translated' ? styles.translationToggleActive : ''}
+                aria-pressed={settings.translationView === 'original' || translationSkipped}>{t('Original')}</button>
+              <button type="button" className={settings.translationView === 'translated' && !translationSkipped ? styles.translationToggleActive : ''}
                 onClick={() => updateSettings({ translationEnabled: true, translationView: 'translated' })}
-                aria-pressed={settings.translationView === 'translated'}>
+                aria-pressed={settings.translationView === 'translated' && !translationSkipped}>
                 <Languages size={15} aria-hidden="true" /> {t('Translation')}
               </button>
             </div>
@@ -899,7 +1036,28 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
           {error && <EmptyState message={error} />}
           <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
-          {translationVisible && settings && (
+          {translationRequested && (translationLoading || translationError || translationSkipped) && (
+            <div className={styles.translationStatus} role={translationError ? 'alert' : 'status'}>
+              {translationLoading && (
+                <>
+                  <SpinnerCentered size={20} />
+                  <span>{t('Translating the current page…')}</span>
+                </>
+              )}
+              {translationSkipped && (
+                <span>{t('The book is already in the target language.')}</span>
+              )}
+              {translationError && (
+                <>
+                  <span>{translationError}</span>
+                  <button type="button" onClick={() => setTranslationRetry((value) => value + 1)}>
+                    {t('Retry')}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {translationOverlayVisible && settings && (
             <div
               className={styles.translationOverlay}
               data-reader-translation-overlay
@@ -926,21 +1084,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
                   <span><Languages size={15} aria-hidden="true" /> {t('Translation')}</span>
                   {translationCached && <span>{t('Cached')}</span>}
                 </div>
-                {translationLoading && (
-                  <div className={styles.translationLoading}>
-                    <SpinnerCentered size={36} />
-                    <span>{t('Translating the current page…')}</span>
-                  </div>
-                )}
-                {translationError && (
-                  <div className={styles.translationFailure} role="alert">
-                    <p>{translationError}</p>
-                    <button type="button" onClick={() => setTranslationRetry((value) => value + 1)}>
-                      {t('Retry')}
-                    </button>
-                  </div>
-                )}
-                {!translationLoading && !translationError && translationBlocks.map((block) =>
+                {translationBlocks.map((block) =>
                   createElement(block.tag, { key: block.id, className: styles.translationBlock }, block.text),
                 )}
               </div>

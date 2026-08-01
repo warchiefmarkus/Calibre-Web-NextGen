@@ -927,6 +927,7 @@ export interface ReaderTranslationBlock {
 export interface ReaderTranslationResponse {
   blocks: ReaderTranslationBlock[];
   cached: boolean;
+  skipped?: boolean;
   profile_id: string;
   model: string;
 }

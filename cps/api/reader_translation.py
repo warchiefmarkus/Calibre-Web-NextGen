@@ -7,6 +7,8 @@ import json
 import os
 import uuid
 
+from gevent.lock import Semaphore
+
 from flask import jsonify, request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
@@ -33,8 +35,37 @@ log = logger.create()
 _ALLOWED_BLOCK_TAGS = {"p", "li", "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6"}
 _MAX_BLOCKS = 80
 _MAX_BLOCK_CHARS = 8000
-_MAX_PAGE_CHARS = 24000
+_MAX_PAGE_CHARS = 8000
 _MAX_PROMPT_CHARS = 6000
+_TRANSLATION_LOCKS = {}
+_TRANSLATION_LOCKS_GUARD = Semaphore(1)
+_TRANSLATION_RUN_SLOTS = Semaphore(2)
+_LANGUAGE_ALIASES = {
+    "ua": "uk", "ukr": "uk", "eng": "en", "rus": "ru",
+    "pol": "pl", "deu": "de", "ger": "de", "fra": "fr", "fre": "fr",
+}
+
+
+def _language_code(value):
+    raw = str(value or "").strip().lower().replace("_", "-")
+    if not raw:
+        return ""
+    primary = raw.split("-", 1)[0]
+    return _LANGUAGE_ALIASES.get(raw, _LANGUAGE_ALIASES.get(primary, primary))
+
+
+def _translation_lock(request_hash):
+    with _TRANSLATION_LOCKS_GUARD:
+        lock = _TRANSLATION_LOCKS.get(request_hash)
+        if lock is None:
+            lock = Semaphore(1)
+            _TRANSLATION_LOCKS[request_hash] = lock
+            if len(_TRANSLATION_LOCKS) > 2048:
+                for key, candidate in list(_TRANSLATION_LOCKS.items()):
+                    if key != request_hash and not candidate.locked():
+                        _TRANSLATION_LOCKS.pop(key, None)
+                        break
+        return lock
 
 
 def _err(code, message, status):
@@ -373,53 +404,63 @@ def translate_reader_page(book_id):
     except ReaderTranslationError as exc:
         return _err(exc.code, str(exc), exc.status)
 
-    cached = ub.session.query(ub.ReaderTranslationCache).filter(
-        ub.ReaderTranslationCache.user_id == int(current_user.id),
-        ub.ReaderTranslationCache.request_hash == request_hash,
-    ).first()
-    if cached is not None:
+    if (_language_code(source_language) not in {"", "auto"}
+            and _language_code(source_language) == _language_code(target_language)):
+        return jsonify({
+            "blocks": blocks,
+            "cached": False,
+            "skipped": True,
+            "profile_id": profile.profile_id,
+            "model": profile.model,
+        })
+
+    with _translation_lock(request_hash):
+        cached = ub.session.query(ub.ReaderTranslationCache).filter(
+            ub.ReaderTranslationCache.user_id == int(current_user.id),
+            ub.ReaderTranslationCache.request_hash == request_hash,
+        ).first()
+        if cached is not None:
+            try:
+                cached_blocks = json.loads(cached.response_json)
+            except (TypeError, ValueError):
+                cached_blocks = None
+            if isinstance(cached_blocks, list):
+                return jsonify({
+                    "blocks": cached_blocks,
+                    "cached": True,
+                    "profile_id": profile.profile_id,
+                    "model": profile.model,
+                })
+
         try:
-            cached_blocks = json.loads(cached.response_json)
-        except (TypeError, ValueError):
-            cached_blocks = None
-        if isinstance(cached_blocks, list):
-            return jsonify({
-                "blocks": cached_blocks,
-                "cached": True,
-                "profile_id": profile.profile_id,
-                "model": profile.model,
-            })
+            with _TRANSLATION_RUN_SLOTS:
+                translated = translate_page(
+                    profile,
+                    source_language=source_language,
+                    target_language=target_language,
+                    prompt=prompt,
+                    blocks=blocks,
+                )
+        except ReaderTranslationError as exc:
+            return _err(exc.code, str(exc), exc.status)
 
-    try:
-        translated = translate_page(
-            profile,
-            source_language=source_language,
-            target_language=target_language,
-            prompt=prompt,
-            blocks=blocks,
+        cache_row = ub.ReaderTranslationCache(
+            user_id=int(current_user.id),
+            book_id=book_id,
+            format=fmt,
+            profile_id=profile.profile_id,
+            request_hash=request_hash,
+            response_json=json.dumps(translated, ensure_ascii=False),
+            source_chars=sum(len(block["text"]) for block in blocks),
         )
-    except ReaderTranslationError as exc:
-        return _err(exc.code, str(exc), exc.status)
-
-    cache_row = ub.ReaderTranslationCache(
-        user_id=int(current_user.id),
-        book_id=book_id,
-        format=fmt,
-        profile_id=profile.profile_id,
-        request_hash=request_hash,
-        response_json=json.dumps(translated, ensure_ascii=False),
-        source_chars=sum(len(block["text"]) for block in blocks),
-    )
-    ub.session.add(cache_row)
-    try:
-        ub.session.commit()
-    except IntegrityError:
-        # A second tab translated the same page concurrently. The response we
-        # already have is valid; discard only the duplicate cache INSERT.
-        ub.session.rollback()
-    except Exception:
-        ub.session.rollback()
-        log.exception("Could not cache reader translation")
+        ub.session.add(cache_row)
+        try:
+            ub.session.commit()
+        except IntegrityError:
+            ub.session.rollback()
+        except Exception:
+            ub.session.rollback()
+            log.exception("Could not cache reader translation")
 
     return jsonify({
         "blocks": translated,

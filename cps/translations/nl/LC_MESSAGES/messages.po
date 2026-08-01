@@ -13223,3 +13223,7 @@ msgstr "OpenCode Go"
 #: cps/spa_strings.py
 msgid "NVIDIA NIM"
 msgstr "NVIDIA NIM"
+
+#: cps/spa_strings.py
+msgid "The book is already in the target language."
+msgstr "Het boek is al in de doeltaal."

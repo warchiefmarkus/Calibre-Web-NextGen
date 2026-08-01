@@ -150,3 +150,42 @@ def test_translate_page_rejects_duplicate_block_ids_before_provider_call():
     assert status == 400
     assert json.loads(response.get_data())["error"]["code"] == "invalid_blocks"
     provider.assert_not_called()
+
+
+def test_translate_page_skips_provider_when_source_matches_target():
+    from cps.api import reader_translation as mod
+
+    request_body = {
+        "profile_id": "profile-1", "format": "fb2",
+        "source_language": "uk-UA", "target_language": "uk", "prompt": "",
+        "blocks": [{"id": "a", "tag": "p", "text": "Український текст сторінки."}],
+    }
+    with _ctx("/api/v1/books/5/translation", method="POST", body=request_body):
+        with patch.object(mod, "current_user", _user()), \
+             patch.object(mod, "_get_profile", return_value=_profile()), _visible(mod), \
+             patch.object(mod, "translate_page") as provider:
+            response = inspect.unwrap(mod.translate_reader_page)(5)
+    payload = json.loads(response.get_data())
+    assert payload["skipped"] is True
+    assert payload["blocks"] == request_body["blocks"]
+    provider.assert_not_called()
+
+
+def test_translate_page_rejects_more_than_one_visible_page_of_text():
+    from cps.api import reader_translation as mod
+
+    request_body = {
+        "profile_id": "profile-1", "target_language": "uk",
+        "blocks": [
+            {"id": "a", "tag": "p", "text": "x" * 4001},
+            {"id": "b", "tag": "p", "text": "y" * 4001},
+        ],
+    }
+    with _ctx("/api/v1/books/5/translation", method="POST", body=request_body):
+        with patch.object(mod, "current_user", _user()), \
+             patch.object(mod, "_get_profile", return_value=_profile()), _visible(mod), \
+             patch.object(mod, "translate_page") as provider:
+            response, status = inspect.unwrap(mod.translate_reader_page)(5)
+    assert status == 413
+    assert json.loads(response.get_data())["error"]["code"] == "page_too_large"
+    provider.assert_not_called()
