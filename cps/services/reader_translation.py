@@ -19,6 +19,7 @@ import requests
 from cryptography.fernet import Fernet, InvalidToken
 
 from .. import cli_param, config_sql, cw_advocate, logger
+from . import parallel
 from ..cw_advocate.exceptions import UnacceptableAddressException
 
 log = logger.create()
@@ -181,7 +182,8 @@ def _is_trusted_opencode_endpoint(url: str) -> bool:
 
 def _request(method: str, url: str, **kwargs: Any) -> requests.Response:
     kwargs.setdefault("allow_redirects", True)
-    try:
+
+    def _perform_request() -> requests.Response:
         if _is_trusted_opencode_endpoint(url):
             # Advocate currently pins opencode.ai to its first AAAA result on
             # hosts without a usable IPv6 route, producing EAFNOSUPPORT before
@@ -193,6 +195,14 @@ def _request(method: str, url: str, **kwargs: Any) -> requests.Response:
         if _allow_private_endpoints():
             return requests.request(method, url, **kwargs)
         return cw_advocate.request(method, url, **kwargs)
+
+    try:
+        # The application deliberately does not monkey-patch sockets. A direct
+        # requests/cw_advocate call from a Gevent request greenlet blocks the
+        # single hub thread and freezes every endpoint until the LLM returns.
+        # run_blocking executes the real socket wait on the shared bounded
+        # native thread pool while this greenlet waits cooperatively.
+        return parallel.run_blocking(_perform_request)
     except UnacceptableAddressException as exc:
         raise ReaderTranslationError(
             "This LLM endpoint resolves to a private or local address. An administrator must explicitly allow private translation endpoints.",

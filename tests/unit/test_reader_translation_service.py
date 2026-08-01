@@ -304,3 +304,34 @@ def test_incomplete_long_single_block_is_split_and_reassembled(monkeypatch):
     assert result[0]["tag"] == "p"
     assert result[0]["text"].count("[") >= 2
     assert "__cwpart" not in result[0]["id"]
+
+
+def test_provider_http_is_offloaded_from_the_gevent_request_thread(monkeypatch):
+    from cps.services import reader_translation as service
+
+    class Response:
+        status_code = 200
+        ok = True
+        content = b'{}'
+        text = '{}'
+
+    calls = []
+
+    def fake_http(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return Response()
+
+    def fake_run_blocking(fn):
+        calls.append(('offload', None, None))
+        return fn()
+
+    monkeypatch.setattr(service, '_is_trusted_opencode_endpoint', lambda _url: True)
+    monkeypatch.setattr(service.requests, 'request', fake_http)
+    monkeypatch.setattr(service.parallel, 'run_blocking', fake_run_blocking)
+
+    response = service._request('GET', 'https://opencode.ai/zen/v1/models', timeout=10)
+
+    assert response.status_code == 200
+    assert calls[0][0] == 'offload'
+    assert calls[1][0:2] == ('GET', 'https://opencode.ai/zen/v1/models')
+    assert calls[1][2]['allow_redirects'] is False
