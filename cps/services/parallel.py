@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import dataclasses
+import threading
 import time
 from typing import Any, Callable, Iterable, Iterator, Optional, Tuple
 
@@ -114,6 +115,9 @@ def fan_out(
         yield from _fan_out_stdlib(jobs, workers, fanout_started)
 
 
+_FAN_OUT_WORKER = threading.local()
+
+
 def run_blocking(fn: Callable[[], Any]) -> Any:
     """Run ONE blocking callable without stalling the gevent hub.
 
@@ -149,6 +153,14 @@ def run_blocking(fn: Callable[[], Any]) -> Any:
         # the thread hop would only add latency.
         return fn()
 
+    if getattr(_FAN_OUT_WORKER, "active", False):
+        # fan_out already put us on a real OS worker thread. Re-entering a
+        # gevent ThreadPool from one of its workers raises InvalidThreadUseError
+        # (and, on the first call after process start, could accidentally create
+        # the shared pool on the wrong hub). Blocking directly here is correct:
+        # this thread is not the request hub.
+        return fn()
+
     pool = _offload_pool()
     if pool is None:
         # Already off the hub's thread — e.g. a provider reached through
@@ -178,7 +190,6 @@ def _offload_pool():
     which is correct there: off the hub's thread nothing is being frozen.
     """
     global _OFFLOAD_POOL, _OFFLOAD_POOL_THREAD
-    import threading
 
     if _OFFLOAD_POOL is None:
         _OFFLOAD_POOL = _GeventThreadPool(_MAX_OFFLOAD_WORKERS)
@@ -191,6 +202,8 @@ def _timed(fn, fanout_started):
     the job returns — see FanOutResult.elapsed_ms for why the consumer's
     clock is not good enough."""
     def _run():
+        previous = getattr(_FAN_OUT_WORKER, "active", False)
+        _FAN_OUT_WORKER.active = True
         try:
             return fn(), _elapsed_ms(fanout_started)
         except BaseException as exc:
@@ -198,6 +211,8 @@ def _timed(fn, fanout_started):
             # duration for failed providers too.
             exc._fan_out_elapsed_ms = _elapsed_ms(fanout_started)
             raise
+        finally:
+            _FAN_OUT_WORKER.active = previous
     return _run
 
 

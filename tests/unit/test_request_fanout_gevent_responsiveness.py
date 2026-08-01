@@ -477,3 +477,25 @@ class TestRunBlockingUsesOneBoundedPool:
         t.start()
         t.join()
         assert box["value"] == "ran"
+
+
+def test_run_blocking_inside_first_fan_out_worker_does_not_create_nested_pool(monkeypatch):
+    """Reader translation fans batches out, and each batch performs blocking
+    HTTP through run_blocking. On the first translation after process start the
+    shared offload pool is still unset; a worker must not create/drive it from
+    the worker's own hub (gevent InvalidThreadUseError)."""
+    monkeypatch.setattr(parallel, "_OFFLOAD_POOL", None)
+    monkeypatch.setattr(parallel, "_OFFLOAD_POOL_THREAD", None)
+
+    outcomes = dict(parallel.fan_out([
+        ("a", lambda: parallel.run_blocking(lambda: "translated-a")),
+        ("b", lambda: parallel.run_blocking(lambda: "translated-b")),
+    ], max_workers=2))
+
+    assert outcomes["a"].exception is None
+    assert outcomes["a"].value == "translated-a"
+    assert outcomes["b"].exception is None
+    assert outcomes["b"].value == "translated-b"
+    assert parallel._OFFLOAD_POOL is None, (
+        "fan_out worker created the shared run_blocking pool on its own hub"
+    )
