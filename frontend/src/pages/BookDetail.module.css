@@ -244,6 +244,94 @@
   margin: var(--sp-2) 0 0;
 }
 
+/* External rating aggregates are intentionally separate by source: ratings
+   from different communities are not mathematically comparable. */
+.externalRatings {
+  max-width: 720px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+}
+
+.externalRatingsHeader,
+.externalRatingSource {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.externalRatingsHeader { color: var(--text); }
+
+.externalRatingsRefresh {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.externalRatingsRefresh:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.externalRatingsRefresh:disabled { opacity: .55; cursor: default; }
+
+.externalRatingsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.externalRatingCard {
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.externalRatingSource > a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent-text);
+  font-weight: var(--fw-semi);
+  text-decoration: none;
+}
+.externalRatingSource > a:hover { text-decoration: underline; }
+
+.externalRatingScore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: #d99000;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-semi);
+}
+
+.externalRatingStats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.externalRatingsStatus,
+.externalRatingsFootnote,
+.externalRatingsError {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-xs);
+}
+.externalRatingsStatus { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-muted); }
+.externalRatingsFootnote { color: var(--text-faint); }
+.externalRatingsError { color: var(--danger); }
+
 /* Sync-driven "currently reading" marker (fork #634) — an accent-tinted inline
    pill, distinct from the read/unread toggle. */
 .currentlyReading {

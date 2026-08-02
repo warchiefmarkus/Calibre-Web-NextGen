@@ -13367,3 +13367,43 @@ msgstr "Time-out, s"
 #: cps/spa_strings.py
 msgid "To"
 msgstr "Naar"
+
+#: cps/spa_strings.py
+msgid "Could not load external ratings."
+msgstr "Externe beoordelingen konden niet worden geladen."
+
+#: cps/spa_strings.py
+msgid "External ratings"
+msgstr "Externe beoordelingen"
+
+#: cps/spa_strings.py
+msgid "Loading ratings…"
+msgstr "Beoordelingen laden…"
+
+#: cps/spa_strings.py
+msgid "No external ratings found."
+msgstr "Geen externe beoordelingen gevonden."
+
+#: cps/spa_strings.py
+msgid "Ratings: {count}"
+msgstr "Beoordelingen: {count}"
+
+#: cps/spa_strings.py
+msgid "Readers: {count}"
+msgstr "Lezers: {count}"
+
+#: cps/spa_strings.py
+msgid "Refresh ratings"
+msgstr "Beoordelingen vernieuwen"
+
+#: cps/spa_strings.py
+msgid "Reviews: {count}"
+msgstr "Recensies: {count}"
+
+#: cps/spa_strings.py
+msgid "Updated {date}"
+msgstr "Bijgewerkt op {date}"
+
+#: cps/spa_strings.py
+msgid "{count} sources unavailable"
+msgstr "{count} bronnen niet beschikbaar"

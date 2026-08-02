@@ -12428,3 +12428,43 @@ msgstr "Тайм-аут, с"
 
 msgid "To"
 msgstr "На"
+
+#: cps/spa_strings.py
+msgid "Could not load external ratings."
+msgstr "Не вдалося завантажити зовнішні оцінки."
+
+#: cps/spa_strings.py
+msgid "External ratings"
+msgstr "Зовнішні оцінки"
+
+#: cps/spa_strings.py
+msgid "Loading ratings…"
+msgstr "Завантаження оцінок…"
+
+#: cps/spa_strings.py
+msgid "No external ratings found."
+msgstr "Зовнішніх оцінок не знайдено."
+
+#: cps/spa_strings.py
+msgid "Ratings: {count}"
+msgstr "Оцінок: {count}"
+
+#: cps/spa_strings.py
+msgid "Readers: {count}"
+msgstr "Читачів: {count}"
+
+#: cps/spa_strings.py
+msgid "Refresh ratings"
+msgstr "Оновити оцінки"
+
+#: cps/spa_strings.py
+msgid "Reviews: {count}"
+msgstr "Відгуків: {count}"
+
+#: cps/spa_strings.py
+msgid "Updated {date}"
+msgstr "Оновлено {date}"
+
+#: cps/spa_strings.py
+msgid "{count} sources unavailable"
+msgstr "Недоступних джерел: {count}"

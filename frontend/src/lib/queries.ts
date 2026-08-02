@@ -11,6 +11,7 @@ import type {
   SearchOptions, AdvancedSearchParams, AdvSearchResult, Account, ProfileUpdate,
   BookMetadata, MetadataUpdate, UploadResult, AdminUser, AboutInfo, TaskItem, AuthConfig,
   RagOcrConfig, RagSearchRequest, RagSearchResponse, RagStatus, BookOcrResponse,
+  ExternalBookRatingsResponse,
 } from './api';
 
 /** Entity kinds the catalog can be filtered by. Singular here; the browse-list
@@ -259,6 +260,31 @@ export function useBook(id: string | number) {
     retry: (failureCount, error) =>
       !(error instanceof ApiError && (error.status === 401 || error.status === 404))
       && failureCount < 3,
+  });
+}
+
+export function useExternalBookRatings(id: string | number) {
+  return useQuery<ExternalBookRatingsResponse>({
+    queryKey: ['external-book-ratings', String(id)],
+    queryFn: () => apiGet<ExternalBookRatingsResponse>(
+      `/api/v1/books/${id}/external-ratings`,
+    ),
+    staleTime: 60 * 60 * 1000,
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && (error.status === 401 || error.status === 404))
+      && failureCount < 2,
+  });
+}
+
+export function useRefreshExternalBookRatings(id: string | number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<ExternalBookRatingsResponse>(
+      `/api/v1/books/${id}/external-ratings/refresh`,
+    ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['external-book-ratings', String(id)], data);
+    },
   });
 }
 

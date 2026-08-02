@@ -13830,3 +13830,43 @@ msgstr "Délai d’attente, s"
 #: cps/spa_strings.py
 msgid "To"
 msgstr "Vers"
+
+#: cps/spa_strings.py
+msgid "Could not load external ratings."
+msgstr "Impossible de charger les évaluations externes."
+
+#: cps/spa_strings.py
+msgid "External ratings"
+msgstr "Évaluations externes"
+
+#: cps/spa_strings.py
+msgid "Loading ratings…"
+msgstr "Chargement des évaluations…"
+
+#: cps/spa_strings.py
+msgid "No external ratings found."
+msgstr "Aucune évaluation externe trouvée."
+
+#: cps/spa_strings.py
+msgid "Ratings: {count}"
+msgstr "Évaluations : {count}"
+
+#: cps/spa_strings.py
+msgid "Readers: {count}"
+msgstr "Lecteurs : {count}"
+
+#: cps/spa_strings.py
+msgid "Refresh ratings"
+msgstr "Actualiser les évaluations"
+
+#: cps/spa_strings.py
+msgid "Reviews: {count}"
+msgstr "Avis : {count}"
+
+#: cps/spa_strings.py
+msgid "Updated {date}"
+msgstr "Mis à jour le {date}"
+
+#: cps/spa_strings.py
+msgid "{count} sources unavailable"
+msgstr "{count} sources indisponibles"

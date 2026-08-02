@@ -502,6 +502,24 @@ Enable the server-wide integration once under Admin → Edit Basic Configuration
 
 Accepted true values are `true`, `1`, `yes`, and `on`; false values are `false`, `0`, `no`, and `off` (case-insensitive). When the variable is set, the UI shows the effective state but leaves changes to the deployment configuration.
 
+### External book ratings
+
+Book detail pages can load cached aggregate ratings and popularity counters from
+Hardcover, Google Books, and Open Library. Sources are displayed separately;
+the application does not average ratings from different communities.
+
+Hardcover uses the token configured above. Open Library needs no key. Google
+Books supports anonymous requests, but deployments that encounter quota or
+rate-limit responses should set an API key:
+
+```yaml
+- GOOGLE_BOOKS_API_KEY=your-google-books-api-key
+```
+
+Successful results are cached for seven days. A refresh button on the book page
+forces a new lookup, and provider failures do not prevent results from the
+other sources from being shown.
+
 ### KOReader sync
 
 CWA has built-in KOReader progress sync; no separate kosync server is needed.

@@ -140,6 +140,30 @@ export interface CustomColumn {
   values: CustomColumnValue[];
 }
 
+export interface ExternalBookRating {
+  source: 'hardcover' | 'google_books' | 'open_library';
+  source_id: string | null;
+  source_url: string | null;
+  matched_title: string | null;
+  matched_authors: string[];
+  matched_by: string | null;
+  match_confidence: number | null;
+  rating: number | null;
+  ratings_count: number | null;
+  reviews_count: number | null;
+  popularity_count: number | null;
+  ratings_distribution: Record<string, number> | null;
+  fetched_at: string | null;
+}
+
+export interface ExternalBookRatingsResponse {
+  items: ExternalBookRating[];
+  errors: { source: string; status: string; message: string }[];
+  warnings: { source: string; message: string }[];
+  cached: boolean;
+  fetched_at: string | null;
+}
+
 export interface BookDetail {
   id: number;
   title: string;

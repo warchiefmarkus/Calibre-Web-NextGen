@@ -12302,3 +12302,43 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Page translation timed out."
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not load external ratings."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "External ratings"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Loading ratings…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No external ratings found."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Ratings: {count}"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Readers: {count}"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Refresh ratings"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Reviews: {count}"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Updated {date}"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "{count} sources unavailable"
+msgstr ""

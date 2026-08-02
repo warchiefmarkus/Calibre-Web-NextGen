@@ -181,6 +181,28 @@ def migrate_user_book_data(from_book_id, to_book_id, session=None):
                 row.book_id = to_book_id
     session.flush()
 
+    # External rating aggregates are shared book metadata (not per-user). On a
+    # merge, keep the freshest row for each source and discard the duplicate.
+    rating_fields = (
+        "lookup_hash", "status", "source_id", "source_url", "matched_title",
+        "matched_authors", "matched_by", "match_confidence", "rating",
+        "ratings_count", "reviews_count", "popularity_count",
+        "ratings_distribution", "error", "fetched_at",
+    )
+    for row in session.query(ub.ExternalBookRatingCache).filter(
+            ub.ExternalBookRatingCache.book_id == from_book_id).all():
+        clash = session.query(ub.ExternalBookRatingCache).filter(
+            ub.ExternalBookRatingCache.book_id == to_book_id,
+            ub.ExternalBookRatingCache.source == row.source).first()
+        if clash is None:
+            row.book_id = to_book_id
+            continue
+        if _newer(row.fetched_at, clash.fetched_at):
+            for field in rating_fields:
+                setattr(clash, field, getattr(row, field))
+        session.delete(row)
+    session.flush()
+
     # Annotation backup snapshots index: re-point so retention keeps
     # managing them; the gzip files referenced by file_path stay valid.
     session.query(ub.KoboAnnotationBackup).filter(
@@ -243,14 +265,19 @@ def purge_user_book_data(book_id=None, user_id=None, session=None,
                   ub.BookCoverPreview):
         _scoped(session.query(model), model).delete(synchronize_session=False)
 
-    # BookShelf has no user_id — shelf membership is shelf-scoped, and the
-    # user-delete path removes the user's shelves (with their links)
-    # separately. Only book-scoped (and full) purges touch it.
+    # BookShelf and external rating aggregates have no user_id. Shelf
+    # membership is shelf-scoped; ratings are shared book metadata. Only
+    # book-scoped (and full database-swap) purges touch either table.
     if user_id is None:
         query = session.query(ub.BookShelf)
         if book_id is not None:
             query = query.filter(ub.BookShelf.book_id == book_id)
         query.delete(synchronize_session=False)
+
+        ratings = session.query(ub.ExternalBookRatingCache)
+        if book_id is not None:
+            ratings = ratings.filter(ub.ExternalBookRatingCache.book_id == book_id)
+        ratings.delete(synchronize_session=False)
 
     if remove_backup_files:
         backups = _scoped(session.query(ub.KoboAnnotationBackup),

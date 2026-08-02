@@ -83,6 +83,7 @@ def health():
 from . import auth     # noqa: E402,F401
 from . import i18n     # noqa: E402,F401
 from . import books    # noqa: E402,F401
+from . import external_ratings  # noqa: E402,F401
 from . import actions  # noqa: E402,F401
 from . import browse   # noqa: E402,F401
 from . import shelves  # noqa: E402,F401

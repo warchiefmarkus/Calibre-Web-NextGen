@@ -891,6 +891,42 @@ class BookOriginalFilename(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class ExternalBookRatingCache(Base):
+    """Cached third-party rating/popularity aggregates for a Calibre book.
+
+    ``book_id`` points into metadata.db, so it cannot be a SQL foreign key.
+    Rows are shared across users and invalidated when the lookup identity
+    (ISBN/title/authors/provider identifiers) changes.
+    """
+    __tablename__ = "external_book_rating_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    book_id = Column(Integer, nullable=False, index=True)
+    source = Column(String(32), nullable=False)
+    lookup_hash = Column(String(64), nullable=False)
+    status = Column(String(24), nullable=False, default="ok")
+    source_id = Column(String(255), nullable=True)
+    source_url = Column(String(2048), nullable=True)
+    matched_title = Column(String(1024), nullable=True)
+    matched_authors = Column(JSON, nullable=False, default=list)
+    matched_by = Column(String(64), nullable=True)
+    match_confidence = Column(Float, nullable=True)
+    rating = Column(Float, nullable=True)
+    ratings_count = Column(Integer, nullable=True)
+    reviews_count = Column(Integer, nullable=True)
+    popularity_count = Column(Integer, nullable=True)
+    ratings_distribution = Column(JSON, nullable=True)
+    error = Column(String(512), nullable=True)
+    fetched_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("book_id", "source",
+                         name="uq_external_book_rating_book_source"),
+        Index("ix_external_book_rating_book_status", "book_id", "status"),
+    )
+
+
 class KoboDeletedBook(Base):
     """Tombstone table for books deleted from CW that need to be reported
     to Kobo devices as DeletedEntitlement on next sync.
@@ -1394,6 +1430,8 @@ def add_missing_tables(engine, _session):
         OpdsShelfExposure.__table__.create(bind=engine, checkfirst=True)
     if not engine.dialect.has_table(engine.connect(), "book_original_filename"):
         BookOriginalFilename.__table__.create(bind=engine, checkfirst=True)
+    if not engine.dialect.has_table(engine.connect(), "external_book_rating_cache"):
+        ExternalBookRatingCache.__table__.create(bind=engine, checkfirst=True)
     if not engine.dialect.has_table(engine.connect(), "opds_magic_shelf_exposure"):
         OpdsMagicShelfExposure.__table__.create(bind=engine, checkfirst=True)
     if not engine.dialect.has_table(engine.connect(), "hidden_magic_shelf_templates"):
