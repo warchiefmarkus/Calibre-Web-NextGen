@@ -81,15 +81,18 @@ Preloading is skipped in
 scrolling/vertical-writing layouts and at a section boundary where the next section
 is not already loaded.
 
-Each visible page is first sent to the provider as one prompt and one HTTP
-request, up to the API limits of 80 blocks and 8,000 source characters. The
-profile timeout is an overall deadline for the complete page and all fallbacks.
-If the provider times out or returns an incomplete block list, the backend splits
-only that failed work into smaller halves. When a partial response contains valid
-blocks, only the missing block IDs are retried. If one formatted block still omits
-runs, the backend translates its runs separately and rebuilds the block with the
-original marks and line-break metadata. Oversized plain paragraphs are split into
-temporary fragments and reassembled under the original block ID.
+The browser submits each visible page through one translation API request. The
+backend measures the serialized structured payload, including inline run IDs and
+marks, and keeps small pages in one provider prompt. Larger structured pages are
+split into bounded provider batches (up to eight blocks and roughly 2,400 payload
+characters), processed with limited parallelism, and reassembled in original block
+order before the page is cached. This avoids asking a model to emit one oversized
+JSON object even when the visible source text itself is short. The profile timeout
+is one overall deadline shared by all batches and fallbacks. Partial responses retry
+only missing IDs; formatted blocks can fall back to their individual runs and are
+rebuilt with trusted marks and line-break metadata. GPT-OSS uses low reasoning with
+ordinary non-streaming JSON; a timeout or a response containing no usable block IDs
+is final for that page instead of starting another recursive request chain.
 
 ## Supported endpoint contract
 
