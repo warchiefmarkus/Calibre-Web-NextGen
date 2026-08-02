@@ -125,7 +125,7 @@ def _archived_book_ids():
     return {int(row[0]) for row in rows}
 
 
-def _row_to_item(e, hidden_ids=None):
+def _row_to_item(e, hidden_ids=None, external_rating=None):
     """Unwrap a SQLAlchemy Row (Books, is_archived, read_status) or plain Books object."""
     book = getattr(e, "Books", e)
     if config.config_read_column:
@@ -142,7 +142,30 @@ def _row_to_item(e, hidden_ids=None):
         read=read,
         archived=archived,
         hidden=book.id in (hidden_ids or set()),
+        external_rating=external_rating,
     )
+
+
+def _rows_to_items(entries, hidden_ids=None):
+    """Serialize a page and attach rating badges without N+1 queries."""
+    entries = list(entries or [])
+    book_ids = [int(getattr(getattr(entry, "Books", entry), "id")) for entry in entries]
+    try:
+        from .external_ratings import external_rating_summary_map
+        summaries = external_rating_summary_map(book_ids)
+    except Exception:
+        log.warning("External-rating summaries unavailable for book list", exc_info=True)
+        summaries = {}
+    return [
+        _row_to_item(
+            entry,
+            hidden_ids=hidden_ids,
+            external_rating=summaries.get(
+                int(getattr(getattr(entry, "Books", entry), "id"))
+            ),
+        )
+        for entry in entries
+    ]
 
 
 def _build_entity_filter(author, series, tag, publisher, language, rating=None, book_format=None):
@@ -225,7 +248,7 @@ def list_books():
     # mutation guard.
     show_hidden = bool(show_hidden and _real_user_id() is not None)
     hidden_ids = _hidden_book_ids() if show_hidden else set()
-    to_items = lambda entries: [_row_to_item(e, hidden_ids) for e in entries]
+    to_items = lambda entries: _rows_to_items(entries, hidden_ids)
 
     if search:
         offset = (page - 1) * per_page

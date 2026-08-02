@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import re
 
 from flask import jsonify
 
@@ -47,6 +48,22 @@ def _identifier_map(book):
     return result
 
 
+def _identifier_value(identifiers, *keys):
+    for key in keys:
+        value = str(identifiers.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _split_original_authors(value):
+    return tuple(
+        part.strip()
+        for part in re.split(r"\s*(?:;|\||\s&\s)\s*", str(value or ""))
+        if part.strip()
+    )
+
+
 def _book_lookup(book):
     identifiers = _identifier_map(book)
     isbn = None
@@ -75,8 +92,15 @@ def _book_lookup(book):
             for author in (getattr(book, "authors", None) or [])
             if getattr(author, "name", None)
         ),
+        original_title=_identifier_value(
+            identifiers, "original-title", "original_title", "originaltitle",
+        ),
+        original_authors=_split_original_authors(_identifier_value(
+            identifiers, "original-author", "original_author", "originalauthor",
+        )),
         isbn=isbn,
         publication_year=publication_year,
+        goodreads_id=_identifier_value(identifiers, "goodreads", "goodreads-id"),
         hardcover_id=hardcover_id,
         hardcover_slug=identifiers.get("hardcover-slug"),
         google_id=identifiers.get("google"),
@@ -96,6 +120,10 @@ def _hardcover_tokens():
         if cleaned and cleaned not in values:
             values.append(cleaned)
     return values
+
+
+def _google_books_api_key():
+    return str(getattr(config, "config_google_books_api_key", None) or "").strip() or None
 
 
 def _cache_rows(book_id):
@@ -225,7 +253,19 @@ def _serialize(rows, lookup_hash, cached):
     }
 
 
-def _load_or_refresh(book_id, force=False):
+def load_or_refresh_external_ratings(
+    book_id,
+    force=False,
+    hardcover_tokens=(),
+    google_books_api_key=None,
+):
+    """Load or refresh one book's shared external-rating cache.
+
+    This is request-context free so upload and ingest workers can populate the
+    same cache in the background. Credentials are supplied by the caller;
+    request routes may include the current user's Hardcover token, while
+    system tasks use server-wide configuration only.
+    """
     book = calibre_db.get_filtered_book(
         book_id, allow_show_archived=True, allow_show_hidden=True,
     )
@@ -236,9 +276,72 @@ def _load_or_refresh(book_id, force=False):
     if not force and _cache_is_fresh(rows, lookup.identity_hash):
         return _serialize(rows, lookup.identity_hash, cached=True)
 
-    outcomes = fetch_external_ratings(lookup, _hardcover_tokens())
+    outcomes = fetch_external_ratings(
+        lookup,
+        hardcover_tokens,
+        google_books_api_key,
+    )
     rows = _persist_outcomes(book_id, lookup.identity_hash, outcomes)
     return _serialize(rows, lookup.identity_hash, cached=False)
+
+
+def external_rating_summary_map(book_ids):
+    """Return compact display ratings for many books in one app.db query.
+
+    The badge intentionally represents one real source rather than inventing
+    an average across communities. Among close candidates, the source with the
+    largest ratings population wins; sources with at least ten ratings are
+    preferred over one-off edition records.
+    """
+    parsed_ids = []
+    for book_id in book_ids or []:
+        try:
+            value = int(book_id)
+        except (TypeError, ValueError):
+            continue
+        if value > 0 and value not in parsed_ids:
+            parsed_ids.append(value)
+    if not parsed_ids:
+        return {}
+
+    rows = (ub.session.query(ub.ExternalBookRatingCache)
+            .filter(ub.ExternalBookRatingCache.book_id.in_(parsed_ids))
+            .filter(ub.ExternalBookRatingCache.status == "ok")
+            .filter(ub.ExternalBookRatingCache.rating.isnot(None))
+            .all())
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(int(row.book_id), []).append(row)
+
+    priority = {source: index for index, source in enumerate(SOURCE_ORDER)}
+    result = {}
+    for book_id, candidates in grouped.items():
+        established = [row for row in candidates if (row.ratings_count or 0) >= 10]
+        pool = established or candidates
+        best = max(
+            pool,
+            key=lambda row: (
+                row.ratings_count or 0,
+                row.reviews_count or 0,
+                -priority.get(row.source, len(priority)),
+            ),
+        )
+        result[book_id] = {
+            "source": best.source,
+            "rating": float(best.rating),
+            "ratings_count": best.ratings_count,
+            "source_count": len(candidates),
+        }
+    return result
+
+
+def _load_or_refresh(book_id, force=False):
+    return load_or_refresh_external_ratings(
+        book_id,
+        force=force,
+        hardcover_tokens=_hardcover_tokens(),
+        google_books_api_key=_google_books_api_key(),
+    )
 
 
 @api_v1.route("/books/<int:book_id>/external-ratings")

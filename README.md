@@ -505,20 +505,35 @@ Accepted true values are `true`, `1`, `yes`, and `on`; false values are `false`,
 ### External book ratings
 
 Book detail pages can load cached aggregate ratings and popularity counters from
-Hardcover, Google Books, and Open Library. Sources are displayed separately;
-the application does not average ratings from different communities.
+Goodreads, Hardcover, Google Books, and Open Library. Sources are displayed
+separately; the application does not average ratings from different communities.
 
-Hardcover uses the token configured above. Open Library needs no key. Google
-Books supports anonymous requests, but deployments that encounter quota or
-rate-limit responses should set an API key:
+Matching order is: provider-specific ID, exact ISBN, original/canonical title
+and author, then the localized Calibre title and author. Goodreads structured
+book data can resolve a translated edition to the original work and enrich the
+queries sent to the other providers. You can also store explicit Calibre
+identifiers named `original-title` and `original-author`; these are always tried
+before the localized metadata.
+
+Hardcover uses the token configured above. Open Library needs no key. Goodreads
+uses the same public structured-data endpoint as its web client, with an HTML
+fallback; either surface may temporarily reject automated requests. Google Books
+supports anonymous requests, but deployments
+that encounter quota or rate-limit responses should set an API key either in
+Admin → Edit Basic Configuration or through the environment:
 
 ```yaml
 - GOOGLE_BOOKS_API_KEY=your-google-books-api-key
 ```
 
-Successful results are cached for seven days. A refresh button on the book page
-forces a new lookup, and provider failures do not prevent results from the
-other sources from being shown.
+Successful results are cached for seven days. New uploads and watch-folder
+imports queue a non-blocking background lookup after metadata enrichment, so
+catalog cards normally have a rating before their detail page is first opened.
+The library, search, shelf, and smart-shelf APIs attach cached rating summaries
+with one batch query; cover previews render the selected source as a compact
+responsive star badge. A refresh button on the book page forces a new lookup,
+and provider failures do not prevent results from the other sources from being
+shown.
 
 ### KOReader sync
 

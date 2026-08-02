@@ -10,6 +10,10 @@ DETAIL = (ROOT / "frontend/src/pages/BookDetail.tsx").read_text(encoding="utf-8"
 QUERIES = (ROOT / "frontend/src/lib/queries.ts").read_text(encoding="utf-8")
 API = (ROOT / "frontend/src/lib/api.ts").read_text(encoding="utf-8")
 CSS = (ROOT / "frontend/src/pages/BookDetail.module.css").read_text(encoding="utf-8")
+BOOK_COVER = (ROOT / "frontend/src/components/BookCover.tsx").read_text(encoding="utf-8")
+BOOK_CARD = (ROOT / "frontend/src/components/BookCard.tsx").read_text(encoding="utf-8")
+BADGE = (ROOT / "frontend/src/components/CoverRatingBadge.tsx").read_text(encoding="utf-8")
+BADGE_CSS = (ROOT / "frontend/src/components/CoverRatingBadge.module.css").read_text(encoding="utf-8")
 
 
 def test_external_ratings_have_independent_query_and_manual_refresh():
@@ -27,3 +31,12 @@ def test_book_detail_keeps_sources_separate_and_shows_aggregate_counts():
     assert "Readers: {count}" in DETAIL
     assert "ExternalBookRatingsResponse" in API
     assert ".externalRatingsGrid" in CSS
+
+
+def test_cover_rating_badge_is_shared_by_book_previews():
+    assert "externalRating?: ExternalRatingSummary" in BOOK_COVER
+    assert "<CoverRatingBadge rating={externalRating}" in BOOK_COVER
+    assert "externalRating={book.external_rating}" in BOOK_CARD
+    assert "Star" in BADGE
+    assert "rating.rating.toFixed(1)" in BADGE
+    assert "@container book-card" in BADGE_CSS

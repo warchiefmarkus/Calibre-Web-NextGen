@@ -396,6 +396,35 @@ def cwa_internal_schedule_auto_send():
 
 
 @csrf.exempt
+@cwa_internal.route('/cwa-internal/queue-external-ratings', methods=["POST"])
+def cwa_internal_queue_external_ratings():
+    """Queue non-blocking rating lookups for newly imported Calibre books.
+
+    Security: Limited to localhost callers (within container/host).
+    Payload JSON: {book_ids:[int]}
+    """
+    try:
+        remote = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if remote not in (None, '127.0.0.1', '::1'):
+            abort(403)
+
+        data = request.get_json(force=True, silent=True) or {}
+        # The ingest process has committed metadata.db, but the long-lived web
+        # SQLAlchemy session may still hold the pre-import snapshot.
+        from .db import CalibreDB
+        CalibreDB.refresh_for_new_data()
+        from .tasks.external_ratings import queue_external_rating_refresh
+        result = queue_external_rating_refresh(
+            _coerce_book_ids(data.get('book_ids')),
+            username='System',
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        log.error("[external-ratings] Failed to queue imported-book refresh: %s", str(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@csrf.exempt
 @cwa_internal.route('/cwa-internal/queue-duplicate-scan', methods=["POST"])
 def cwa_internal_queue_duplicate_scan():
     """Debounce and queue an incremental duplicate scan in the web process.

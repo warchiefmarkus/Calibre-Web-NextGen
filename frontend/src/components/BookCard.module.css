@@ -139,6 +139,14 @@
    action row below the metadata and cannot reach the cover, so that reservation
    only shrank the row. On an 82px dense card it left the badges 32px — narrower
    than the "Read" badge alone, which then wrapped for no reason. */
+.coverWrapRated {
+  position: relative;
+}
+
+.coverWrapRated .badgeRow {
+  max-width: calc(100% - 58px);
+}
+
 .badgeRow {
   position: absolute;
   bottom: var(--sp-2);

@@ -754,6 +754,35 @@ def run_post_batch_follow_up() -> int:
     return 1
 
 
+def queue_external_ratings_for_books(book_ids) -> None:
+    parsed_book_ids = []
+    for book_id in book_ids or []:
+        try:
+            parsed_book_id = int(book_id)
+        except (TypeError, ValueError):
+            continue
+        if parsed_book_id > 0 and parsed_book_id not in parsed_book_ids:
+            parsed_book_ids.append(parsed_book_id)
+
+    if not parsed_book_ids:
+        return
+
+    if _post_internal_endpoint(
+        "/cwa-internal/queue-external-ratings",
+        payload={"book_ids": parsed_book_ids},
+        timeout=5,
+    ):
+        print(
+            f"[ingest-processor] External ratings queued for book IDs: {parsed_book_ids}",
+            flush=True,
+        )
+    else:
+        print(
+            f"[ingest-processor] WARN: Could not queue external ratings for book IDs: {parsed_book_ids}",
+            flush=True,
+        )
+
+
 def run_duplicate_scan_for_books(book_ids) -> None:
     parsed_book_ids = []
     for book_id in book_ids or []:
@@ -1618,6 +1647,12 @@ class NewBookProcessor:
                 self.fetch_metadata_if_enabled(book_id=self.last_added_book_id)
             else:
                 self.fetch_metadata_if_enabled(staged_path.stem)
+
+            # Populate shared external-rating cache after metadata enrichment.
+            # This is queued in the web process and never blocks the ingest worker.
+            queue_external_ratings_for_books(
+                self.last_added_book_ids or [self.last_added_book_id]
+            )
 
             # Trigger auto-send for users who have it enabled
             if self.last_added_book_id is not None:

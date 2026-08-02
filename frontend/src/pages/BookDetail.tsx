@@ -53,6 +53,7 @@ function formatDate(date: string, alwaysReturnFullDate = false): string {
 }
 
 const EXTERNAL_RATING_LABELS: Record<string, string> = {
+  goodreads: 'Goodreads',
   hardcover: 'Hardcover',
   google_books: 'Google Books',
   open_library: 'Open Library',

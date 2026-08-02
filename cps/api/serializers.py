@@ -124,7 +124,7 @@ def _iso_datetime(value):
     return value.isoformat() if isinstance(value, (datetime, date)) else None
 
 
-def serialize_book_list_item(book, read=False, archived=False, hidden=False):
+def serialize_book_list_item(book, read=False, archived=False, hidden=False, external_rating=None):
     series = book.series[0].name if getattr(book, "series", None) else None
     return {
         "id": book.id,
@@ -144,6 +144,9 @@ def serialize_book_list_item(book, read=False, archived=False, hidden=False):
         "tags": [t.name for t in book.tags] if getattr(book, "tags", None) else [],
         "date_added": _iso_datetime(getattr(book, "timestamp", None)),
         "last_modified": _iso_datetime(getattr(book, "last_modified", None)),
+        # Cached third-party aggregate selected by the list endpoint in one
+        # batch app.db query. None keeps rolling upgrades/backfills harmless.
+        "external_rating": external_rating,
         "read": bool(read),
         "archived": bool(archived),
         "hidden": bool(hidden),

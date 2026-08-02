@@ -148,6 +148,25 @@ def upload_books():
                     staged.unlink(missing_ok=True)
         calibre_db.session.rollback()
         calibre_db.session.expire_all()
+        if imported:
+            from ..tasks.external_ratings import queue_external_rating_refresh
+            hardcover_tokens = []
+            for raw_token in (
+                getattr(current_user, "hardcover_token", None),
+                config.resolved_hardcover_token(),
+            ):
+                token = str(raw_token or "").replace("Bearer ", "", 1).strip()
+                if token and token not in hardcover_tokens:
+                    hardcover_tokens.append(token)
+            queue_external_rating_refresh(
+                [item["book_id"] for item in imported],
+                username=current_user.name,
+                hardcover_tokens=hardcover_tokens,
+                google_books_api_key=(
+                    str(getattr(config, "config_google_books_api_key", None) or "").strip()
+                    or None
+                ),
+            )
         return jsonify({
             "queued": queued,
             "errors": errors,

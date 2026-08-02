@@ -92,6 +92,13 @@ export interface Me {
   };
 }
 
+export interface ExternalRatingSummary {
+  source: 'goodreads' | 'hardcover' | 'google_books' | 'open_library';
+  rating: number;
+  ratings_count: number | null;
+  source_count: number;
+}
+
 export interface Book {
   id: number;
   title: string;
@@ -105,6 +112,8 @@ export interface Book {
   tags?: string[];
   date_added?: string | null;
   last_modified?: string | null;
+  /** Compact cached aggregate for cover badges; null until background lookup completes. */
+  external_rating?: ExternalRatingSummary | null;
   read?: boolean;
   archived?: boolean;
   /** Personal-library declutter state. Present on list items from current servers. */
@@ -141,7 +150,7 @@ export interface CustomColumn {
 }
 
 export interface ExternalBookRating {
-  source: 'hardcover' | 'google_books' | 'open_library';
+  source: 'goodreads' | 'hardcover' | 'google_books' | 'open_library';
   source_id: string | null;
   source_url: string | null;
   matched_title: string | null;
