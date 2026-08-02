@@ -25,7 +25,7 @@ def test_next_page_is_extracted_without_moving_foliate_or_changing_cfi():
     assert "page + pageOffset <= pages - 2" in viewport
     assert "pageOffset * Math.max(1, Number(renderer.size)" in viewport
     assert "renderer.getAttribute('dir') === 'rtl' ? -1 : 1" in viewport
-    assert "extractVisiblePage(viewRef.current?.renderer, 1)" in READER
+    assert "extractVisiblePage(renderer, 1)" in READER
     scheduler = READER.split("const scheduleNextTranslationPreload", 1)[1].split(
         "useEffect(() => {", 1
     )[0]
@@ -52,7 +52,9 @@ def test_preload_is_background_cached_deduplicated_and_silent():
 def test_preload_runs_after_current_page_cache_hit_or_translation_success():
     assert READER.count("scheduleNextTranslationPreload(settings);") >= 3
     assert "translationPreloadNextPage" in READER
-    assert "activeSettings.flow !== 'paginated'" in READER
+    assert "activeSettings.flow !== 'paginated'" not in READER
+    assert "renderer.getAttribute('flow') === 'paginated'" in READER
+    assert "start + pageOffset * size < viewSize - 2" in READER
     assert "sourceAlreadyMatchesTarget(activeSettings, bookLanguage, blocks)" in READER
 
 
@@ -62,7 +64,7 @@ def test_foreground_joins_the_matching_preload_promise_without_a_second_request(
     foreground = READER.split("const preloadTask = translationPreloadTaskRef.current", 1)[1].split(
         "translationAbortRef.current?.abort();", 1
     )[0]
-    assert "preloadTask?.key === key" in foreground
+    assert "preloadTask?.key === pageCacheKey" in foreground
     assert "await preloadTask.promise" in foreground
     assert "translateReaderPage(" not in foreground
     assert "applyTranslationResponse(response)" in foreground
@@ -72,7 +74,7 @@ def test_toolbar_ring_reports_both_foreground_translation_and_preload_activity()
     assert "const [translationPreloading, setTranslationPreloading] = useState(false)" in READER
     assert "setTranslationPreloading(true)" in READER
     assert "setTranslationPreloading(false)" in READER
-    assert "translationLoading || (translationPreloading && translationOverlayVisible)" in READER
+    assert "&& (translationLoading || translationPreloading)" in READER
     assert "? 'translation'" in READER
     assert "'preload'" in READER
     assert "aria-busy={translationActivity}" in READER
@@ -94,7 +96,7 @@ def test_stale_activity_is_reconciled_and_foreground_errors_cancel_preload():
     assert "translationRequestTimeoutMs" in READER
     assert "Page translation timed out." in READER
     assert "cancelTranslationPreload();" in READER
-    assert "translationPreloading && translationOverlayVisible" in READER
+    assert "if (!translationLoading && !translationPreloading) return;" in READER
     assert "!translationError" in READER
     assert "!translationInFlightKeyRef.current" in READER
     assert "!translationPreloadInFlightKeyRef.current" in READER
@@ -113,7 +115,7 @@ def test_failed_page_waits_for_explicit_retry_instead_of_looping():
 
 def test_different_foreground_page_cancels_stale_preload_before_request():
     section = READER.split("const preloadTask = translationPreloadTaskRef.current", 1)[1].split(
-        "if (preloadTask?.key === key)", 1
+        "if (pageCacheKey && preloadTask?.key === pageCacheKey)", 1
     )[0]
-    assert "preloadTask.key !== key" in section
+    assert "preloadTask.key !== pageCacheKey" in section
     assert "cancelTranslationPreload();" in section

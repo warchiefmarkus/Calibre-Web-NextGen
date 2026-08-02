@@ -26,13 +26,13 @@ from flask import Blueprint, flash, redirect, url_for, abort, request, make_resp
 from markupsafe import Markup
 from .cw_login import current_user
 from flask_babel import gettext as _
-from flask_babel import get_locale, format_time, format_datetime, format_timedelta
+from flask_babel import get_locale, format_time, format_datetime, format_timedelta, LazyString
 from sqlalchemy import and_
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError, OperationalError, InvalidRequestError
 from sqlalchemy.sql.expression import func, or_, text
 
-from . import constants, logger, helper, services, cli_param, apply_https_runtime_config
+from . import constants, converter, logger, helper, services, cli_param, apply_https_runtime_config
 from . import user_book_data
 from . import db, calibre_db, ub, web_server, config, updater_thread, gdriveutils, \
     kobo_sync_status, schedule
@@ -527,20 +527,63 @@ def update_thumbnails():
         })
 
 
-def cwa_get_package_versions() -> tuple[str, str, str, str]:
-    try:
-        with open("/app/KEPUBIFY_RELEASE", "r") as f:
-            kepubify_version = f.read()
-    except Exception:
-        kepubify_version = "Unknown"
+# The banners the two probes print, and the digits to lift out of each.
+#
+# They are not the same shape, which is why the patterns stay separate while
+# the rendering below is shared. Calibre's is fenced — ``(calibre 9.11.0)`` —
+# so a lazy quantifier terminates on the closing paren. kepubify prints
+# ``kepubify v4.0.4`` with nothing after the digits, so the same lazy pattern
+# would stop at the first character it can and render ``vv4``; it needs a
+# greedy run of non-space instead. kepubify also supplies its own ``v`` where
+# calibre does not, so the optional ``v?`` is consumed rather than captured and
+# the caller prepends exactly one.
+_CALIBRE_BANNER_RE = re.compile(r'\(calibre (.+?)\)')
+_KEPUBIFY_BANNER_RE = re.compile(r'kepubify\s+v?(\S+)')
 
-    try:
-        with open("/app/CALIBRE_RELEASE", "r") as f:
-            calibre_version = f.read()
-    except Exception:
-        calibre_version = "Unknown"
 
-    return constants.INSTALLED_VERSION, kepubify_version, calibre_version
+def _version_label(probe, banner_re, name):
+    """Render one row of the admin Version Information table.
+
+    ``probe`` returns one of two shapes: the binary's full version banner, or a
+    translated diagnostic (``not installed`` / ``Execution permissions
+    missing``) as a LazyString. Only the banner is reduced to a tag; a
+    diagnostic is passed through untouched so the admin keeps the actionable,
+    translated message instead of an opaque, untranslated "Unknown".
+
+    Shared rather than copied per binary: the discriminator, the passthrough
+    and the degrade-to-"Unknown" path are the three things #1274 established
+    are easy to get subtly wrong, and a second copy is where one of them drifts.
+    """
+    try:
+        raw = probe()
+    except Exception as e:
+        # Neither documented return shape raises; something else is wrong.
+        # The version row must never take the admin page down with it, but the
+        # reason belongs in the log rather than behind a silent "Unknown".
+        log.warning("Could not determine the %s version: %s", name, e)
+        return "Unknown"
+    if not isinstance(raw, str):
+        # A LazyString diagnostic. Returning it as-is keeps it translatable.
+        return raw
+    match = banner_re.search(raw)
+    return 'v' + match.group(1) if match else raw
+
+
+def calibre_version_label():
+    """Render the Calibre version for the admin Version Information table."""
+    return _version_label(converter.get_calibre_version, _CALIBRE_BANNER_RE, "Calibre")
+
+
+def kepubify_version_label():
+    """Render the Kepubify version for the admin Version Information table."""
+    return _version_label(converter.get_kepubify_version, _KEPUBIFY_BANNER_RE, "Kepubify")
+
+
+def cwa_get_package_versions() -> tuple[str, "str | LazyString", "str | LazyString"]:
+    # Members two and three are LazyStrings when the binary could not be
+    # probed — the diagnostics are deliberately left translatable rather than
+    # flattened here.
+    return constants.INSTALLED_VERSION, kepubify_version_label(), calibre_version_label()
 
 
 def cwa_get_update_indicator() -> tuple[bool, str]:

@@ -78,7 +78,7 @@ def test_translation_activity_uses_the_toolbar_icon_ring():
     assert "translationOverlayBadge" not in READER
     assert ".translationOverlayBadge" not in CSS
     assert "const translationActivity = translationRequested" in READER
-    assert "translationLoading || (translationPreloading && translationOverlayVisible)" in READER
+    assert "&& (translationLoading || translationPreloading)" in READER
     assert "aria-busy={translationActivity}" in READER
     assert "data-translation-activity={translationLoading" in READER
     assert "styles.translationToggleIconBusy" in READER
@@ -89,9 +89,9 @@ def test_translation_activity_uses_the_toolbar_icon_ring():
 
 
 def test_translation_settings_have_a_dedicated_side_panel():
-    assert "type ReaderPanel = 'toc' | 'search' | 'bookmarks' | 'notes' | 'settings' | 'translation'" in READER
+    assert "type ReaderPanel = 'toc' | 'search' | 'bookmarks' | 'notes' | 'settings' | 'translation' | null" in READER
     assert "panel === 'translation'" in READER
-    assert "translation: t('Page translation')" in READER
+    assert "title={t('Page translation')}" in READER
     settings_panel = READER.split('function ReaderSettingsPanel', 1)[1]
     assert 'ReaderTranslationSettings' not in settings_panel
 

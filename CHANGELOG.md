@@ -18,6 +18,81 @@ is for things you can see or feel when running the app.
 
 ### Fixed
 
+- **Typing a page address with a slash on the end no longer gives you "404 Not
+  Found".** `/kosync/` failed while `/kosync` worked, and the same was true of
+  156 other pages — admin settings, your profile, statistics, search, the shelf
+  and author pages. Links inside the app were always fine, so this only bit
+  people who typed an address, bookmarked one, or followed a link from a forum
+  post that happened to end in a slash. Addresses that end in a slash now take
+  you to the page instead of an error, including behind a reverse proxy on a
+  sub-path. Reported by @iroQuai. With the
+  interface in another language, the "Default book language" dropdown still
+  opened on "Show All" while every other label on the page was translated. It
+  now reads in your own language — "Alle talen" in Dutch, "Montrer tout" in
+  French. The same dropdown in your account settings was already correct; both
+  pages now build it from one place, so they cannot drift apart again. Reported
+  by @iroQuai.
+- **The Upload button no longer disappears once you browse anywhere.** In the
+  new UI it only ever showed on the plain Library page, so the moment you opened
+  an author, a series, a tag, Hot, Discover, Top Rated or a book, there was no
+  way to add a book at all — the classic view keeps Upload in the toolbar on
+  every page. Upload now stays put while you browse, and it is also in the
+  account menu (next to Admin), so it is reachable from anywhere including on a
+  phone. Reported through the in-app feedback form.
+- **"Enable Uploads" now actually disables uploads.** Switching it off in Admin
+  hid the button in the classic view but nothing more — the new UI still offered
+  Upload, and the upload request still went through either way. The setting is
+  now enforced on the server and the button is hidden in both views. Uploading
+  stays on by default, so nothing changes unless you deliberately turned it off.
+
+### Changed
+
+- **The admin "Version Information" table now reports the Calibre you are
+  actually running.** It used to show a value stamped into the image at build
+  time, so if the Calibre binaries had been replaced, or the converter path
+  pointed somewhere else, the number on the page was not the number in use.
+  It is now read from the binary itself — the same source the Statistics page
+  already used — and formatted as `v9.11.0` to match the rows above it. When
+  Calibre can't be found or can't be run, the row now says which of the two it
+  is instead of "Unknown". Thanks to @chloeroform for the change.
+
+- **The Kepubify row of that same table now reports the running binary too.**
+  It had the same problem for the same reason, and it was the more visible of
+  the pair: the Statistics page already read the real binary, so the two pages
+  could show different Kepubify versions on the same install with no way to
+  tell which one was right. Both now read the same source. As with Calibre, a
+  Kepubify that can't be found or can't be run says so rather than showing
+  "Unknown". Thanks again to @chloeroform.
+
+- **The Russian interface is complete again — the custom-columns section of the
+  edit-metadata screen now reads in Russian.** Three phrases there were still in
+  English on an otherwise fully Russian page: the "Custom columns" heading, the
+  "Not set" placeholder shown for an empty column, and the hint telling you a
+  field takes comma-separated values. Russian is back to every string
+  translated. Contributed by
+  [@standhaftsohnsergius](https://github.com/standhaftsohnsergius)
+  ([#1269](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1269)).
+
+### Fixed
+
+- **The "Duplicates found" popup kept naming books you had already deleted.**
+  If you removed duplicate copies in Calibre itself rather than in the web app,
+  the popup carried on listing them — while the Duplicates page and a fresh
+  scan both correctly reported nothing. The popup was reading a list saved at
+  the time of the last scan and never re-checked it against your actual
+  library, so it was the one place still remembering the deleted books. It now
+  re-checks before it shows, and a group whose books are gone (or archived, or
+  hidden from you) drops out. Groups that merely lost one copy now show the
+  real remaining count instead of the stale one. The sidebar duplicate badge
+  reads the same number, so it was wrong in the same way and is fixed too.
+
+- **A duplicate you dismissed could come back on its own.** Dismissals were
+  being matched against a label built from the title and author of whichever
+  copy happened to sort first, so editing a book's metadata — or importing
+  another copy — quietly changed the label and the dismissal stopped applying.
+  Dismissals now hold onto a stable identity that metadata edits don't move.
+  Thanks to @blahblah57, whose report on the duplicates popup led here.
+
 - **Marking a book unread left its "Started reading" and "Last synced" dates on
   the page.** The percentage cleared, but the two dates stayed — and "Last
   synced" jumped forward to the moment you pressed the button, so a book you had

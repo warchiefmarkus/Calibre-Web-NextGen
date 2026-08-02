@@ -5,8 +5,10 @@ ROOT = Path(__file__).resolve().parents[2]
 READER = (ROOT / "frontend/src/pages/Reader.tsx").read_text(encoding="utf-8")
 
 
-def test_wheel_paging_is_desktop_paginated_only():
-    assert "settingsRef.current?.flow !== 'paginated'" in READER
+def test_wheel_paging_handles_paginated_and_scrolled_translation_boundaries():
+    assert "if (currentSettings.flow === 'scrolled')" in READER
+    assert "if (!translationActive) return;" in READER
+    assert "if (canScrollInside) return;" in READER
     assert "'(hover: hover) and (pointer: fine)'" in READER
     assert "event.ctrlKey || event.metaKey || event.altKey || event.shiftKey" in READER
 

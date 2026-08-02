@@ -48,6 +48,11 @@ export interface ServerFeatures {
   kobo_sync_magic_shelves?: boolean;
   /** Managed CalibreMCP full-text/semantic search proxy is available. */
   rag_search?: boolean;
+  /** #1288 — the admin's "Enable Uploads" switch. Classic gates its navbar
+   *  upload button on this; the SPA offered Upload regardless. Absent on older
+   *  servers → treat as ON, matching the server's column default (the other
+   *  flags here are opt-in features and default off; this one is not). */
+  uploading?: boolean;
 }
 
 export interface Me {
