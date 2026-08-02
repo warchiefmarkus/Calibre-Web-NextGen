@@ -121,6 +121,16 @@
   overflow: hidden;
 }
 
+.sidePanelBackdrop {
+  position: fixed;
+  inset: 54px 0 0;
+  z-index: 1001;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
 .stage {
   position: relative;
   min-width: 0;
@@ -350,6 +360,8 @@
 }
 
 .sidePanel {
+  position: relative;
+  z-index: 1002;
   width: min(380px, 88vw);
   min-width: min(380px, 88vw);
   height: 100%;
@@ -644,7 +656,8 @@
   .bookIdentity span { display: none; }
   .toolbar { gap: 0; }
   .iconButton { min-width: 34px; min-height: 34px; }
-  .tapZone { width: clamp(88px, 28vw, 128px); }
+  .tapZone { width: clamp(44px, 14vw, 64px); }
+  .sidePanelBackdrop { inset-block-start: 52px; }
   .sidePanel {
     position: absolute;
     inset: 0 auto 0 0;
@@ -652,8 +665,27 @@
     box-shadow: 10px 0 30px rgba(0, 0, 0, .28);
   }
   .progressMeta span:first-child { max-width: 55%; }
-  .selectionBar { align-items: stretch; flex-wrap: wrap; }
-  .selectionBar span { flex-basis: 100%; }
+  .selectionBar {
+    top: auto;
+    right: 8px;
+    bottom: 80px;
+    left: 8px;
+    width: auto;
+    max-height: calc(100dvh - 148px);
+    transform: none;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    overflow-y: auto;
+  }
+  .selectionBar > span:first-child { display: none; }
+  .selectionBar button {
+    min-height: 42px;
+    justify-content: center;
+    white-space: normal;
+  }
+  .selectionBar button:last-of-type { grid-column: 1 / -1; }
+  .selectionError { grid-column: 1 / -1; }
 }
 
 @media (max-width: 520px) {

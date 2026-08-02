@@ -1214,6 +1214,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     void navigate(action);
   }, [navigate, navigateTranslation]);
 
+  const navigateReaderOrClosePanel = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
+    if (panel) {
+      setPanel(null);
+      return;
+    }
+    navigateReader(action);
+  }, [navigateReader, panel]);
+
   const handleReaderWheel = useCallback((event: WheelEvent) => {
     if (settingsRef.current?.flow !== 'paginated') return;
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
@@ -1563,10 +1571,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     };
 
     const attachSelection = (doc: Document, index: number) => {
-      const readSelection = () => {
+      let selectionTimer: number | null = null;
+      const readSelection = (dismissCollapsed: boolean) => {
+        if (cancelled) return;
         const selection = doc.getSelection();
         if (!selection || selection.isCollapsed || !selection.rangeCount) {
-          dismissSelection();
+          if (dismissCollapsed) dismissSelection();
           return;
         }
         const range = selection.getRangeAt(0).cloneRange();
@@ -1582,8 +1592,18 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           trailingWhitespace: rawText.match(/\s+$/u)?.[0] ?? '',
         });
       };
-      doc.addEventListener('mouseup', readSelection);
-      doc.addEventListener('keyup', readSelection);
+      const scheduleSelectionRead = (dismissCollapsed: boolean, delay = 0) => {
+        if (selectionTimer !== null) window.clearTimeout(selectionTimer);
+        selectionTimer = window.setTimeout(() => {
+          selectionTimer = null;
+          readSelection(dismissCollapsed);
+        }, delay);
+      };
+      doc.addEventListener('mouseup', () => scheduleSelectionRead(true));
+      doc.addEventListener('keyup', () => scheduleSelectionRead(true));
+      doc.addEventListener('touchend', () => scheduleSelectionRead(false, 120), { passive: true });
+      doc.addEventListener('contextmenu', () => scheduleSelectionRead(false, 120));
+      doc.addEventListener('selectionchange', () => scheduleSelectionRead(false, 80));
       doc.addEventListener('keydown', onReaderKeyDown);
       doc.addEventListener('wheel', handleReaderWheel, { passive: false });
     };
@@ -2026,6 +2046,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       )}
 
       <div className={styles.workspace}>
+        {panel && (
+          <button
+            type="button"
+            className={styles.sidePanelBackdrop}
+            onClick={() => setPanel(null)}
+            tabIndex={-1}
+            aria-label={t('Close')}
+            title={t('Close')}
+          />
+        )}
         {panel && <ReaderSidePanel
           panel={panel} onClose={() => setPanel(null)} toc={toc}
           onNavigate={(target) => { restoreInlineTranslations(); dismissSelection(); void viewRef.current?.goTo(target); setPanel(null); }}
@@ -2134,13 +2164,13 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             <>
               <button className={`${styles.tapZone} ${styles.tapZoneLeft}`}
                 data-reader-wheel-page-zone
-                onClick={(event) => { navigateReader('left'); event.currentTarget.blur(); }}
+                onClick={(event) => { navigateReaderOrClosePanel('left'); event.currentTarget.blur(); }}
                 title={t('Previous page')} aria-label={t('Previous page')}>
                 <ChevronLeft size={30} aria-hidden="true" />
               </button>
               <button className={`${styles.tapZone} ${styles.tapZoneRight}`}
                 data-reader-wheel-page-zone
-                onClick={(event) => { navigateReader('right'); event.currentTarget.blur(); }}
+                onClick={(event) => { navigateReaderOrClosePanel('right'); event.currentTarget.blur(); }}
                 title={t('Next page')} aria-label={t('Next page')}>
                 <ChevronRight size={30} aria-hidden="true" />
               </button>
@@ -2149,7 +2179,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         </section>
       </div>
       <footer className={styles.bottomBar}>
-        <button className={styles.pageButton} onClick={() => navigateReader('prev')} title={t('Previous page')}>
+        <button className={styles.pageButton} onClick={() => navigateReaderOrClosePanel('prev')} title={t('Previous page')}>
           <ChevronLeft size={22} aria-hidden="true" />
         </button>
         <div className={styles.progressArea}>
@@ -2176,7 +2206,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             {sectionFractions.map((fraction) => <option key={fraction} value={Math.round(fraction * 1000)} />)}
           </datalist>
         </div>
-        <button className={styles.pageButton} onClick={() => navigateReader('next')} title={t('Next page')}>
+        <button className={styles.pageButton} onClick={() => navigateReaderOrClosePanel('next')} title={t('Next page')}>
           <ChevronRight size={22} aria-hidden="true" />
         </button>
       </footer>
