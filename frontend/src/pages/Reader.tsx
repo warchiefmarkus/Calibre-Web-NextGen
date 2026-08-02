@@ -70,8 +70,8 @@ type FoliateView = HTMLElement & {
   open: (file: File) => Promise<void>;
   init: (options: { lastLocation?: string | { fraction: number }; showTextStart?: boolean }) => Promise<void>;
   close: () => void;
-  prev: () => Promise<void>;
-  next: () => Promise<void>;
+  prev: (distance?: number) => Promise<void>;
+  next: (distance?: number) => Promise<void>;
   goLeft: () => Promise<void>;
   goRight: () => Promise<void>;
   goTo: (target: string | number | { fraction: number }) => Promise<unknown>;
@@ -138,6 +138,17 @@ const THEME: Record<ReaderSettings['theme'], { background: string; text: string;
 const READER_WHEEL_THRESHOLD_PX = 48;
 const READER_WHEEL_COOLDOWN_MS = 320;
 const READER_WHEEL_IDLE_RESET_MS = 160;
+const SCROLLED_PAGE_OVERLAP_RATIO = 0.12;
+
+function scrolledPageTurnDistance(renderer: FoliateRenderer | undefined): number | undefined {
+  if (!renderer || renderer.getAttribute('flow') !== 'scrolled') return undefined;
+  const size = Number(renderer.size);
+  if (!Number.isFinite(size) || size <= 0) return undefined;
+  const margin = Math.max(0, Number.parseFloat(renderer.getAttribute('margin') ?? '0') || 0);
+  const visibleSize = Math.max(1, size - 2 * margin);
+  const overlap = Math.max(24, visibleSize * SCROLLED_PAGE_OVERLAP_RATIO);
+  return Math.max(1, visibleSize - overlap);
+}
 
 function allowsWheelPageTurn(target: EventTarget | null): boolean {
   const element = target as { closest?: (selector: string) => Element | null } | null;
@@ -1444,6 +1455,20 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     dismissSelection();
     const view = viewRef.current;
     if (!view) return;
+
+    const distance = scrolledPageTurnDistance(view.renderer);
+    if (distance !== undefined) {
+      const rtl = view.book?.dir === 'rtl';
+      const logical = action === 'left'
+        ? (rtl ? 'next' : 'prev')
+        : action === 'right'
+          ? (rtl ? 'prev' : 'next')
+          : action;
+      if (logical === 'prev') await view.prev(distance);
+      else await view.next(distance);
+      return;
+    }
+
     if (action === 'prev') await view.prev();
     else if (action === 'next') await view.next();
     else if (action === 'left') await view.goLeft();
