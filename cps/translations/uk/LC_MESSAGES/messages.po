@@ -12323,3 +12323,104 @@ msgstr "Відкрити виділений текст у ChatGPT"
 #: cps/spa_strings.py
 msgid "Page translation timed out."
 msgstr "Час очікування перекладу сторінки вичерпано."
+
+#: cps/spa_strings.py
+msgid "Check latency"
+msgstr "Перевірити затримку"
+
+#: cps/spa_strings.py
+msgid "Last check: {date}"
+msgstr "Остання перевірка: {date}"
+
+#: cps/spa_strings.py
+msgid "Model check completed."
+msgstr "Перевірку моделей завершено."
+
+#: cps/spa_strings.py
+msgid "Model check failed."
+msgstr "Не вдалося перевірити модель."
+
+#: cps/spa_strings.py
+msgid "No models loaded. The check will load them first."
+msgstr "Моделі ще не завантажено. Перед перевіркою їх буде завантажено."
+
+#: cps/spa_strings.py
+msgid "No models were returned by the provider."
+msgstr "Провайдер не повернув жодної моделі."
+
+#: cps/spa_strings.py
+msgid "No response"
+msgstr "Немає відповіді"
+
+#: cps/spa_strings.py
+msgid "Not checked"
+msgstr "Не перевірено"
+
+#: cps/spa_strings.py
+msgid "Not checked yet."
+msgstr "Ще не перевірялося."
+
+#: cps/spa_strings.py
+msgid "Other models"
+msgstr "Інші моделі"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Model {model} selected."
+msgstr "Вибрано модель {model}."
+
+#: cps/spa_strings.py
+msgid "Selected"
+msgstr "Вибрано"
+
+
+msgid "Auto"
+msgstr "Авто"
+
+msgid "Cache"
+msgstr "Кеш"
+
+msgid "Endpoint"
+msgstr "Ендпоінт"
+
+msgid "From"
+msgstr "З"
+
+msgid "Headers, JSON"
+msgstr "Заголовки, JSON"
+
+msgid "JSON"
+msgstr "JSON"
+
+msgid "Latency"
+msgstr "Затримка"
+
+msgid "Load"
+msgstr "Завантажити"
+
+msgid "Max tokens"
+msgstr "Макс. токенів"
+
+msgid "Models"
+msgstr "Моделі"
+
+msgid "Preserve page structure, images, and inline formatting"
+msgstr "Зберігати структуру сторінки, зображення та вбудоване форматування"
+
+msgid "Prompt"
+msgstr "Промпт"
+
+msgid "Provider"
+msgstr "Провайдер"
+
+msgid "Structure"
+msgstr "Структура"
+
+msgid "Test"
+msgstr "Тест"
+
+msgid "Timeout, s"
+msgstr "Тайм-аут, с"
+
+msgid "To"
+msgstr "На"

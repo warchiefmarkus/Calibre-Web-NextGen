@@ -18,6 +18,7 @@ from .. import calibre_db, logger, ub
 from ..cw_login import current_user
 from ..services.reader_translation import (
     ReaderTranslationError,
+    check_model,
     encrypt_api_key,
     list_model_catalog,
     normalize_base_url,
@@ -39,6 +40,7 @@ _MAX_RUNS_PER_BLOCK = 200
 _MAX_BLOCK_CHARS = 8000
 _MAX_PAGE_CHARS = 8000
 _MAX_PROMPT_CHARS = 6000
+_TRANSLATION_MODES = {"structured", "simple"}
 _TRANSLATION_LOCKS = {}
 _TRANSLATION_LOCKS_GUARD = Semaphore(1)
 _TRANSLATION_RUN_SLOTS = Semaphore(2)
@@ -330,6 +332,30 @@ def get_reader_translation_models(profile_id):
         return _err(exc.code, str(exc), exc.status)
 
 
+@api_v1.route("/reader/translation/profiles/<profile_id>/models/check", methods=["POST"])
+@login_required_if_no_ano
+def check_reader_translation_model(profile_id):
+    guard = _require_real_user()
+    if guard:
+        return guard
+    profile = _get_profile(profile_id)
+    if profile is None:
+        return _err("not_found", "Translation profile not found", 404)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _err("invalid_request", "Model check request must be an object.", 400)
+    model = str(payload.get("model") or "").strip()
+    endpoint_path = payload.get("endpoint_path")
+    try:
+        return jsonify(check_model(
+            profile,
+            model=model,
+            endpoint_path=str(endpoint_path) if endpoint_path is not None else None,
+        ))
+    except ReaderTranslationError as exc:
+        return _err(exc.code, str(exc), exc.status)
+
+
 def _translation_runs(item, block_id):
     raw = item.get("runs")
     if raw is None:
@@ -446,9 +472,12 @@ def translate_reader_page(book_id):
     target_language = str(payload.get("target_language") or "").strip()[:64]
     prompt = str(payload.get("prompt") or "").strip()
     fmt = str(payload.get("format") or "epub").strip().lower()[:16]
+    mode = str(payload.get("mode") or "structured").strip().lower()
     cache_enabled = payload.get("cache_enabled", True)
     if not isinstance(cache_enabled, bool):
         return _err("invalid_cache_setting", "cache_enabled must be true or false.", 400)
+    if mode not in _TRANSLATION_MODES:
+        return _err("invalid_translation_mode", "mode must be structured or simple.", 400)
     if not target_language:
         return _err("invalid_language", "Target language is required.", 400)
     if len(prompt) > _MAX_PROMPT_CHARS:
@@ -464,6 +493,7 @@ def translate_reader_page(book_id):
             target_language=target_language,
             prompt=prompt,
             blocks=blocks,
+            mode=mode,
         )
     except ReaderTranslationError as exc:
         return _err(exc.code, str(exc), exc.status)

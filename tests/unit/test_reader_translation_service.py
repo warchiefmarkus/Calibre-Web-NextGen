@@ -211,6 +211,7 @@ def test_request_hash_changes_with_text_language_model_or_prompt():
     assert translation_request_hash(_profile(model="other"), **base) != original
     assert translation_request_hash(_profile(), **{**base, "target_language": "pl"}) != original
     assert translation_request_hash(_profile(), **{**base, "prompt": "Literary"}) != original
+    assert translation_request_hash(_profile(), **{**base, "mode": "simple"}) != original
     assert translation_request_hash(
         _profile(), **{**base, "blocks": [{"id": "a", "tag": "p", "text": "B"}]},
     ) != original
@@ -574,6 +575,75 @@ def test_big_pickle_uses_small_batches_and_larger_effective_output_budget():
     assert all(len(batch) <= 2 for batch in batches)
     assert all(sum(len(item["text"]) for item in batch) <= 1200 for batch in batches)
     assert _effective_max_output_tokens(profile) == 8192
+
+
+def test_model_check_uses_temporary_model_and_reports_latency(monkeypatch):
+    from cps.services import reader_translation as service
+
+    profile = _profile(
+        model="selected-model", api_key_encrypted=None, extra_headers={},
+        timeout_seconds=30,
+    )
+    seen = {}
+
+    class Response:
+        ok = True
+        status_code = 200
+        content = b'{}'
+        text = '{}'
+
+        @staticmethod
+        def json():
+            return {"choices": [{"message": {"content": "Hello back"}}]}
+
+    def fake_request(method, url, **kwargs):
+        seen.update({"method": method, "url": url, **kwargs})
+        return Response()
+
+    ticks = iter((10.0, 10.125))
+    monkeypatch.setattr(service, "_request", fake_request)
+    monkeypatch.setattr(service.time, "monotonic", lambda: next(ticks))
+
+    result = service.check_model(
+        profile, model="candidate-model", endpoint_path="chat/completions",
+    )
+
+    assert result == {
+        "ok": True,
+        "model": "candidate-model",
+        "latency_ms": 125,
+        "preview": "Hello back",
+    }
+    assert profile.model == "selected-model"
+    assert seen["json"]["model"] == "candidate-model"
+    assert seen["json"]["messages"][0]["content"] == "Hello"
+    assert seen["timeout"] == 30
+
+
+def test_model_check_returns_provider_failure_as_result(monkeypatch):
+    from cps.services import reader_translation as service
+
+    profile = _profile(
+        api_key_encrypted=None, extra_headers={}, timeout_seconds=30,
+    )
+    ticks = iter((20.0, 20.25))
+    monkeypatch.setattr(service.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(
+        service, "_request",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ReaderTranslationError(
+            "offline", code="provider_unreachable", status=502,
+        )),
+    )
+
+    result = service.check_model(profile, model="offline-model")
+
+    assert result["ok"] is False
+    assert result["model"] == "offline-model"
+    assert result["latency_ms"] == 250
+    assert result["error"] == {
+        "code": "provider_unreachable",
+        "message": "offline",
+    }
 
 
 def test_model_catalog_preserves_available_metadata(monkeypatch):

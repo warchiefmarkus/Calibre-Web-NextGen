@@ -867,6 +867,8 @@ export function useSetCover(id: string | number) {
 
 // ── Reader (bookmark / progress) ─────────────────────────────────────────────
 
+export type ReaderTranslationMode = 'structured' | 'simple';
+
 export interface ReaderSettings {
   theme: 'lightTheme' | 'sepiaTheme' | 'darkTheme' | 'blackTheme';
   font: 'default' | 'Yahei' | 'SimSun' | 'KaiTi' | 'Arial';
@@ -885,6 +887,7 @@ export interface ReaderSettings {
   translationCacheEnabled: boolean;
   translationPreloadNextPage: boolean;
   translationView: 'original' | 'translated';
+  translationMode: ReaderTranslationMode;
   translationSourceLanguage: string;
   translationTargetLanguage: string;
   translationProfileId: string;
@@ -952,6 +955,14 @@ export interface ReaderTranslationModelInfo {
   description?: string;
 }
 
+export interface ReaderTranslationModelCheck {
+  ok: boolean;
+  model: string;
+  latency_ms: number;
+  preview?: string;
+  error?: { code: string; message: string };
+}
+
 export interface ReaderBookmark {
   bookmark_id: string;
   book_id: number;
@@ -1014,7 +1025,18 @@ export function useUpdateReaderTranslationProfile() {
       apiPatch<{ profile: ReaderTranslationProfile }>(
         `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}`, payload,
       ),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey }),
+    onSuccess: (data) => {
+      qc.setQueryData<{
+        profiles: ReaderTranslationProfile[];
+        private_endpoints_allowed: boolean;
+      }>(readerTranslationProfilesKey, (current) => current ? {
+        ...current,
+        profiles: current.profiles.map((profile) => (
+          profile.id === data.profile.id ? data.profile : profile
+        )),
+      } : current);
+      void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey });
+    },
   });
 }
 
@@ -1044,6 +1066,19 @@ export function useReaderTranslationModels() {
   });
 }
 
+export function useCheckReaderTranslationModel() {
+  return useMutation({
+    mutationFn: ({ id, model, endpointPath }: {
+      id: string;
+      model: string;
+      endpointPath: string;
+    }) => apiPost<ReaderTranslationModelCheck>(
+      `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}/models/check`,
+      { model, endpoint_path: endpointPath },
+    ),
+  });
+}
+
 export function translateReaderPage(
   bookId: string | number,
   payload: {
@@ -1051,6 +1086,7 @@ export function translateReaderPage(
     format: string;
     source_language: string;
     target_language: string;
+    mode: ReaderTranslationMode;
     prompt: string;
     cache_enabled: boolean;
     blocks: ReaderTranslationBlock[];

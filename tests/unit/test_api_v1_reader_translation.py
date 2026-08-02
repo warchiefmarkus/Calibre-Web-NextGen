@@ -79,6 +79,35 @@ def test_create_profile_encrypts_api_key_and_returns_redacted_profile():
     assert mock_ub.session.add.call_args.args[0].api_key_encrypted == "ciphertext"
 
 
+def test_model_check_uses_owned_profile_and_requested_endpoint():
+    from cps.api import reader_translation as mod
+
+    expected = {
+        "ok": True,
+        "model": "model-b",
+        "latency_ms": 42,
+        "preview": "Hello",
+    }
+    body = {"model": "model-b", "endpoint_path": "responses"}
+    with _ctx(
+        "/api/v1/reader/translation/profiles/profile-1/models/check",
+        method="POST",
+        body=body,
+    ):
+        with patch.object(mod, "current_user", _user()), \
+             patch.object(mod, "_get_profile", return_value=_profile()) as get_profile, \
+             patch.object(mod, "check_model", return_value=expected) as provider:
+            response = inspect.unwrap(mod.check_reader_translation_model)("profile-1")
+
+    assert json.loads(response.get_data()) == expected
+    get_profile.assert_called_once_with("profile-1")
+    provider.assert_called_once()
+    assert provider.call_args.kwargs == {
+        "model": "model-b",
+        "endpoint_path": "responses",
+    }
+
+
 def test_translate_page_returns_server_cache_without_calling_provider():
     from cps.api import reader_translation as mod
     cached = SimpleNamespace(response_json=json.dumps([
@@ -218,6 +247,24 @@ def test_translate_page_cache_disabled_ignores_existing_cache_and_does_not_write
     mock_ub.session.query.assert_not_called()
     mock_ub.session.add.assert_not_called()
     mock_ub.session.commit.assert_not_called()
+
+
+def test_translate_page_rejects_unknown_translation_mode():
+    from cps.api import reader_translation as mod
+
+    request_body = {
+        "profile_id": "profile-1", "target_language": "uk",
+        "mode": "html",
+        "blocks": [{"id": "a", "tag": "p", "text": "Source"}],
+    }
+    with _ctx("/api/v1/books/5/translation", method="POST", body=request_body):
+        with patch.object(mod, "current_user", _user()), \
+             patch.object(mod, "_get_profile", return_value=_profile()), _visible(mod), \
+             patch.object(mod, "translate_page") as provider:
+            response, status = inspect.unwrap(mod.translate_reader_page)(5)
+    assert status == 400
+    assert json.loads(response.get_data())["error"]["code"] == "invalid_translation_mode"
+    provider.assert_not_called()
 
 
 def test_translate_page_rejects_non_boolean_cache_setting():

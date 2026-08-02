@@ -8,6 +8,7 @@ explicit CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true opt-in.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -193,15 +194,17 @@ def profile_signature(profile: Any) -> dict[str, Any]:
 
 def translation_request_hash(profile: Any, *, user_id: int, book_id: int, fmt: str,
                              source_language: str, target_language: str,
-                             prompt: str, blocks: list[dict[str, Any]]) -> str:
+                             prompt: str, blocks: list[dict[str, Any]],
+                             mode: str = "structured") -> str:
     canonical = {
-        "v": 1,
+        "v": 2,
         "user_id": int(user_id),
         "book_id": int(book_id),
         "format": fmt.lower(),
         "profile": profile_signature(profile),
         "source_language": source_language,
         "target_language": target_language,
+        "mode": mode,
         "prompt": prompt,
         "blocks": blocks,
     }
@@ -1077,6 +1080,83 @@ def translate_page(profile: Any, *, source_language: str, target_language: str,
             raise outcome.exception
         completed[index] = outcome.value
     return [item for index in range(len(batches)) for item in completed[index]]
+
+
+def check_model(profile: Any, *, model: str, endpoint_path: str | None = None) -> dict[str, Any]:
+    """Send a minimal prompt through one discovered model and report its latency.
+
+    The stored profile is copied so checking another model never mutates the
+    user's selected translation model or exposes the encrypted API key.
+    """
+    normalized_model = str(model or "").strip()
+    if not normalized_model or len(normalized_model) > 255:
+        raise ReaderTranslationError(
+            "A valid model name is required.", code="invalid_model", status=400,
+        )
+
+    candidate = copy.copy(profile)
+    candidate.model = normalized_model
+    candidate.endpoint_path = normalize_endpoint_path(
+        endpoint_path if endpoint_path is not None else profile.endpoint_path
+    )
+    endpoint = candidate.endpoint_path.lower()
+    timeout = max(5, min(60, int(candidate.timeout_seconds or 60)))
+    started = time.monotonic()
+
+    try:
+        if endpoint.endswith("responses"):
+            request_payload = {
+                "model": normalized_model,
+                "input": "Hello",
+                "max_output_tokens": 32,
+                "stream": False,
+            }
+        elif endpoint.endswith("messages"):
+            request_payload = {
+                "model": normalized_model,
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 32,
+                "stream": False,
+            }
+        elif endpoint.endswith(":generatecontent"):
+            request_payload = {
+                "contents": [{"role": "user", "parts": [{"text": "Hello"}]}],
+                "generationConfig": {"maxOutputTokens": 32},
+            }
+        else:
+            request_payload = {
+                "model": normalized_model,
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 32,
+                "stream": False,
+            }
+
+        response = _request(
+            "POST", _endpoint_url(candidate), headers=_profile_headers(candidate),
+            json=request_payload, timeout=timeout,
+        )
+        response_payload = _response_json(response)
+        if endpoint.endswith("responses"):
+            content = _responses_content(response_payload)
+        elif endpoint.endswith("messages"):
+            content = _anthropic_content(response_payload)
+        elif endpoint.endswith(":generatecontent"):
+            content = _google_content(response_payload)
+        else:
+            content = _message_content(response_payload)
+        return {
+            "ok": True,
+            "model": normalized_model,
+            "latency_ms": max(0, round((time.monotonic() - started) * 1000)),
+            "preview": content[:160],
+        }
+    except ReaderTranslationError as exc:
+        return {
+            "ok": False,
+            "model": normalized_model,
+            "latency_ms": max(0, round((time.monotonic() - started) * 1000)),
+            "error": {"code": exc.code, "message": str(exc)},
+        }
 
 
 def test_profile(profile: Any) -> dict[str, Any]:

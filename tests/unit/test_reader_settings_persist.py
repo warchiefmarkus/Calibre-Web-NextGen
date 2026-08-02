@@ -118,6 +118,7 @@ def test_translation_settings_are_typed_and_partial_updates_do_not_clear_profile
     out = sanitize_reader_settings({
         "translationEnabled": True,
         "translationView": "translated",
+        "translationMode": "simple",
         "translationSourceLanguage": "auto",
         "translationTargetLanguage": "uk",
         "translationProfileId": "profile-1",
@@ -126,6 +127,7 @@ def test_translation_settings_are_typed_and_partial_updates_do_not_clear_profile
     assert out == {
         "translationEnabled": True,
         "translationView": "translated",
+        "translationMode": "simple",
         "translationSourceLanguage": "auto",
         "translationTargetLanguage": "uk",
         "translationProfileId": "profile-1",
@@ -134,10 +136,53 @@ def test_translation_settings_are_typed_and_partial_updates_do_not_clear_profile
     assert "translationProfileId" not in sanitize_reader_settings({"fontSize": 110})
 
 
+def test_translation_side_panel_overlays_stage_without_reflowing_translated_page():
+    root = Path(__file__).resolve().parents[2]
+    css = (root / "frontend/src/pages/Reader.module.css").read_text()
+    start = css.index(".sidePanel {")
+    rule = css[start:css.index("}", start)]
+    assert "position: absolute;" in rule
+    assert "inset: 0 auto 0 0;" in rule
+
+
+def test_translation_preload_uses_stable_page_identity_and_sentence_carry():
+    root = Path(__file__).resolve().parents[2]
+    reader = (root / "frontend/src/pages/Reader.tsx").read_text()
+    assert "function translationSourcePageId(" in reader
+    assert "function translationPageCacheKey(" in reader
+    assert "translationSentenceCarryRef.current.set" in reader
+    assert "splitTrailingSentenceForNext" in reader
+    assert "translationPreloading" in reader
+    assert "currentSettings.flow === 'paginated'" not in reader[
+        reader.index("const runTranslationPreload"):reader.index("const scheduleNextTranslationPreload")
+    ]
+
+
+def test_scrolled_translation_overlay_is_vertical_and_tap_zones_remain_visible():
+    root = Path(__file__).resolve().parents[2]
+    css = (root / "frontend/src/pages/Reader.module.css").read_text()
+    reader = (root / "frontend/src/pages/Reader.tsx").read_text()
+    assert ".translationOverlay[data-flow='scrolled']" in css
+    assert "overflow-y: auto;" in css
+    assert ".translationTapZone" in css
+    assert "data-flow={settings.flow}" in reader
+    assert "translationOverlayRef.current" in reader
+
+
+def test_translation_activity_spinner_colors_are_distinct():
+    root = Path(__file__).resolve().parents[2]
+    css = (root / "frontend/src/pages/Reader.module.css").read_text()
+    assert "button[data-translation-activity='translation']" in css
+    assert "border-color: #22c55e;" in css
+    assert "button[data-translation-activity='preload']" in css
+    assert "border-color: #f59e0b;" in css
+
+
 def test_translation_settings_reject_invalid_values_and_bound_prompt_length():
     out = sanitize_reader_settings({
         "translationEnabled": "yes",
         "translationView": "side-by-side",
+        "translationMode": "html",
         "translationSourceLanguage": "not a language",
         "translationTargetLanguage": "auto",
         "translationProfileId": "x" * 65,

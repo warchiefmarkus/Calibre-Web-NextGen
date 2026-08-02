@@ -179,6 +179,15 @@
     color-mix(in srgb, var(--reader-panel) 88%, transparent), transparent);
 }
 
+.translationTapZone {
+  opacity: .18;
+}
+
+.translationTapZone:hover,
+.translationTapZone:focus-visible {
+  opacity: .82;
+}
+
 .tapZoneLeft {
   --tap-fade-direction: right;
   inset-inline-start: 0;
@@ -243,6 +252,18 @@
   border-radius: 999px;
   pointer-events: none;
   animation: translation-ring-spin 720ms linear infinite;
+}
+
+.translationToggle button[data-translation-activity='translation']
+.translationToggleIconBusy::after {
+  border-color: #22c55e;
+  border-inline-end-color: transparent;
+}
+
+.translationToggle button[data-translation-activity='preload']
+.translationToggleIconBusy::after {
+  border-color: #f59e0b;
+  border-inline-end-color: transparent;
 }
 
 @keyframes translation-ring-spin {
@@ -320,6 +341,36 @@
   user-select: text;
 }
 
+.translationOverlay[data-flow='scrolled'] {
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+.translationOverlay[data-flow='scrolled'] .translationPageShell {
+  margin-inline: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.translationOverlay[data-flow='scrolled'] .translationPagerViewport {
+  position: relative;
+  min-height: 100%;
+  overflow: visible;
+}
+
+.translationOverlay[data-flow='scrolled'] .translationPagerContent {
+  position: relative;
+  margin-inline: auto;
+  column-count: auto;
+  column-fill: balance;
+  overflow: visible;
+  transition: none;
+  will-change: auto;
+}
+
 .translationPagerContent ::selection {
   background: rgba(255, 214, 64, .72);
   color: #1f1f1f;
@@ -360,7 +411,8 @@
 }
 
 .sidePanel {
-  position: relative;
+  position: absolute;
+  inset: 0 auto 0 0;
   z-index: 1002;
   width: min(380px, 88vw);
   min-width: min(380px, 88vw);
@@ -369,6 +421,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   background: var(--reader-panel);
   border-right: 1px solid var(--reader-border);
+  box-shadow: 10px 0 30px rgba(0, 0, 0, .22);
   overflow: hidden;
 }
 
@@ -543,6 +596,58 @@
 .checkboxLabel {
   grid-template-columns: auto 1fr;
   align-items: center;
+}
+
+.translationSwitch {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.translationSwitch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.translationSwitchTrack {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border: 1px solid var(--reader-border);
+  border-radius: 999px;
+  background: var(--reader-panel);
+  transition: background-color .16s ease, border-color .16s ease;
+}
+
+.translationSwitchTrack::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--reader-muted);
+  transition: transform .16s ease, background-color .16s ease;
+}
+
+.translationSwitch input:checked + .translationSwitchTrack {
+  border-color: var(--reader-accent);
+  background: var(--reader-accent);
+}
+
+.translationSwitch input:checked + .translationSwitchTrack::after {
+  transform: translateX(16px);
+  background: white;
+}
+
+.translationSwitch input:focus-visible + .translationSwitchTrack {
+  outline: 2px solid var(--reader-accent);
+  outline-offset: 2px;
 }
 
 .settingsHint {
@@ -754,7 +859,6 @@
   cursor: default;
 }
 
-.translationProfileSummary,
 .translationProfileEditor {
   display: grid;
   gap: 10px;
@@ -764,16 +868,245 @@
   background: color-mix(in srgb, var(--reader-panel) 72%, transparent);
 }
 
-.translationProfileSummary > span {
-  overflow-wrap: anywhere;
-  color: var(--reader-muted);
-  font-size: 12px;
-}
-
 .translationProfileGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
+}
+
+.translationModelHealth {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--reader-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--reader-panel) 72%, transparent);
+}
+
+.translationModelHealthHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.translationModelHealthHeader > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.translationModelHealthHeader span,
+.translationModelHealthMeta,
+.translationModelHealthEmpty,
+.translationModelHealthCount {
+  margin: 0;
+  color: var(--reader-muted);
+  font-size: 12px;
+}
+
+.translationModelToolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.translationModelToolbar button {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: var(--reader-panel);
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.translationModelToolbar button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.translationModelHealthList {
+  max-height: 320px;
+  display: grid;
+  gap: 6px;
+  overflow: auto;
+}
+
+.translationModelFamily {
+  overflow: clip;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--reader-bg) 62%, transparent);
+}
+
+.translationModelFamily summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.translationModelFamily summary::-webkit-details-marker {
+  display: none;
+}
+
+.translationModelFamily summary::before {
+  content: '›';
+  color: var(--reader-muted);
+  font-size: 18px;
+  line-height: 1;
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.translationModelFamily[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.translationModelFamily[open] summary {
+  background: color-mix(in srgb, var(--reader-accent) 7%, transparent);
+}
+
+.translationModelFamilyName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.translationModelFamilyStats {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.translationModelFamilyStats > span {
+  min-width: 22px;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--reader-muted) 12%, transparent);
+  color: var(--reader-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.translationModelFamilyStats > span[data-status='ok'] {
+  background: color-mix(in srgb, #2e8b57 14%, transparent);
+  color: color-mix(in srgb, #2e8b57 76%, var(--reader-text));
+}
+
+.translationModelFamilyStats > span[data-status='error'] {
+  background: color-mix(in srgb, #b43c3c 14%, transparent);
+  color: color-mix(in srgb, #b43c3c 76%, var(--reader-text));
+}
+
+.translationModelFamilyStats > span[data-status='checking'] {
+  background: color-mix(in srgb, var(--reader-accent) 14%, transparent);
+  color: var(--reader-accent);
+}
+
+.translationModelFamilyRows {
+  border-top: 1px solid var(--reader-border);
+}
+
+.translationModelHealthRow {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--reader-border) 70%, transparent);
+  padding: 7px 9px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.translationModelHealthRow:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--reader-accent) 8%, transparent);
+}
+
+.translationModelHealthRow[data-selected='true'] {
+  background: color-mix(in srgb, var(--reader-accent) 13%, transparent);
+}
+
+.translationModelHealthRow:disabled {
+  cursor: default;
+}
+
+.translationModelHealthRow:last-child {
+  border-bottom: 0;
+}
+
+.translationModelSelected {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--reader-accent);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.translationModelHealthName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+
+.translationModelHealthStatus {
+  min-width: 74px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: color-mix(in srgb, var(--reader-muted) 12%, transparent);
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.translationModelHealthStatus[data-status='ok'] {
+  background: color-mix(in srgb, #2e8b57 14%, transparent);
+  color: color-mix(in srgb, #2e8b57 76%, var(--reader-text));
+}
+
+.translationModelHealthStatus[data-status='error'] {
+  background: color-mix(in srgb, #b43c3c 14%, transparent);
+  color: color-mix(in srgb, #b43c3c 76%, var(--reader-text));
+}
+
+.translationModelHealthStatus[data-status='checking'] {
+  background: color-mix(in srgb, var(--reader-accent) 14%, transparent);
+  color: var(--reader-accent);
+}
+
+.translationModelHealthSpin {
+  animation: translation-model-health-spin 800ms linear infinite;
+}
+
+@keyframes translation-model-health-spin {
+  to { transform: rotate(360deg); }
 }
 
 .translationWarning,

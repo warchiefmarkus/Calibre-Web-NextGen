@@ -9,6 +9,7 @@ READER_FONTS = {"default", "Yahei", "SimSun", "KaiTi", "Arial"}
 READER_SPREADS = {"spread", "nonespread"}
 READER_FLOWS = {"paginated", "scrolled"}
 READER_TRANSLATION_VIEWS = {"original", "translated"}
+READER_TRANSLATION_MODES = {"structured", "simple"}
 READER_LANGUAGE_RE = r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$"
 
 READER_DEFAULTS = {
@@ -29,6 +30,7 @@ READER_DEFAULTS = {
     "translationCacheEnabled": True,
     "translationPreloadNextPage": False,
     "translationView": "original",
+    "translationMode": "structured",
     "translationSourceLanguage": "auto",
     "translationTargetLanguage": "uk",
     "translationProfileId": "",
@@ -61,6 +63,8 @@ def sanitize_reader_settings(payload):
         out["flow"] = payload["flow"]
     if payload.get("translationView") in READER_TRANSLATION_VIEWS:
         out["translationView"] = payload["translationView"]
+    if payload.get("translationMode") in READER_TRANSLATION_MODES:
+        out["translationMode"] = payload["translationMode"]
 
     source_language = str(payload.get("translationSourceLanguage") or "").strip()
     if source_language == "auto" or re.fullmatch(READER_LANGUAGE_RE, source_language):
