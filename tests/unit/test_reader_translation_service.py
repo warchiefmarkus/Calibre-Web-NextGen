@@ -679,7 +679,7 @@ def test_translate_page_reuses_one_deadline_during_incomplete_retry(monkeypatch)
     assert len(set(deadlines)) == 1
 
 
-def test_sequential_translation_models_bypass_fan_out(monkeypatch):
+def test_visible_page_is_sent_as_one_initial_request(monkeypatch):
     from cps.services import reader_translation as service
 
     calls = []
@@ -692,10 +692,6 @@ def test_sequential_translation_models_bypass_fan_out(monkeypatch):
         ]
 
     monkeypatch.setattr(service, "_translate_batch_once", fake_once)
-    monkeypatch.setattr(
-        service.parallel, "fan_out",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fan_out must not run")),
-    )
     blocks = [
         {"id": f"b{index}", "tag": "p", "text": "source"}
         for index in range(9)
@@ -704,15 +700,39 @@ def test_sequential_translation_models_bypass_fan_out(monkeypatch):
         _profile(model="openai/gpt-oss-120b", timeout_seconds=60),
         source_language="en", target_language="uk", prompt="", blocks=blocks,
     )
-    assert calls == [[f"b{index}" for index in range(8)], ["b8"]]
+    assert calls == [[f"b{index}" for index in range(9)]]
     assert [item["id"] for item in result] == [f"b{index}" for index in range(9)]
 
 
-def test_reasoning_heavy_translation_batches_are_sequential():
-    from cps.services.reader_translation import _translation_parallel_workers
+def test_provider_timeout_splits_the_page_only_as_fallback(monkeypatch):
+    from cps.services import reader_translation as service
 
-    assert _translation_parallel_workers(_profile(model="big-pickle"), 5) == 1
-    assert _translation_parallel_workers(_profile(model="openai/gpt-oss-120b"), 5) == 1
-    assert _translation_parallel_workers(_profile(model="gpt-oss-20b"), 2) == 1
-    assert _translation_parallel_workers(_profile(model="other-model"), 5) == 3
-    assert _translation_parallel_workers(_profile(model="other-model"), 2) == 2
+    calls = []
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        ids = [block["id"] for block in blocks]
+        calls.append(ids)
+        if len(blocks) == 6:
+            raise ReaderTranslationError(
+                "timeout", code="provider_timeout", status=504,
+            )
+        return [
+            {"id": block["id"], "tag": block["tag"], "text": f"T:{block['text']}"}
+            for block in blocks
+        ]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    blocks = [
+        {"id": f"b{index}", "tag": "p", "text": "source"}
+        for index in range(6)
+    ]
+    result = service.translate_page(
+        _profile(model="openai/gpt-oss-120b", timeout_seconds=60),
+        source_language="en", target_language="uk", prompt="", blocks=blocks,
+    )
+    assert calls == [
+        [f"b{index}" for index in range(6)],
+        ["b0", "b1", "b2"],
+        ["b3", "b4", "b5"],
+    ]
+    assert [item["id"] for item in result] == [f"b{index}" for index in range(6)]

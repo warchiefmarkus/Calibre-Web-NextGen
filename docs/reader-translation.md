@@ -81,16 +81,15 @@ Preloading is skipped in
 scrolling/vertical-writing layouts and at a section boundary where the next section
 is not already loaded.
 
-Visible pages are translated in bounded batches (up to 8 blocks and roughly
-3,500 source characters per provider request). The profile timeout is an overall
-deadline for the complete page, including incomplete-response fallbacks; each
-fallback receives only the remaining time. If a model returns an incomplete
-block list, the backend automatically retries smaller halves. If one formatted
-block still omits runs, the backend translates its runs separately and rebuilds
-the block with the original marks and line-break metadata. Oversized plain
-paragraphs are split into temporary fragments and reassembled under the original
-block ID, so reasoning models with limited output budgets do not fail the whole
-page.
+Each visible page is first sent to the provider as one prompt and one HTTP
+request, up to the API limits of 80 blocks and 8,000 source characters. The
+profile timeout is an overall deadline for the complete page and all fallbacks.
+If the provider times out or returns an incomplete block list, the backend splits
+only that failed work into smaller halves. When a partial response contains valid
+blocks, only the missing block IDs are retried. If one formatted block still omits
+runs, the backend translates its runs separately and rebuilds the block with the
+original marks and line-break metadata. Oversized plain paragraphs are split into
+temporary fragments and reassembled under the original block ID.
 
 ## Supported endpoint contract
 
@@ -111,10 +110,11 @@ Groq, Mistral, and Ollama, while all fields remain editable. NVIDIA NIM uses
 catalog currently supplies model ID and publisher; context length and description
 are shown automatically when a compatible endpoint includes them. GPT-OSS models
 use low reasoning effort and streamed Chat Completions to reduce translation
-latency. Their page batches run sequentially, and a stalled hosted completion is
-retried once with a bounded per-attempt timeout while still respecting the overall
-profile deadline. For automatic page translation, `openai/gpt-oss-20b` provides
-materially lower hosted latency than the 120B route.
+latency. A complete visible page is attempted once before timeout fallbacks are
+split into smaller requests. A stalled single-block completion is retried once with
+a bounded per-attempt timeout while still respecting the overall profile deadline.
+Both `openai/gpt-oss-20b` and `openai/gpt-oss-120b` are supported; the selected
+model remains an explicit profile choice.
 
 OpenCode Zen and OpenCode Go use their public `/models` feeds for discovery.
 Saving either preset automatically loads the current server-side model list.

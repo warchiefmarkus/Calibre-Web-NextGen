@@ -759,26 +759,14 @@ _TRANSLATION_BATCH_MAX_BLOCKS = 8
 _TRANSLATION_BATCH_MAX_CHARS = 3500
 _TRANSLATION_FRAGMENT_MAX_CHARS = 2600
 _TRANSLATION_RETRY_MAX_DEPTH = 8
-_TRANSLATION_PARALLEL_BATCHES = 3
 _GPT_OSS_ATTEMPT_TIMEOUT_SECONDS = 25.0
 _GPT_OSS_TIMEOUT_ATTEMPTS = 2
 
 
-def _translation_parallel_workers(profile: Any | None, batch_count: int) -> int:
-    model = str(getattr(profile, "model", "") or "").strip().lower()
-    # Reasoning-heavy hosted routes either rate-limit bursts or queue concurrent
-    # requests behind the same account. Sequential batches avoid turning one
-    # visible page into several requests that all consume the page deadline.
-    if model == "big-pickle" or _is_gpt_oss_model(profile):
-        return 1
-    return max(1, min(_TRANSLATION_PARALLEL_BATCHES, batch_count))
-
-
 def _translation_batch_limits(profile: Any | None) -> tuple[int, int]:
-    # big-pickle currently resolves to a reasoning-heavy DeepSeek route. It
-    # spends a large share of max_tokens on reasoning_content and frequently
-    # omits later JSON blocks even for modest pages. Smaller initial batches
-    # avoid the expensive recursive retry path.
+    # These limits apply only to fallback work such as separately translated
+    # inline runs and fragments. A normal visible page is attempted as one
+    # request before any splitting occurs.
     model = str(getattr(profile, "model", "") or "").strip().lower()
     if model == "big-pickle":
         return 2, 1200
@@ -837,8 +825,13 @@ def _split_translation_text(text: str, max_chars: int = _TRANSLATION_FRAGMENT_MA
 
 def _request_translation_completion(
     profile: Any, *, headers: dict[str, str], payload: dict[str, Any],
+    retry_timeout: bool = True,
 ) -> requests.Response:
-    attempts = _GPT_OSS_TIMEOUT_ATTEMPTS if _is_gpt_oss_model(profile) else 1
+    attempts = (
+        _GPT_OSS_TIMEOUT_ATTEMPTS
+        if _is_gpt_oss_model(profile) and retry_timeout
+        else 1
+    )
     for attempt in range(attempts):
         timeout = _remaining_translation_timeout(profile)
         if _is_gpt_oss_model(profile):
@@ -885,13 +878,17 @@ def _translate_batch_once(profile: Any, *, source_language: str, target_language
             profile, source_language=source_language, target_language=target_language,
             prompt=prompt, blocks=blocks, json_mode=bool(profile.json_mode),
         )
-    response = _request_translation_completion(profile, headers=headers, payload=payload)
+    response = _request_translation_completion(
+        profile, headers=headers, payload=payload, retry_timeout=len(blocks) == 1,
+    )
     response_hint = (response.text or "").lower()[:2000] if response.status_code == 400 else ""
     if (not responses_mode and not messages_mode and not google_mode
             and response.status_code == 400 and "response_format" in payload
             and any(token in response_hint for token in ("response_format", "json_object", "json mode"))):
         payload.pop("response_format", None)
-        response = _request_translation_completion(profile, headers=headers, payload=payload)
+        response = _request_translation_completion(
+            profile, headers=headers, payload=payload, retry_timeout=len(blocks) == 1,
+        )
     if not responses_mode and not messages_mode and not google_mode and payload.get("stream"):
         content = _streaming_message_content(response)
     else:
@@ -966,23 +963,40 @@ def _translate_batch_resilient(profile: Any, *, source_language: str, target_lan
             prompt=prompt, blocks=blocks,
         )
     except ReaderTranslationError as exc:
-        if exc.code != "incomplete_translation" or depth >= _TRANSLATION_RETRY_MAX_DEPTH:
+        if depth >= _TRANSLATION_RETRY_MAX_DEPTH:
             raise
-        partial = dict(getattr(exc, "partial_translations", {}) or {})
-        missing_blocks = [block for block in blocks if not partial.get(block["id"])]
-        log.warning(
-            "LLM model %s omitted %d/%d translation blocks (%d chars); retrying only missing work",
-            profile.model, len(missing_blocks), len(blocks),
-            sum(len(block.get("text", "")) for block in missing_blocks),
-        )
-        if partial and missing_blocks:
-            retried = _translate_batch_resilient(
-                profile, source_language=source_language, target_language=target_language,
-                prompt=prompt, blocks=missing_blocks, depth=depth + 1,
+
+        if exc.code == "incomplete_translation":
+            partial = dict(getattr(exc, "partial_translations", {}) or {})
+            missing_blocks = [block for block in blocks if not partial.get(block["id"])]
+            log.warning(
+                "LLM model %s omitted %d/%d translation blocks (%d chars); retrying only missing work",
+                profile.model, len(missing_blocks), len(blocks),
+                sum(len(block.get("text", "")) for block in missing_blocks),
             )
-            merged = dict(partial)
-            merged.update({item["id"]: _translation_value_from_result(item) for item in retried})
-            return [_translated_block_from_value(block, merged[block["id"]]) for block in blocks]
+            if partial and missing_blocks:
+                retried = _translate_batch_resilient(
+                    profile, source_language=source_language, target_language=target_language,
+                    prompt=prompt, blocks=missing_blocks, depth=depth + 1,
+                )
+                merged = dict(partial)
+                merged.update({item["id"]: _translation_value_from_result(item) for item in retried})
+                return [_translated_block_from_value(block, merged[block["id"]]) for block in blocks]
+        elif exc.code == "provider_timeout" and len(blocks) > 1:
+            try:
+                remaining = _remaining_translation_timeout(profile)
+            except ReaderTranslationError:
+                raise exc
+            if remaining < 5:
+                raise
+            log.warning(
+                "LLM model %s timed out translating %d blocks (%d chars); splitting the page fallback",
+                profile.model, len(blocks),
+                sum(len(block.get("text", "")) for block in blocks),
+            )
+        else:
+            raise
+
         if len(blocks) > 1:
             middle = max(1, len(blocks) // 2)
             return _translate_batch_resilient(
@@ -1025,56 +1039,21 @@ def _translate_batch_resilient(profile: Any, *, source_language: str, target_lan
 
 def translate_page(profile: Any, *, source_language: str, target_language: str,
                    prompt: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    batches = _partition_translation_blocks(blocks, profile=profile)
-    if not batches:
+    if not blocks:
         return []
     deadline = time.monotonic() + _configured_translation_timeout(profile)
-    if len(batches) == 1:
-        return _run_with_translation_deadline(
-            deadline,
-            lambda: _translate_batch_resilient(
-                profile, source_language=source_language, target_language=target_language,
-                prompt=prompt, blocks=batches[0],
-            ),
-        )
-
-    workers = _translation_parallel_workers(profile, len(batches))
-    if workers == 1:
-        # Do not submit sequential work to a temporary thread pool. If the first
-        # provider call fails, gevent cannot cancel a native requests socket and
-        # pool shutdown may wait for every queued batch. Running the batches
-        # directly still keeps each socket wait off the hub through _request(),
-        # but returns immediately on the first failure.
-        translated: list[dict[str, Any]] = []
-        for batch in batches:
-            translated.extend(_run_with_translation_deadline(
-                deadline,
-                lambda batch=batch: _translate_batch_resilient(
-                    profile, source_language=source_language, target_language=target_language,
-                    prompt=prompt, blocks=batch,
-                ),
-            ))
-        return translated
-
-    jobs = [
-        (
-            index,
-            lambda batch=batch: _run_with_translation_deadline(
-                deadline,
-                lambda: _translate_batch_resilient(
-                    profile, source_language=source_language, target_language=target_language,
-                    prompt=prompt, blocks=batch,
-                ),
-            ),
-        )
-        for index, batch in enumerate(batches)
-    ]
-    completed: dict[int, list[dict[str, Any]]] = {}
-    for index, outcome in parallel.fan_out(jobs, max_workers=workers):
-        if outcome.exception is not None:
-            raise outcome.exception
-        completed[index] = outcome.value
-    return [item for index in range(len(batches)) for item in completed[index]]
+    # The API has already limited a visible page to 80 blocks / 8,000 source
+    # characters. Send that complete page in one prompt first. Only the
+    # resilient fallback splits it after an incomplete response or a bounded
+    # provider timeout, and it retries only missing work when partial JSON is
+    # usable.
+    return _run_with_translation_deadline(
+        deadline,
+        lambda: _translate_batch_resilient(
+            profile, source_language=source_language, target_language=target_language,
+            prompt=prompt, blocks=blocks,
+        ),
+    )
 
 
 def test_profile(profile: Any) -> dict[str, Any]:
