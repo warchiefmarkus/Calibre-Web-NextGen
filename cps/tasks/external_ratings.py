@@ -3,11 +3,15 @@
 """Background population of cached external book ratings."""
 
 from flask_babel import lazy_gettext as N_
+from threading import Lock
 
 from cps import calibre_db, config, logger, ub
 from cps.services.worker import CalibreTask, STAT_CANCELLED, STAT_ENDED, WorkerThread
 
 log = logger.create()
+
+_pending_lock = Lock()
+_pending_book_ids = set()
 
 
 def _server_hardcover_tokens():
@@ -40,16 +44,37 @@ def queue_external_rating_refresh(
     parsed = _book_ids(book_ids)
     if not parsed:
         return {"success": True, "skipped": True, "reason": "no_book_ids"}
-    WorkerThread.add(
-        username,
-        TaskExternalRatings(
-            parsed,
-            hardcover_tokens=hardcover_tokens,
-            google_books_api_key=google_books_api_key,
-        ),
-        hidden=True,
-    )
-    return {"success": True, "queued": True, "book_ids": parsed}
+
+    with _pending_lock:
+        claimed = [book_id for book_id in parsed if book_id not in _pending_book_ids]
+        _pending_book_ids.update(claimed)
+    if not claimed:
+        return {"success": True, "queued": False, "pending": True, "book_ids": parsed}
+
+    try:
+        WorkerThread.add(
+            username,
+            TaskExternalRatings(
+                claimed,
+                hardcover_tokens=hardcover_tokens,
+                google_books_api_key=google_books_api_key,
+            ),
+            hidden=True,
+        )
+    except Exception:
+        with _pending_lock:
+            _pending_book_ids.difference_update(claimed)
+        raise
+    return {"success": True, "queued": True, "book_ids": claimed}
+
+
+def external_rating_refresh_pending(book_id):
+    try:
+        value = int(book_id)
+    except (TypeError, ValueError):
+        return False
+    with _pending_lock:
+        return value in _pending_book_ids
 
 
 class TaskExternalRatings(CalibreTask):
@@ -101,6 +126,7 @@ class TaskExternalRatings(CalibreTask):
                         book_id,
                         hardcover_tokens=tokens,
                         google_books_api_key=google_key,
+                        unfiltered=True,
                     )
                 except Exception:
                     log.error(
@@ -121,3 +147,5 @@ class TaskExternalRatings(CalibreTask):
                 ub.session.remove()
             except Exception:
                 pass
+            with _pending_lock:
+                _pending_book_ids.difference_update(self.book_ids)

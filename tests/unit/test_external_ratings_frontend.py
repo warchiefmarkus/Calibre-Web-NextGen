@@ -14,6 +14,7 @@ BOOK_COVER = (ROOT / "frontend/src/components/BookCover.tsx").read_text(encoding
 BOOK_CARD = (ROOT / "frontend/src/components/BookCard.tsx").read_text(encoding="utf-8")
 BADGE = (ROOT / "frontend/src/components/CoverRatingBadge.tsx").read_text(encoding="utf-8")
 BADGE_CSS = (ROOT / "frontend/src/components/CoverRatingBadge.module.css").read_text(encoding="utf-8")
+CARD_CSS = (ROOT / "frontend/src/components/BookCard.module.css").read_text(encoding="utf-8")
 
 
 def test_external_ratings_refresh_invalidates_every_preview_surface():
@@ -22,6 +23,8 @@ def test_external_ratings_refresh_invalidates_every_preview_surface():
     assert "/external-ratings/refresh" in QUERIES
     assert "queryClient.setQueryData(['external-book-ratings'" in QUERIES
     assert "refetchOnMount: 'always'" in QUERIES
+    assert "query.state.data?.refreshing ? 1_500 : false" in QUERIES
+    assert "refreshing?: boolean" in API
     for key in ("books", "adv-search", "discover-strip", "shelf", "magicshelf"):
         assert f"queryKey: ['{key}']" in QUERIES
 
@@ -45,6 +48,12 @@ def test_cover_rating_badge_is_shared_and_placed_top_right():
     assert "<CoverRatingBadge rating={externalRating}" in BOOK_COVER
     assert "externalRating={book.external_rating}" in BOOK_CARD
     assert "formatExternalRatingScore" in BADGE
+    assert "data-cover-rating" in BADGE
+    assert "[data-cover-rating]" in CARD_CSS
+    assert ".wrap:hover .coverWrap [data-cover-rating]" in CARD_CSS
+    assert ".cardSelected .coverWrap [data-cover-rating]" in CARD_CSS
+    assert "opacity: 0" in CARD_CSS
+    assert "opacity: 1" in CARD_CSS
     assert "top: var(--sp-2)" in BADGE_CSS
     assert "bottom: var(--sp-2)" not in BADGE_CSS
     assert "@container book-card" in BADGE_CSS

@@ -43,6 +43,26 @@
   outline-offset: 2px;
 }
 
+/* External rating stays out of the artwork until the card is actively
+   inspected. Selection mode keeps it visible on selected cards; keyboard focus
+   mirrors hover for non-pointer users. */
+.coverWrap [data-cover-rating] {
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.wrap:hover .coverWrap [data-cover-rating],
+.wrap:focus-within .coverWrap [data-cover-rating],
+.cardSelected .coverWrap [data-cover-rating] {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 /* Lift on hover or when anything in the card (card control or an action button)
    is focused. Keyed off .wrap so focusing a sibling action button lifts too. */
 .wrap:hover .coverWrap,

@@ -258,6 +258,7 @@ def load_or_refresh_external_ratings(
     force=False,
     hardcover_tokens=(),
     google_books_api_key=None,
+    unfiltered=False,
 ):
     """Load or refresh one book's shared external-rating cache.
 
@@ -266,8 +267,12 @@ def load_or_refresh_external_ratings(
     request routes may include the current user's Hardcover token, while
     system tasks use server-wide configuration only.
     """
-    book = calibre_db.get_filtered_book(
-        book_id, allow_show_archived=True, allow_show_hidden=True,
+    book = (
+        calibre_db.get_book(book_id)
+        if unfiltered
+        else calibre_db.get_filtered_book(
+            book_id, allow_show_archived=True, allow_show_hidden=True,
+        )
     )
     if not book:
         return None
@@ -284,6 +289,39 @@ def load_or_refresh_external_ratings(
     rows = _persist_outcomes(book_id, lookup.identity_hash, outcomes)
     return _serialize(rows, lookup.identity_hash, cached=False)
 
+
+def load_cached_external_ratings(book_id, queue_refresh=True):
+    """Return cached data immediately and refresh stale rows in the background."""
+    book = calibre_db.get_filtered_book(
+        book_id, allow_show_archived=True, allow_show_hidden=True,
+    )
+    if not book:
+        return None
+
+    lookup = _book_lookup(book)
+    rows = _cache_rows(book_id)
+    fresh = _cache_is_fresh(rows, lookup.identity_hash)
+    refreshing = False
+    if not fresh and queue_refresh:
+        from ..tasks.external_ratings import (
+            external_rating_refresh_pending,
+            queue_external_rating_refresh,
+        )
+        result = queue_external_rating_refresh(
+            [book_id],
+            username=str(getattr(current_user, "name", None) or "System"),
+            hardcover_tokens=_hardcover_tokens(),
+            google_books_api_key=_google_books_api_key(),
+        )
+        refreshing = bool(
+            result.get("queued")
+            or result.get("pending")
+            or external_rating_refresh_pending(book_id)
+        )
+
+    payload = _serialize(rows, lookup.identity_hash, cached=True)
+    payload["refreshing"] = refreshing
+    return payload
 
 def external_rating_summary_map(book_ids):
     """Return compact display ratings for many books in one app.db query.
@@ -347,7 +385,7 @@ def _load_or_refresh(book_id, force=False):
 @api_v1.route("/books/<int:book_id>/external-ratings")
 @login_required_if_no_ano
 def external_book_ratings(book_id):
-    payload = _load_or_refresh(book_id)
+    payload = load_cached_external_ratings(book_id)
     if payload is None:
         return jsonify({"error": {"code": "not_found", "message": "Book not found"}}), 404
     return jsonify(payload)
@@ -359,4 +397,5 @@ def refresh_external_book_ratings(book_id):
     payload = _load_or_refresh(book_id, force=True)
     if payload is None:
         return jsonify({"error": {"code": "not_found", "message": "Book not found"}}), 404
+    payload["refreshing"] = False
     return jsonify(payload)

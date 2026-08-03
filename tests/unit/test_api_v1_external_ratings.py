@@ -48,11 +48,14 @@ def test_book_lookup_extracts_provider_identifiers_and_normalizes_author():
     assert value.publication_year == 2024
 
 
-def test_get_route_returns_cached_or_refreshed_payload():
+def test_get_route_returns_cached_payload_without_sync_provider_fetch():
     from cps.api import external_ratings as api
-    expected = {"items": [], "errors": [], "warnings": [], "cached": True, "fetched_at": None}
+    expected = {
+        "items": [], "errors": [], "warnings": [], "cached": True,
+        "fetched_at": None, "refreshing": False,
+    }
     with _ctx("/api/v1/books/5/external-ratings"), \
-         patch.object(api, "_load_or_refresh", return_value=expected) as loader:
+         patch.object(api, "load_cached_external_ratings", return_value=expected) as loader:
         response = inspect.unwrap(api.external_book_ratings)(5)
     assert json.loads(response.get_data()) == expected
     loader.assert_called_once_with(5)
@@ -64,9 +67,35 @@ def test_refresh_route_forces_provider_refresh():
     with _ctx("/api/v1/books/5/external-ratings/refresh", method="POST"), \
          patch.object(api, "_load_or_refresh", return_value=expected) as loader:
         response = inspect.unwrap(api.refresh_external_book_ratings)(5)
-    assert json.loads(response.get_data()) == expected
+    assert json.loads(response.get_data()) == {**expected, "refreshing": False}
     loader.assert_called_once_with(5, force=True)
 
+
+
+def test_stale_cache_is_returned_immediately_and_refresh_is_queued():
+    from cps.api import external_ratings as api
+    from cps.tasks import external_ratings as tasks
+
+    cached = {
+        "items": [{"source": "goodreads", "rating": 4.2}],
+        "errors": [], "warnings": [], "cached": True, "fetched_at": "old",
+    }
+    queue_result = {"success": True, "queued": True, "book_ids": [5]}
+    user = SimpleNamespace(name="alice", hardcover_token=None)
+    with patch.object(api.calibre_db, "get_filtered_book", return_value=_book()), \
+         patch.object(api, "_cache_rows", return_value=[SimpleNamespace()]), \
+         patch.object(api, "_cache_is_fresh", return_value=False), \
+         patch.object(api, "_serialize", return_value=cached.copy()), \
+         patch.object(api, "current_user", user), \
+         patch.object(api, "_hardcover_tokens", return_value=[]), \
+         patch.object(api, "_google_books_api_key", return_value=None), \
+         patch.object(tasks, "queue_external_rating_refresh", return_value=queue_result) as queue, \
+         patch.object(tasks, "external_rating_refresh_pending", return_value=True):
+        payload = api.load_cached_external_ratings(5)
+
+    assert payload["items"][0]["rating"] == 4.2
+    assert payload["refreshing"] is True
+    queue.assert_called_once()
 
 def test_transient_provider_error_preserves_last_successful_aggregate():
     from cps.api import external_ratings as api

@@ -171,6 +171,7 @@ export interface ExternalBookRatingsResponse {
   warnings: { source: string; message: string }[];
   cached: boolean;
   fetched_at: string | null;
+  refreshing?: boolean;
 }
 
 export interface BookDetail {

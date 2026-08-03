@@ -20,7 +20,7 @@ export function CoverRatingBadge({ rating }: CoverRatingBadgeProps) {
   const label = voteText ? `${source}: ${score} / 5 · ${voteText}` : `${source}: ${score} / 5`;
 
   return (
-    <span className={styles.badge} role="img" aria-label={label} title={label}>
+    <span className={styles.badge} data-cover-rating role="img" aria-label={label} title={label}>
       <Star className={styles.star} size={13} fill="currentColor" aria-hidden="true" />
       <span>{score}</span>
     </span>

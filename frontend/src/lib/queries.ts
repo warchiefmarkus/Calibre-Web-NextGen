@@ -274,6 +274,7 @@ export function useExternalBookRatings(id: string | number) {
     // on detail mount prevents an hour-old client result from disagreeing with
     // cover badges populated by a background refresh.
     refetchOnMount: 'always',
+    refetchInterval: (query) => query.state.data?.refreshing ? 1_500 : false,
     retry: (failureCount, error) =>
       !(error instanceof ApiError && (error.status === 401 || error.status === 404))
       && failureCount < 2,

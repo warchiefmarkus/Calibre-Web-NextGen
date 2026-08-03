@@ -9,12 +9,21 @@ pytestmark = pytest.mark.unit
 
 def test_queue_external_ratings_deduplicates_ids_and_hides_task():
     from cps.tasks import external_ratings as tasks
-    with patch.object(tasks.WorkerThread, "add") as add:
-        result = tasks.queue_external_rating_refresh([7, "7", None, 8, -1])
-    assert result == {"success": True, "queued": True, "book_ids": [7, 8]}
-    queued_task = add.call_args.args[1]
-    assert queued_task.book_ids == [7, 8]
-    assert add.call_args.kwargs["hidden"] is True
+    tasks._pending_book_ids.clear()
+    try:
+        with patch.object(tasks.WorkerThread, "add") as add:
+            result = tasks.queue_external_rating_refresh([7, "7", None, 8, -1])
+            duplicate = tasks.queue_external_rating_refresh([7, 8])
+        assert result == {"success": True, "queued": True, "book_ids": [7, 8]}
+        assert duplicate == {
+            "success": True, "queued": False, "pending": True, "book_ids": [7, 8],
+        }
+        queued_task = add.call_args.args[1]
+        assert queued_task.book_ids == [7, 8]
+        assert add.call_args.kwargs["hidden"] is True
+        assert add.call_count == 1
+    finally:
+        tasks._pending_book_ids.clear()
 
 
 def test_background_task_populates_each_book_without_forcing_refresh():
@@ -33,6 +42,7 @@ def test_background_task_populates_each_book_without_forcing_refresh():
     assert [call.args[0] for call in loader.call_args_list] == [7, 8]
     assert all(call.kwargs["hardcover_tokens"] == ["hc"] for call in loader.call_args_list)
     assert all(call.kwargs["google_books_api_key"] == "gb" for call in loader.call_args_list)
+    assert all(call.kwargs["unfiltered"] is True for call in loader.call_args_list)
 
 
 def test_both_import_paths_queue_external_ratings_after_book_ids_exist():
