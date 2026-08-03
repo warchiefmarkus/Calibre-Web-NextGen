@@ -43,6 +43,13 @@
   outline-offset: 2px;
 }
 
+
+/* Selection controls already own the top-left corner. Keep the persistent
+   progress badge visible immediately below them instead of stacking overlays. */
+.coverWrapSelectable [data-cover-progress] {
+  top: calc(var(--sp-2) + 30px);
+}
+
 /* External rating stays out of the artwork until the card is actively
    inspected. Selection mode keeps it visible on selected cards; keyboard focus
    mirrors hover for non-pointer users. */
@@ -269,6 +276,8 @@
 .removeBtn:focus-visible {
   opacity: 1;
 }
+
+.removeBtnWithProgress { top: calc(var(--sp-2) + 30px); }
 
 .removeBtn:hover {
   background: var(--danger);

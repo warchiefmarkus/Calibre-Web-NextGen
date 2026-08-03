@@ -1,5 +1,6 @@
-import { resourceUrl, type ExternalRatingSummary } from '../lib/api';
+import { resourceUrl, type ExternalRatingSummary, type ReadingProgressSummary } from '../lib/api';
 import { CoverRatingBadge } from './CoverRatingBadge';
+import { CoverProgressBadge } from './CoverProgressBadge';
 import styles from './BookCover.module.css';
 
 interface BookCoverProps {
@@ -7,9 +8,10 @@ interface BookCoverProps {
   title: string;
   authors?: string[];
   externalRating?: ExternalRatingSummary | null;
+  readingProgress?: ReadingProgressSummary | null;
 }
 
-export function BookCover({ coverUrl, title, authors, externalRating }: BookCoverProps) {
+export function BookCover({ coverUrl, title, authors, externalRating, readingProgress }: BookCoverProps) {
   return (
     <div className={styles.wrap}>
       {coverUrl ? (
@@ -26,6 +28,7 @@ export function BookCover({ coverUrl, title, authors, externalRating }: BookCove
           <span className={styles.fallbackMark} aria-hidden="true">NextGen</span>
         </div>
       )}
+      <CoverProgressBadge progress={readingProgress} />
       <CoverRatingBadge rating={externalRating} />
     </div>
   );

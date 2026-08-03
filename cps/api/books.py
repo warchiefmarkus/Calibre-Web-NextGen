@@ -125,7 +125,7 @@ def _archived_book_ids():
     return {int(row[0]) for row in rows}
 
 
-def _row_to_item(e, hidden_ids=None, external_rating=None):
+def _row_to_item(e, hidden_ids=None, external_rating=None, reading_progress=None):
     """Unwrap a SQLAlchemy Row (Books, is_archived, read_status) or plain Books object."""
     book = getattr(e, "Books", e)
     if config.config_read_column:
@@ -143,6 +143,7 @@ def _row_to_item(e, hidden_ids=None, external_rating=None):
         archived=archived,
         hidden=book.id in (hidden_ids or set()),
         external_rating=external_rating,
+        reading_progress=reading_progress,
     )
 
 
@@ -156,11 +157,21 @@ def _rows_to_items(entries, hidden_ids=None):
     except Exception:
         log.warning("External-rating summaries unavailable for book list", exc_info=True)
         summaries = {}
+    progress_summaries = {}
+    user_id = _real_user_id()
+    if user_id is not None:
+        from ..services.reading_progress import reading_progress_summary_map
+        progress_summaries = reading_progress_summary_map(
+            ub.session, user_id, book_ids,
+            user_name=getattr(current_user, "name", None))
     return [
         _row_to_item(
             entry,
             hidden_ids=hidden_ids,
             external_rating=summaries.get(
+                int(getattr(getattr(entry, "Books", entry), "id"))
+            ),
+            reading_progress=progress_summaries.get(
                 int(getattr(getattr(entry, "Books", entry), "id"))
             ),
         )
@@ -421,6 +432,7 @@ def book_detail(book_id):
     kosync_progress = None
     kosync_progress_timestamp = None
     kosync_progress_created_at = None
+    reading_progress = None
     if current_user.is_authenticated and not current_user.is_anonymous:
         uid = int(current_user.id)
         favorited = (ub.session.query(ub.FavoriteBook)
@@ -441,6 +453,10 @@ def book_detail(book_id):
             kosync_progress_timestamp = last_synced.replace(tzinfo=timezone.utc).isoformat()
         if started_reading:
             kosync_progress_created_at = started_reading.replace(tzinfo=timezone.utc).isoformat()
+        from ..services.reading_progress import reading_progress_summary_map
+        reading_progress = reading_progress_summary_map(
+            ub.session, uid, [book_id],
+            user_name=getattr(current_user, "name", None)).get(book_id)
 
     # With a custom read column, get_book_read_archived returns the column's value
     # (truthy = read); otherwise the built-in ub.ReadBook.read_status. Match the
@@ -471,6 +487,7 @@ def book_detail(book_id):
     body["kosync_progress"] = kosync_progress
     body["kosync_progress_timestamp"] = kosync_progress_timestamp
     body["kosync_progress_created_at"] = kosync_progress_created_at
+    body["reading_progress"] = reading_progress
     return jsonify(body)
 
 

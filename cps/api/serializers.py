@@ -124,7 +124,8 @@ def _iso_datetime(value):
     return value.isoformat() if isinstance(value, (datetime, date)) else None
 
 
-def serialize_book_list_item(book, read=False, archived=False, hidden=False, external_rating=None):
+def serialize_book_list_item(book, read=False, archived=False, hidden=False, external_rating=None,
+                             reading_progress=None):
     series = book.series[0].name if getattr(book, "series", None) else None
     return {
         "id": book.id,
@@ -147,6 +148,9 @@ def serialize_book_list_item(book, read=False, archived=False, hidden=False, ext
         # Cached third-party aggregate selected by the list endpoint in one
         # batch app.db query. None keeps rolling upgrades/backfills harmless.
         "external_rating": external_rating,
+        # Newest per-user Moon+/Calibre-Web reading position, batch-loaded by
+        # list endpoints. None preserves anonymous and rolling-upgrade clients.
+        "reading_progress": reading_progress,
         "read": bool(read),
         "archived": bool(archived),
         "hidden": bool(hidden),

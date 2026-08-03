@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'wouter';
 import {
-  ArrowLeft, BookOpenCheck, CheckCircle2, Cloud, Play, Save,
+  ArrowLeft, BookOpenCheck, CheckCircle2, Cloud, FileWarning, Play, Save,
   Server, ShieldCheck, Wifi,
 } from 'lucide-react';
 import {
@@ -221,14 +221,24 @@ export function MoonReaderSync() {
         {(summary?.unmatched?.length ?? 0) > 0 && (
           <details className={styles.details}>
             <summary>{t('Unmatched Moon+ files ({count})', { count: summary!.unmatched!.length })}</summary>
-            <ul>{summary!.unmatched!.map((name) => <li key={name}>{name}</li>)}</ul>
+            <ul className={styles.fileList}>
+              {summary!.unmatched!.map((name) => (
+                <li key={name}>
+                  <FileWarning size={15} aria-hidden="true" />
+                  <span>{name}</span>
+                </li>
+              ))}
+            </ul>
           </details>
         )}
         {(summary?.errors?.length ?? 0) > 0 && (
           <details className={styles.details}>
             <summary>{t('Import errors ({count})', { count: summary!.errors!.length })}</summary>
-            <ul>{summary!.errors!.map((item) => (
-              <li key={`${item.file}:${item.message}`}>{item.file}: {item.message}</li>
+            <ul className={styles.fileList}>{summary!.errors!.map((item) => (
+              <li key={`${item.file}:${item.message}`}>
+                <FileWarning size={15} aria-hidden="true" />
+                <span><strong>{item.file}</strong><small>{item.message}</small></span>
+              </li>
             ))}</ul>
           </details>
         )}

@@ -33,6 +33,7 @@ DEFAULT_CACHE_PATHS = (".Moon+/Cache", "Books/.Moon+/Cache", "books/.Moon+/Cache
 MAX_PROPFIND_BYTES = 5 * 1024 * 1024
 MAX_POSITION_BYTES = 64 * 1024
 MAX_CHECKSUM_BOOK_BYTES = 100 * 1024 * 1024
+MAX_SUMMARY_ITEMS = 500
 _DAV = "{DAV:}"
 _PO_RE = re.compile(
     r"^\s*(?P<timestamp>\d{10,16})\*(?P<chapter>-?\d+)"
@@ -630,7 +631,7 @@ def sync_positions(user_id: int) -> dict[str, Any]:
                         digest, size = client.sha256(remote_book.path)
                         match = matcher.match_checksum(digest, size)
                 if match is None:
-                    if len(summary["unmatched"]) < 50:
+                    if len(summary["unmatched"]) < MAX_SUMMARY_ITEMS:
                         summary["unmatched"].append(os.path.basename(resource.path))
                     continue
                 summary["matched"] += 1
@@ -638,12 +639,12 @@ def sync_positions(user_id: int) -> dict[str, Any]:
                 summary[outcome] += 1
             except MoonReaderError as exc:
                 ub.session.rollback()
-                if len(summary["errors"]) < 50:
+                if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
                     summary["errors"].append({"file": os.path.basename(resource.path), "message": str(exc)})
             except Exception as exc:  # one malformed file must not abort the batch
                 ub.session.rollback()
                 log.exception("Moon+ Reader position import failed for %s", resource.path)
-                if len(summary["errors"]) < 50:
+                if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
                     summary["errors"].append({"file": os.path.basename(resource.path), "message": str(exc)})
         return summary
     finally:

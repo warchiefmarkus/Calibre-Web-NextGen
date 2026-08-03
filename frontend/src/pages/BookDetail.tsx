@@ -17,11 +17,12 @@ import { MoreByAuthor } from '../components/MoreByAuthor';
 import { AUTHOR_SEPARATOR, formatAuthors } from '../lib/authors';
 import { SpinnerCentered, Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
-import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef } from '../lib/api';
+import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef, ReadingProgressSummary } from '../lib/api';
 import { ApiError, resourceUrl } from '../lib/api';
 import { useT } from '../lib/i18n';
 import { getPrimaryReadTarget } from '../lib/readerTarget';
 import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
+import { formatReadingProgress } from '../components/CoverProgressBadge';
 import styles from './BookDetail.module.css';
 
 function formatBytes(bytes: number): string {
@@ -53,7 +54,10 @@ function formatDate(date: string, alwaysReturnFullDate = false): string {
   return date;
 }
 
-function ExternalRatingsPanel({ bookId }: { bookId: number }) {
+function ExternalRatingsPanel({ bookId, readingProgress }: {
+  bookId: number;
+  readingProgress?: ReadingProgressSummary | null;
+}) {
   const t = useT();
   const ratings = useExternalBookRatings(bookId);
   const refresh = useRefreshExternalBookRatings(bookId);
@@ -63,8 +67,30 @@ function ExternalRatingsPanel({ bookId }: { bookId: number }) {
   const ratingBusy = refresh.isPending || backgroundRefreshing;
   const error = refresh.error ?? ratings.error;
 
+  const progressDate = readingProgress?.updated_at
+    ? new Date(readingProgress.updated_at) : null;
+  const progressTime = progressDate && !Number.isNaN(progressDate.getTime())
+    ? progressDate.toLocaleString() : readingProgress?.updated_at ?? null;
+  const progressSource = readingProgress?.source === 'moonreader'
+    ? 'Moon+ Reader' : 'Calibre-Web';
+
   return (
     <div className={styles.externalRatings} aria-live="polite">
+      {readingProgress && Number.isFinite(readingProgress.percentage) && (
+        <span className={styles.readingProgressBadge}
+          title={`${progressSource}${progressTime ? ` · ${progressTime}` : ''}`}>
+          <span className={styles.readingProgressMain}>
+            <BookOpen size={14} aria-hidden="true" />
+            <span>{t('Progress')}</span>
+            <strong>{formatReadingProgress(readingProgress.percentage)}%</strong>
+          </span>
+          {progressTime && (
+            <span className={styles.readingProgressTime}>
+              {t('Last synced')}: {progressTime}
+            </span>
+          )}
+        </span>
+      )}
       {items.map((item) => {
         const source = EXTERNAL_RATING_SOURCE_LABELS[item.source] ?? item.source;
         const score = item.rating != null ? formatExternalRatingScore(item.rating) : null;
@@ -471,7 +497,7 @@ export function BookDetail() {
             {/* Passive "currently reading" marker (fork #634) — mirrors the classic
                 detail page. Sync-driven display only; the read toggle below stays a
                 2-state read/unread control. Shows the synced percent when known. */}
-            {book.in_progress && (
+            {book.in_progress && !book.reading_progress && (
               <div className={styles.readProgressWrap}>
                 <p className={styles.currentlyReading}>
                   <BookOpen size={14} aria-hidden="true" focusable={false} />
@@ -490,7 +516,7 @@ export function BookDetail() {
             )}
           </div>
 
-          <ExternalRatingsPanel bookId={book.id} />
+          <ExternalRatingsPanel bookId={book.id} readingProgress={book.reading_progress} />
 
           {/* Actions */}
           <div className={styles.actions}>

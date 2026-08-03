@@ -99,6 +99,12 @@ export interface ExternalRatingSummary {
   source_count: number;
 }
 
+export interface ReadingProgressSummary {
+  percentage: number;
+  updated_at: string | null;
+  source: 'moonreader' | 'calibre_web';
+}
+
 export interface Book {
   id: number;
   title: string;
@@ -114,6 +120,8 @@ export interface Book {
   last_modified?: string | null;
   /** Compact cached aggregate for cover badges; null until background lookup completes. */
   external_rating?: ExternalRatingSummary | null;
+  /** Newest per-user position from Moon+ or the Calibre-Web sync database. */
+  reading_progress?: ReadingProgressSummary | null;
   read?: boolean;
   archived?: boolean;
   /** Personal-library declutter state. Present on list items from current servers. */
@@ -214,6 +222,8 @@ export interface BookDetail {
    *  ISO date, or null when not synced or for progress that predates
    *  this field. */
   kosync_progress_created_at: string | null;
+  /** Newest reading position after comparing Moon+ .po and database timestamps. */
+  reading_progress: ReadingProgressSummary | null;
   /** Allowed conversion source/target formats for this book, derived from the
    *  configured converters and formats already present (mirror of the legacy
    *  edit page). Absent on older servers → no conversion UI. */

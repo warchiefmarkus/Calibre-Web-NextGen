@@ -37,7 +37,7 @@ def test_external_ratings_refresh_invalidates_every_preview_surface():
 
 
 def test_book_detail_uses_compact_source_badges_without_provider_noise():
-    assert "<ExternalRatingsPanel bookId={book.id} />" in DETAIL
+    assert "<ExternalRatingsPanel bookId={book.id} readingProgress={book.reading_progress} />" in DETAIL
     assert "EXTERNAL_RATING_SOURCE_LABELS" in DETAIL
     assert "formatExternalRatingScore" in DETAIL
     assert "Ratings: {count}" in DETAIL

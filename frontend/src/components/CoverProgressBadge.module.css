@@ -1,6 +1,6 @@
 .badge {
   position: absolute;
-  right: var(--sp-2);
+  left: var(--sp-2);
   top: var(--sp-2);
   z-index: 2;
   min-height: 24px;
@@ -10,41 +10,30 @@
   background: rgba(20, 28, 36, .70);
   color: #fff;
   box-shadow: var(--elev-1);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   font-size: var(--fs-xs);
   font-weight: var(--fw-semi);
+  font-variant-numeric: tabular-nums;
   line-height: 1;
-  pointer-events: auto;
+  pointer-events: none;
   white-space: nowrap;
 }
 
-.star {
-  color: #d99800;
-  flex: 0 0 auto;
-}
 
 @container book-card (max-width: 110px) {
   .badge {
-    right: 5px;
+    left: 5px;
     top: 5px;
     min-height: 20px;
     padding: 0 5px;
-    gap: 3px;
     font-size: 10px;
   }
 
-  .star {
-    width: 11px;
-    height: 11px;
-  }
 }
 
 @media (max-width: 480px) {
-  .badge {
-    min-height: 20px;
-    padding-inline: 5px;
-  }
+  .badge { min-height: 20px; padding-inline: 5px; }
 }

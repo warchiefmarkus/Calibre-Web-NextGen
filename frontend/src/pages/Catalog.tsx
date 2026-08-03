@@ -854,7 +854,8 @@ export function Catalog({ entityKind, entityId, view, defaultFilter }: CatalogPr
                   <Link href={`/book/${book.id}`} className={styles.bookListItem}
                     aria-label={t('Open details for {title}', { title: book.title })}>
                     <span className={styles.bookListCover}>
-                      <BookCover coverUrl={book.cover_url} title={book.title} authors={book.authors} externalRating={book.external_rating} />
+                      <BookCover coverUrl={book.cover_url} title={book.title} authors={book.authors}
+                        externalRating={book.external_rating} readingProgress={book.reading_progress} />
                     </span>
                     <span className={styles.bookListInfo}>
                       <strong>{book.title}</strong>

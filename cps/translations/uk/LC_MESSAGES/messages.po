@@ -3190,7 +3190,7 @@ msgstr "Прочитано"
 
 #: cps/spa_strings.py:251
 msgid "Reading progress"
-msgstr ""
+msgstr "Прогрес читання"
 
 #: cps/spa_strings.py:252 cps/templates/read.html:195
 msgid "Red"
@@ -4635,7 +4635,7 @@ msgstr ""
 
 #: cps/spa_strings.py:631 cps/templates/detail.html:1029
 msgid "Last synced"
-msgstr ""
+msgstr "Остання синхронізація"
 
 #: cps/spa_strings.py:632
 msgid "Library settings"

@@ -62,8 +62,9 @@ export function BookCard({
   // Cover + overlay badges. All non-interactive (pointer-events: none via CSS) so
   // the single wrapping control (link or toggle button) is the only tab stop.
   const cover = (
-    <div className={styles.coverWrap}>
-      <BookCover coverUrl={book.cover_url} title={book.title} authors={book.authors} externalRating={book.external_rating} />
+    <div className={selectable ? `${styles.coverWrap} ${styles.coverWrapSelectable}` : styles.coverWrap}>
+      <BookCover coverUrl={book.cover_url} title={book.title} authors={book.authors}
+        externalRating={book.external_rating} readingProgress={book.reading_progress} />
       {/* One bottom-left row rather than three independently-positioned badges.
           `hiddenBadge` and `seriesBadge` were BOTH pinned to bottom-left, so a
           hidden book in a series view stacked them on top of each other; and
@@ -167,7 +168,7 @@ export function BookCard({
       {onRemove && (
         <button
           type="button"
-          className={styles.removeBtn}
+          className={book.reading_progress ? `${styles.removeBtn} ${styles.removeBtnWithProgress}` : styles.removeBtn}
           aria-label={t(removeLabel)}
           onClick={() => onRemove(book)}
         >

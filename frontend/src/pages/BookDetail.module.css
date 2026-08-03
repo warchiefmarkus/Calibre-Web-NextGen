@@ -254,6 +254,35 @@
   max-width: 100%;
 }
 
+.readingProgressBadge {
+  min-width: 0;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  color: var(--text);
+  box-shadow: var(--elev-1);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.readingProgressMain,
+.readingProgressTime {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  white-space: nowrap;
+}
+
+.readingProgressMain { font-weight: var(--fw-semi); }
+.readingProgressMain svg { color: var(--accent-text); }
+.readingProgressMain strong { font-variant-numeric: tabular-nums; }
+.readingProgressTime { color: var(--text-muted); font-size: var(--fs-xs); }
+
 .externalRatingBadge {
   min-width: 0;
   min-height: 34px;
@@ -263,7 +292,7 @@
   padding: var(--sp-1) var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--r-full);
-  background: var(--surface-1);
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
   color: var(--text);
   text-decoration: none;
   box-shadow: var(--elev-1);
@@ -333,7 +362,8 @@
 .externalRatingsError { color: var(--danger); }
 
 @media (max-width: 600px) {
-  .externalRatingBadge {
+  .externalRatingBadge,
+  .readingProgressBadge {
     max-width: 100%;
     flex-direction: column;
     align-items: flex-start;
@@ -342,7 +372,9 @@
   }
 
   .externalRatingMain,
-  .externalRatingStats {
+  .externalRatingStats,
+  .readingProgressMain,
+  .readingProgressTime {
     gap: var(--sp-1);
   }
 }

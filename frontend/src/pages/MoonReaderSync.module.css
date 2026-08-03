@@ -78,7 +78,28 @@
 .summaryItem span { display: block; color: var(--text-muted); font-size: var(--fs-xs); }
 .details { margin-top: var(--sp-3); color: var(--text-muted); font-size: var(--fs-sm); }
 .details summary { cursor: pointer; color: var(--text); }
-.details ul { margin: var(--sp-2) 0 0 var(--sp-5); word-break: break-word; }
+.fileList {
+  list-style: none;
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+}
+.fileList li {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text);
+  word-break: break-word;
+}
+.fileList li > svg { flex: 0 0 auto; margin-top: 2px; color: var(--warning, var(--accent)); }
+.fileList li > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fileList small { color: var(--text-muted); font-size: var(--fs-xs); }
 .securityNote {
   display: flex; align-items: flex-start; gap: var(--sp-2);
   padding: var(--sp-3); color: var(--text-muted); font-size: var(--fs-sm);
