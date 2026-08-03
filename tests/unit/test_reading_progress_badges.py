@@ -160,9 +160,12 @@ def test_catalog_and_detail_render_progress_badges():
     assert "BookOpen" not in badge
     assert "left: var(--sp-2)" in badge_css and "top: var(--sp-2)" in badge_css
     assert "background: rgba(20, 28, 36, .70)" in badge_css
-    assert "readingProgress={book.reading_progress}" in detail
-    assert "{t('Last synced')}: {progressTime}" not in detail
-    assert '<BookOpen size={14}' not in detail
+    assert '<CoverProgressBadge progress={book.reading_progress} side="right" />' in detail
+    assert "unifiedProgress" in detail
+    assert "externalRatingName" not in detail
+    assert "KOReader Progress" not in detail
+    assert '<BookOpen size={20} />' in detail
+    assert "{t('Read now')}" not in detail.split('className={styles.coverReadHint}', 1)[1].split('</span>', 1)[0]
     assert "className={styles.fileList}" in moon
     assert ".fileList li" in moon_css
     assert "MAX_SUMMARY_ITEMS = 500" in moon_service

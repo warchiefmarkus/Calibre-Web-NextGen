@@ -22,6 +22,10 @@
   white-space: nowrap;
 }
 
+.right {
+  left: auto;
+  right: var(--sp-2);
+}
 
 @container book-card (max-width: 110px) {
   .badge {
@@ -32,6 +36,10 @@
     font-size: 10px;
   }
 
+  .right {
+    left: auto;
+    right: 5px;
+  }
 }
 
 @media (max-width: 480px) {

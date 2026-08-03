@@ -17,12 +17,12 @@ import { MoreByAuthor } from '../components/MoreByAuthor';
 import { AUTHOR_SEPARATOR, formatAuthors } from '../lib/authors';
 import { SpinnerCentered, Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
-import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef, ReadingProgressSummary } from '../lib/api';
+import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef } from '../lib/api';
 import { ApiError, resourceUrl } from '../lib/api';
 import { useT } from '../lib/i18n';
 import { getPrimaryReadTarget } from '../lib/readerTarget';
 import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
-import { formatReadingProgress } from '../components/CoverProgressBadge';
+import { CoverProgressBadge, formatReadingProgress } from '../components/CoverProgressBadge';
 import styles from './BookDetail.module.css';
 
 function formatBytes(bytes: number): string {
@@ -54,10 +54,7 @@ function formatDate(date: string, alwaysReturnFullDate = false): string {
   return date;
 }
 
-function ExternalRatingsPanel({ bookId, readingProgress }: {
-  bookId: number;
-  readingProgress?: ReadingProgressSummary | null;
-}) {
+function ExternalRatingsPanel({ bookId }: { bookId: number }) {
   const t = useT();
   const ratings = useExternalBookRatings(bookId);
   const refresh = useRefreshExternalBookRatings(bookId);
@@ -67,36 +64,14 @@ function ExternalRatingsPanel({ bookId, readingProgress }: {
   const ratingBusy = refresh.isPending || backgroundRefreshing;
   const error = refresh.error ?? ratings.error;
 
-  const progressDate = readingProgress?.updated_at
-    ? new Date(readingProgress.updated_at) : null;
-  const progressTime = progressDate && !Number.isNaN(progressDate.getTime())
-    ? progressDate.toLocaleString() : readingProgress?.updated_at ?? null;
-  const progressSource = readingProgress?.source === 'moonreader'
-    ? 'Moon+ Reader' : 'Calibre-Web';
-
   return (
     <div className={styles.externalRatings} aria-live="polite">
-      {readingProgress && Number.isFinite(readingProgress.percentage) && (
-        <span className={styles.readingProgressBadge}
-          title={`${progressSource}${progressTime ? ` · ${progressTime}` : ''}`}>
-          <span className={styles.readingProgressMain}>
-            <span>{t('Progress')}</span>
-            <strong>{formatReadingProgress(readingProgress.percentage)}%</strong>
-          </span>
-          {progressTime && (
-            <span className={styles.readingProgressTime}>
-              {progressTime}
-            </span>
-          )}
-        </span>
-      )}
       {items.map((item) => {
         const source = EXTERNAL_RATING_SOURCE_LABELS[item.source] ?? item.source;
         const score = item.rating != null ? formatExternalRatingScore(item.rating) : null;
         const content = (
           <>
             <span className={styles.externalRatingMain}>
-              <span className={styles.externalRatingName}>{t('Rating')}</span>
               {score != null && (
                 <strong className={styles.externalRatingScore}>
                   <Star size={14} fill="currentColor" aria-hidden="true" />
@@ -388,6 +363,17 @@ export function BookDetail() {
   }
 
   const primaryReadTarget = getPrimaryReadTarget(book.id, book.formats.map((f) => f.format));
+  const unifiedProgress = book.reading_progress && Number.isFinite(book.reading_progress.percentage)
+    ? Math.max(0, Math.min(100, book.reading_progress.percentage))
+    : book.kosync_progress != null && Number.isFinite(book.kosync_progress)
+      ? Math.max(0, Math.min(100, book.kosync_progress))
+      : null;
+  const unifiedProgressTime = book.reading_progress?.updated_at
+    ? new Date(book.reading_progress.updated_at)
+    : null;
+  const unifiedProgressTimeText = unifiedProgressTime && !Number.isNaN(unifiedProgressTime.getTime())
+    ? unifiedProgressTime.toLocaleString()
+    : book.reading_progress?.updated_at ?? null;
   const currentOcr = ocrStatus.data;
   const ocrBusy = startOcr.isPending || (
     !!currentOcr && !currentOcr.terminal &&
@@ -448,9 +434,10 @@ export function BookDetail() {
                   <span className={styles.coverFallbackMark} aria-hidden="true">NextGen</span>
                 </div>
               )}
+              <CoverProgressBadge progress={book.reading_progress} side="right" />
               {primaryReadTarget && (
                 <span className={styles.coverReadHint} aria-hidden="true">
-                  <BookOpen size={17} /> {t('Read now')}
+                  <BookOpen size={20} />
                 </span>
               )}
             </button>
@@ -493,28 +480,33 @@ export function BookDetail() {
                 <StarRating rating={book.rating} size={16} />
               </div>
             )}
-            {/* Passive "currently reading" marker (fork #634) — mirrors the classic
-                detail page. Sync-driven display only; the read toggle below stays a
-                2-state read/unread control. Shows the synced percent when known. */}
-            {book.in_progress && !book.reading_progress && (
+            {/* Keep the original NextGen progress presentation, but feed it the
+                newest unified Moon+/Calibre-Web progress carrier. */}
+            {(unifiedProgress != null || book.in_progress) && (
               <div className={styles.readProgressWrap}>
                 <p className={styles.currentlyReading}>
-                  {book.kosync_progress != null
-                    ? `${t('Currently reading')} · ${Math.round(book.kosync_progress)}%`
+                  {unifiedProgress != null
+                    ? `${t('Currently reading')} · ${formatReadingProgress(unifiedProgress)}%`
                     : t('Currently reading')}
                 </p>
-                {book.kosync_progress != null && (
+                {unifiedProgress != null && (
                   <div className={styles.readProgress} role="progressbar"
                     aria-label={t('Reading progress')} aria-valuemin={0} aria-valuemax={100}
-                    aria-valuenow={Math.round(book.kosync_progress)}>
-                    <span style={{ width: `${Math.max(0, Math.min(100, book.kosync_progress))}%` }} />
+                    aria-valuenow={Math.round(unifiedProgress)}>
+                    <span style={{ width: `${unifiedProgress}%` }} />
                   </div>
+                )}
+                {unifiedProgressTimeText && (
+                  <time className={styles.readProgressTime}
+                    dateTime={book.reading_progress?.updated_at ?? undefined}>
+                    {unifiedProgressTimeText}
+                  </time>
                 )}
               </div>
             )}
           </div>
 
-          <ExternalRatingsPanel bookId={book.id} readingProgress={book.reading_progress} />
+          <ExternalRatingsPanel bookId={book.id} />
 
           {/* Actions */}
           <div className={styles.actions}>
@@ -794,26 +786,6 @@ export function BookDetail() {
               <>
                 <dt className={styles.metaLabel}>{t('Imported as')}</dt>
                 <dd className={styles.metaValue}>{book.original_filename}</dd>
-              </>
-            )}
-            {book.kosync_progress != null && (
-              <>
-                <dt className={styles.metaLabel}>{t('KOReader Progress')}</dt>
-                <dd className={styles.metaValue}>{book.kosync_progress.toFixed(1)}%</dd>
-              </>
-            )}
-            {book.kosync_progress_created_at !== null && (
-              <>
-                <dt className={styles.metaLabel} title={t('When reading progress was first synced')}>
-                  {t('Started reading')}
-                </dt>
-                <dd className={styles.metaValue}>{formatDate(book.kosync_progress_created_at, true)}</dd>
-              </>
-            )}
-            {book.kosync_progress_timestamp !== null && (
-              <>
-                <dt className={styles.metaLabel}>{t('Last synced')}</dt>
-                <dd className={styles.metaValue}>{formatDate(book.kosync_progress_timestamp, true)}</dd>
               </>
             )}
             {book.pubdate && (
