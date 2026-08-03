@@ -279,7 +279,6 @@
 }
 
 .readingProgressMain { font-weight: var(--fw-semi); }
-.readingProgressMain svg { color: var(--accent-text); }
 .readingProgressMain strong { font-variant-numeric: tabular-nums; }
 .readingProgressTime { color: var(--text-muted); font-size: var(--fs-xs); }
 

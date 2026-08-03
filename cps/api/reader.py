@@ -23,6 +23,7 @@ from ..services.calibremcp_client import (
 )
 from ..usermanagement import login_required_if_no_ano
 from ..reader_settings import merged_reader_settings, resolved_reader_settings
+from ..services.reading_progress import reading_progress_summary_map
 
 
 def _err(code, message, status):
@@ -75,15 +76,31 @@ def get_bookmark(book_id):
         return visible
     fmt = (request.args.get("format") or "epub").lower()
     if deployment_profile.use_calibre_native_reader_data():
+        native = None
+        native_error = None
         try:
             native = _latest_native_position(
                 get_reader_position(_cwng_user_name(), book_id, fmt)
             )
         except CalibreMCPClientError as exc:
-            return _err("reader_backend_error", str(exc), exc.status_code)
+            native_error = exc
+
+        summary = reading_progress_summary_map(
+            ub.session, int(current_user.id), [book_id],
+            user_name=_cwng_user_name(),
+        ).get(book_id)
+        if summary and summary.get("source") == "moonreader":
+            return jsonify({
+                "bookmark": None,
+                "position_fraction": float(summary.get("percentage") or 0) / 100.0,
+                "position_source": "moonreader",
+            })
+        if native_error is not None:
+            return _err("reader_backend_error", str(native_error), native_error.status_code)
         return jsonify({
             "bookmark": native.get("cfi") if native else None,
             "position_fraction": float(native.get("pos_frac") or 0) if native else 0,
+            "position_source": "calibre_web" if native else None,
         })
     row = ub.session.query(ub.Bookmark).filter(_bookmark_filter(book_id, fmt)).first()
     return jsonify({"bookmark": row.bookmark_key if row else None})

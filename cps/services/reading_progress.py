@@ -43,6 +43,17 @@ def _newer(current, candidate):
         return current
     if current is None:
         return candidate
+
+    # A zero native position is commonly emitted when a reader is merely opened
+    # at the beginning. Treat it as an initialization marker when another source
+    # already has real progress, otherwise it would erase a valid Moon+ position.
+    current_value = float(current.get("percentage", 0))
+    candidate_value = float(candidate.get("percentage", 0))
+    if current_value == 0 < candidate_value:
+        return candidate
+    if candidate_value == 0 < current_value:
+        return current
+
     left = current.get("_timestamp")
     right = candidate.get("_timestamp")
     if left is None:

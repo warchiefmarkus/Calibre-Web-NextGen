@@ -50,6 +50,29 @@ def test_get_bookmark_returns_404_for_invisible_book():
 
 
 @pytest.mark.unit
+def test_native_bookmark_uses_moon_fraction_over_newer_zero_initialization():
+    from cps.api import reader as mod
+    native_payload = {"positions": [{
+        "cfi": "epubcfi(/6/2!/4/2)", "pos_frac": 0.0, "epoch": 1785764310.0,
+    }]}
+    with _ctx("/api/v1/books/5/bookmark?format=fb2"):
+        with patch.object(mod, "current_user", _auth_user()), _visible_book(mod), \
+             patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+             patch.object(mod, "get_reader_position", return_value=native_payload), \
+             patch.object(mod, "reading_progress_summary_map", return_value={5: {
+                 "percentage": 28.5, "source": "moonreader",
+                 "updated_at": "2026-04-10T23:31:28+00:00",
+             }}):
+            resp = inspect.unwrap(mod.get_bookmark)(5)
+    body = json.loads(resp.get_data())
+    assert body == {
+        "bookmark": None,
+        "position_fraction": 0.285,
+        "position_source": "moonreader",
+    }
+
+
+@pytest.mark.unit
 def test_get_bookmark_returns_key():
     from cps.api import reader as mod
     row = SimpleNamespace(bookmark_key="epubcfi(/6/4!/4/2)")

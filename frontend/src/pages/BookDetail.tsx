@@ -80,13 +80,12 @@ function ExternalRatingsPanel({ bookId, readingProgress }: {
         <span className={styles.readingProgressBadge}
           title={`${progressSource}${progressTime ? ` · ${progressTime}` : ''}`}>
           <span className={styles.readingProgressMain}>
-            <BookOpen size={14} aria-hidden="true" />
             <span>{t('Progress')}</span>
             <strong>{formatReadingProgress(readingProgress.percentage)}%</strong>
           </span>
           {progressTime && (
             <span className={styles.readingProgressTime}>
-              {t('Last synced')}: {progressTime}
+              {progressTime}
             </span>
           )}
         </span>
@@ -500,7 +499,6 @@ export function BookDetail() {
             {book.in_progress && !book.reading_progress && (
               <div className={styles.readProgressWrap}>
                 <p className={styles.currentlyReading}>
-                  <BookOpen size={14} aria-hidden="true" focusable={false} />
                   {book.kosync_progress != null
                     ? `${t('Currently reading')} · ${Math.round(book.kosync_progress)}%`
                     : t('Currently reading')}

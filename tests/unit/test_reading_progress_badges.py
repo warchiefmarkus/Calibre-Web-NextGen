@@ -70,6 +70,32 @@ def test_progress_summary_prefers_native_database_when_it_is_newer():
     assert reading_progress_summary_map(MagicMock(), None, [9]) == {}
 
 
+def test_progress_summary_does_not_let_newer_zero_hide_real_moon_progress():
+    from cps.services.reading_progress import reading_progress_summary_map
+
+    native = MagicMock()
+    native.execute.return_value = [SimpleNamespace(
+        book=156, pos_frac=0.0,
+        epoch=datetime(2026, 8, 3, 13, 38, tzinfo=timezone.utc).timestamp(),
+    )]
+    moon = MagicMock()
+    moon.filter.return_value = moon
+    moon.all.return_value = [SimpleNamespace(
+        book_id=156, percentage=28.5,
+        remote_modified=datetime(2026, 4, 10, 23, 31),
+        synced_at=None, moon_timestamp=None,
+    )]
+    session = MagicMock()
+    session.query.return_value = moon
+
+    with patch("cps.services.reading_progress.deployment_profile.use_calibre_native_reader_data",
+               return_value=True):
+        result = reading_progress_summary_map(
+            session, 1, [156], user_name="admin", native_session=native)
+    assert result[156]["percentage"] == 28.5
+    assert result[156]["source"] == "moonreader"
+
+
 def test_progress_summary_keeps_moon_data_when_native_query_fails():
     from cps.services.reading_progress import reading_progress_summary_map
 
@@ -131,10 +157,12 @@ def test_catalog_and_detail_render_progress_badges():
     assert "<CoverProgressBadge progress={readingProgress}" in cover
     assert "readingProgress={book.reading_progress}" in card
     assert "data-cover-progress" in badge
+    assert "BookOpen" not in badge
     assert "left: var(--sp-2)" in badge_css and "top: var(--sp-2)" in badge_css
     assert "background: rgba(20, 28, 36, .70)" in badge_css
     assert "readingProgress={book.reading_progress}" in detail
-    assert "t('Last synced')" in detail
+    assert "{t('Last synced')}: {progressTime}" not in detail
+    assert '<BookOpen size={14}' not in detail
     assert "className={styles.fileList}" in moon
     assert ".fileList li" in moon_css
     assert "MAX_SUMMARY_ITEMS = 500" in moon_service
