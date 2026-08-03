@@ -59,6 +59,8 @@ function ExternalRatingsPanel({ bookId }: { bookId: number }) {
   const refresh = useRefreshExternalBookRatings(bookId);
   const number = new Intl.NumberFormat();
   const items = ratings.data?.items ?? [];
+  const backgroundRefreshing = ratings.data?.refreshing === true;
+  const ratingBusy = refresh.isPending || backgroundRefreshing;
   const error = refresh.error ?? ratings.error;
 
   return (
@@ -99,14 +101,18 @@ function ExternalRatingsPanel({ bookId }: { bookId: number }) {
       })}
 
       {!ratings.isLoading && items.length === 0 && !error && (
-        <span className={styles.externalRatingsStatus}>{t('No external ratings found.')}</span>
+        <span className={styles.externalRatingsStatus}>
+          {backgroundRefreshing ? t('Loading ratings…') : t('No external ratings found.')}
+        </span>
       )}
 
       <button type="button" className={styles.externalRatingsRefresh}
-        title={t('Refresh ratings')} aria-label={t('Refresh ratings')}
-        disabled={refresh.isPending || ratings.isFetching}
+        title={ratingBusy ? t('Loading ratings…') : t('Refresh ratings')}
+        aria-label={ratingBusy ? t('Loading ratings…') : t('Refresh ratings')}
+        aria-busy={ratingBusy}
+        disabled={ratingBusy}
         onClick={() => refresh.mutate()}>
-        {refresh.isPending || ratings.isFetching
+        {ratingBusy
           ? <Spinner size={14} />
           : <RefreshCw size={14} aria-hidden="true" />}
       </button>

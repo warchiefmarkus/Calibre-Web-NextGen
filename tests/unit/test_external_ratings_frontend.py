@@ -27,6 +27,10 @@ def test_external_ratings_refresh_invalidates_every_preview_surface():
     assert "useEffect(() =>" in QUERIES
     assert "retried at most once per day" in QUERIES
     assert "query.state.data?.refreshing ? 1_500 : false" in QUERIES
+    assert "ratings.data?.refreshing === true" in DETAIL
+    assert "backgroundRefreshing ? t('Loading ratings…')" in DETAIL
+    assert "aria-busy={ratingBusy}" in DETAIL
+    assert "disabled={ratingBusy}" in DETAIL
     assert "refreshing?: boolean" in API
     for key in ("books", "adv-search", "discover-strip", "shelf", "magicshelf"):
         assert f"queryKey: ['{key}']" in QUERIES
