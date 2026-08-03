@@ -4,7 +4,6 @@
 
 from flask_babel import lazy_gettext as N_
 from threading import Lock
-from time import monotonic
 
 from cps import calibre_db, config, logger, ub
 from cps.services.worker import CalibreTask, STAT_CANCELLED, STAT_ENDED, WorkerThread
@@ -13,7 +12,6 @@ log = logger.create()
 
 _pending_lock = Lock()
 _pending_book_ids = set()
-_last_forced_refresh_at = {}
 
 
 def _server_hardcover_tokens():
@@ -43,35 +41,22 @@ def queue_external_rating_refresh(
     hardcover_tokens=None,
     google_books_api_key=None,
     force=False,
-    cooldown_seconds=None,
 ):
     parsed = _book_ids(book_ids)
     if not parsed:
         return {"success": True, "skipped": True, "reason": "no_book_ids"}
 
-    now = monotonic()
     with _pending_lock:
         pending = [book_id for book_id in parsed if book_id in _pending_book_ids]
-        eligible = [book_id for book_id in parsed if book_id not in _pending_book_ids]
-        cooling_down = []
-        if force and cooldown_seconds:
-            cooling_down = [
-                book_id for book_id in eligible
-                if now - _last_forced_refresh_at.get(book_id, float("-inf")) < cooldown_seconds
-            ]
-            eligible = [book_id for book_id in eligible if book_id not in cooling_down]
-        claimed = eligible
+        claimed = [book_id for book_id in parsed if book_id not in _pending_book_ids]
         _pending_book_ids.update(claimed)
-        if force:
-            for book_id in claimed:
-                _last_forced_refresh_at[book_id] = now
     if not claimed:
-        result = {"success": True, "queued": False, "book_ids": parsed}
-        if pending:
-            result["pending"] = True
-        if cooling_down:
-            result["cooldown"] = True
-        return result
+        return {
+            "success": True,
+            "queued": False,
+            "pending": bool(pending),
+            "book_ids": parsed,
+        }
 
     try:
         WorkerThread.add(
@@ -87,9 +72,6 @@ def queue_external_rating_refresh(
     except Exception:
         with _pending_lock:
             _pending_book_ids.difference_update(claimed)
-            if force:
-                for book_id in claimed:
-                    _last_forced_refresh_at.pop(book_id, None)
         raise
     return {"success": True, "queued": True, "book_ids": claimed}
 

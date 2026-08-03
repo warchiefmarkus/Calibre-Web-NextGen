@@ -269,10 +269,9 @@ export function useExternalBookRatings(id: string | number) {
   const bookId = String(id);
   const queryKey = ['external-book-ratings', bookId] as const;
 
-  // Opening the detail page always asks the backend to refresh providers in the
-  // background. The backend deduplicates active work and applies a five-minute
-  // cooldown, so StrictMode remounts and quick Back/Forward navigation cannot
-  // create duplicate external requests.
+  // Opening the detail page asks the backend to fill a missing rating in the
+  // background. Existing ratings are left untouched; failed/not-found lookups
+  // are retried at most once per day and active work is deduplicated.
   useEffect(() => {
     let cancelled = false;
     void apiPost<ExternalBookRatingsResponse>(

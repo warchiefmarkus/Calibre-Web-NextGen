@@ -22,7 +22,7 @@ from ..usermanagement import login_required_if_no_ano
 
 log = logger.create()
 
-_DETAIL_REFRESH_COOLDOWN_SECONDS = 5 * 60
+_MISSING_RATING_RETRY_INTERVAL = timedelta(days=1)
 
 _CACHE_TTL = {
     "ok": timedelta(days=7),
@@ -292,8 +292,8 @@ def load_or_refresh_external_ratings(
     return _serialize(rows, lookup.identity_hash, cached=False)
 
 
-def load_cached_external_ratings(book_id, queue_refresh=True):
-    """Return cached data immediately and refresh stale rows in the background."""
+def load_cached_external_ratings(book_id):
+    """Return cached data immediately without starting provider requests."""
     book = calibre_db.get_filtered_book(
         book_id, allow_show_archived=True, allow_show_hidden=True,
     )
@@ -302,28 +302,30 @@ def load_cached_external_ratings(book_id, queue_refresh=True):
 
     lookup = _book_lookup(book)
     rows = _cache_rows(book_id)
-    fresh = _cache_is_fresh(rows, lookup.identity_hash)
-    from ..tasks.external_ratings import (
-        external_rating_refresh_pending,
-        queue_external_rating_refresh,
-    )
-    refreshing = external_rating_refresh_pending(book_id)
-    if not fresh and queue_refresh and not refreshing:
-        result = queue_external_rating_refresh(
-            [book_id],
-            username=str(getattr(current_user, "name", None) or "System"),
-            hardcover_tokens=_hardcover_tokens(),
-            google_books_api_key=_google_books_api_key(),
-        )
-        refreshing = bool(
-            result.get("queued")
-            or result.get("pending")
-            or external_rating_refresh_pending(book_id)
-        )
+    from ..tasks.external_ratings import external_rating_refresh_pending
 
     payload = _serialize(rows, lookup.identity_hash, cached=True)
-    payload["refreshing"] = refreshing
+    payload["refreshing"] = external_rating_refresh_pending(book_id)
     return payload
+
+
+def _payload_has_numeric_rating(payload):
+    return any(item.get("rating") is not None for item in payload.get("items", ()))
+
+
+def _missing_rating_retry_due(payload, now=None):
+    """Retry absent ratings at most once per day, persisted via cache timestamps."""
+    if _payload_has_numeric_rating(payload):
+        return False
+    fetched_at = payload.get("fetched_at")
+    if not fetched_at:
+        return True
+    try:
+        last_attempt = _utc(datetime.fromisoformat(fetched_at))
+    except (TypeError, ValueError):
+        return True
+    now = now or datetime.now(timezone.utc)
+    return last_attempt <= now - _MISSING_RATING_RETRY_INTERVAL
 
 def external_rating_summary_map(book_ids):
     """Return compact display ratings for many books in one app.db query.
@@ -396,8 +398,8 @@ def external_book_ratings(book_id):
 @api_v1.route("/books/<int:book_id>/external-ratings/refresh-async", methods=["POST"])
 @login_required_if_no_ano
 def refresh_external_book_ratings_async(book_id):
-    """Queue a non-blocking provider refresh when the detail page is opened."""
-    payload = load_cached_external_ratings(book_id, queue_refresh=False)
+    """Look up a missing rating in the background, at most once per day."""
+    payload = load_cached_external_ratings(book_id)
     if payload is None:
         return jsonify({"error": {"code": "not_found", "message": "Book not found"}}), 404
 
@@ -405,20 +407,19 @@ def refresh_external_book_ratings_async(book_id):
         external_rating_refresh_pending,
         queue_external_rating_refresh,
     )
-    result = queue_external_rating_refresh(
-        [book_id],
-        username=str(getattr(current_user, "name", None) or "System"),
-        hardcover_tokens=_hardcover_tokens(),
-        google_books_api_key=_google_books_api_key(),
-        force=True,
-        cooldown_seconds=_DETAIL_REFRESH_COOLDOWN_SECONDS,
-    )
-    payload["refreshing"] = bool(
-        result.get("queued")
-        or result.get("pending")
-        or external_rating_refresh_pending(book_id)
-    )
-    return jsonify(payload), 202 if payload["refreshing"] else 200
+    refreshing = external_rating_refresh_pending(book_id)
+    if not refreshing and _missing_rating_retry_due(payload):
+        result = queue_external_rating_refresh(
+            [book_id],
+            username=str(getattr(current_user, "name", None) or "System"),
+            hardcover_tokens=_hardcover_tokens(),
+            google_books_api_key=_google_books_api_key(),
+            force=True,
+        )
+        refreshing = bool(result.get("queued") or result.get("pending"))
+
+    payload["refreshing"] = refreshing
+    return jsonify(payload), 202 if refreshing else 200
 
 
 @api_v1.route("/books/<int:book_id>/external-ratings/refresh", methods=["POST"])
