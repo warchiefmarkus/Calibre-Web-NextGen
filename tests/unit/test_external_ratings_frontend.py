@@ -16,27 +16,35 @@ BADGE = (ROOT / "frontend/src/components/CoverRatingBadge.tsx").read_text(encodi
 BADGE_CSS = (ROOT / "frontend/src/components/CoverRatingBadge.module.css").read_text(encoding="utf-8")
 
 
-def test_external_ratings_have_independent_query_and_manual_refresh():
+def test_external_ratings_refresh_invalidates_every_preview_surface():
     assert "useExternalBookRatings" in QUERIES
     assert "useRefreshExternalBookRatings" in QUERIES
     assert "/external-ratings/refresh" in QUERIES
     assert "queryClient.setQueryData(['external-book-ratings'" in QUERIES
+    assert "refetchOnMount: 'always'" in QUERIES
+    for key in ("books", "adv-search", "discover-strip", "shelf", "magicshelf"):
+        assert f"queryKey: ['{key}']" in QUERIES
 
 
-def test_book_detail_keeps_sources_separate_and_shows_aggregate_counts():
+def test_book_detail_uses_compact_source_badges_without_provider_noise():
     assert "<ExternalRatingsPanel bookId={book.id} />" in DETAIL
-    assert "EXTERNAL_RATING_LABELS" in DETAIL
+    assert "EXTERNAL_RATING_SOURCE_LABELS" in DETAIL
+    assert "formatExternalRatingScore" in DETAIL
     assert "Ratings: {count}" in DETAIL
     assert "Reviews: {count}" in DETAIL
-    assert "Readers: {count}" in DETAIL
+    assert "Readers: {count}" not in DETAIL
+    assert "sources unavailable" not in DETAIL
+    assert "Updated {date}" not in DETAIL
     assert "ExternalBookRatingsResponse" in API
-    assert ".externalRatingsGrid" in CSS
+    assert ".externalRatingBadge" in CSS
+    assert ".externalRatingsGrid" not in CSS
 
 
-def test_cover_rating_badge_is_shared_by_book_previews():
+def test_cover_rating_badge_is_shared_and_placed_top_right():
     assert "externalRating?: ExternalRatingSummary" in BOOK_COVER
     assert "<CoverRatingBadge rating={externalRating}" in BOOK_COVER
     assert "externalRating={book.external_rating}" in BOOK_CARD
-    assert "Star" in BADGE
-    assert "rating.rating.toFixed(1)" in BADGE
+    assert "formatExternalRatingScore" in BADGE
+    assert "top: var(--sp-2)" in BADGE_CSS
+    assert "bottom: var(--sp-2)" not in BADGE_CSS
     assert "@container book-card" in BADGE_CSS

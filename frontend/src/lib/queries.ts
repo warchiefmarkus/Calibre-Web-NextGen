@@ -270,6 +270,10 @@ export function useExternalBookRatings(id: string | number) {
       `/api/v1/books/${id}/external-ratings`,
     ),
     staleTime: 60 * 60 * 1000,
+    // The server endpoint itself is cache-backed and cheap. Always checking it
+    // on detail mount prevents an hour-old client result from disagreeing with
+    // cover badges populated by a background refresh.
+    refetchOnMount: 'always',
     retry: (failureCount, error) =>
       !(error instanceof ApiError && (error.status === 401 || error.status === 404))
       && failureCount < 2,
@@ -284,6 +288,13 @@ export function useRefreshExternalBookRatings(id: string | number) {
     ),
     onSuccess: (data) => {
       queryClient.setQueryData(['external-book-ratings', String(id)], data);
+      // Every preview surface receives its badge through a book-list payload.
+      // Invalidate them together so Back navigation cannot restore an old score.
+      void queryClient.invalidateQueries({ queryKey: ['books'] });
+      void queryClient.invalidateQueries({ queryKey: ['adv-search'] });
+      void queryClient.invalidateQueries({ queryKey: ['discover-strip'] });
+      void queryClient.invalidateQueries({ queryKey: ['shelf'] });
+      void queryClient.invalidateQueries({ queryKey: ['magicshelf'] });
     },
   });
 }

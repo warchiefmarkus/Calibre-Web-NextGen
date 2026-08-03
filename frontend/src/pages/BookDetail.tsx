@@ -21,6 +21,7 @@ import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef } from
 import { ApiError, resourceUrl } from '../lib/api';
 import { useT } from '../lib/i18n';
 import { getPrimaryReadTarget } from '../lib/readerTarget';
+import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
 import styles from './BookDetail.module.css';
 
 function formatBytes(bytes: number): string {
@@ -52,93 +53,70 @@ function formatDate(date: string, alwaysReturnFullDate = false): string {
   return date;
 }
 
-const EXTERNAL_RATING_LABELS: Record<string, string> = {
-  goodreads: 'Goodreads',
-  hardcover: 'Hardcover',
-  google_books: 'Google Books',
-  open_library: 'Open Library',
-};
-
 function ExternalRatingsPanel({ bookId }: { bookId: number }) {
   const t = useT();
   const ratings = useExternalBookRatings(bookId);
   const refresh = useRefreshExternalBookRatings(bookId);
   const number = new Intl.NumberFormat();
   const items = ratings.data?.items ?? [];
-  const unavailable = ratings.data?.errors.length ?? 0;
   const error = refresh.error ?? ratings.error;
 
   return (
-    <section className={styles.externalRatings} aria-live="polite">
-      <div className={styles.externalRatingsHeader}>
-        <strong>{t('External ratings')}</strong>
-        <button type="button" className={styles.externalRatingsRefresh}
-          title={t('Refresh ratings')} aria-label={t('Refresh ratings')}
-          disabled={refresh.isPending || ratings.isLoading}
-          onClick={() => refresh.mutate()}>
-          {refresh.isPending ? <Spinner size={14} /> : <RefreshCw size={14} aria-hidden="true" />}
-        </button>
-      </div>
-
-      {ratings.isLoading && (
-        <p className={styles.externalRatingsStatus}>
-          <Spinner size={14} /> {t('Loading ratings…')}
-        </p>
-      )}
+    <div className={styles.externalRatings} aria-live="polite">
+      {items.map((item) => {
+        const source = EXTERNAL_RATING_SOURCE_LABELS[item.source] ?? item.source;
+        const score = item.rating != null ? formatExternalRatingScore(item.rating) : null;
+        const content = (
+          <>
+            <span className={styles.externalRatingMain}>
+              <span className={styles.externalRatingName}>{t('Rating')}</span>
+              {score != null && (
+                <strong className={styles.externalRatingScore}>
+                  <Star size={14} fill="currentColor" aria-hidden="true" />
+                  {score}
+                </strong>
+              )}
+              <span className={styles.externalRatingSourceName}>{source}</span>
+            </span>
+            <span className={styles.externalRatingStats}>
+              {item.ratings_count != null && (
+                <span>{t('Ratings: {count}', { count: number.format(item.ratings_count) })}</span>
+              )}
+              {item.reviews_count != null && (
+                <span>{t('Reviews: {count}', { count: number.format(item.reviews_count) })}</span>
+              )}
+            </span>
+          </>
+        );
+        return item.source_url ? (
+          <a className={styles.externalRatingBadge} href={item.source_url}
+            target="_blank" rel="noopener noreferrer" key={item.source}>
+            {content}
+          </a>
+        ) : (
+          <span className={styles.externalRatingBadge} key={item.source}>{content}</span>
+        );
+      })}
 
       {!ratings.isLoading && items.length === 0 && !error && (
-        <p className={styles.externalRatingsStatus}>{t('No external ratings found.')}</p>
+        <span className={styles.externalRatingsStatus}>{t('No external ratings found.')}</span>
       )}
 
-      {items.length > 0 && (
-        <div className={styles.externalRatingsGrid}>
-          {items.map((item) => (
-            <article className={styles.externalRatingCard} key={item.source}>
-              <div className={styles.externalRatingSource}>
-                {item.source_url ? (
-                  <a href={item.source_url} target="_blank" rel="noopener noreferrer">
-                    {EXTERNAL_RATING_LABELS[item.source] ?? item.source}
-                  </a>
-                ) : EXTERNAL_RATING_LABELS[item.source] ?? item.source}
-                {item.rating != null && (
-                  <span className={styles.externalRatingScore}>
-                    <Star size={14} fill="currentColor" aria-hidden="true" />
-                    {item.rating.toFixed(2)}
-                  </span>
-                )}
-              </div>
-              <div className={styles.externalRatingStats}>
-                {item.ratings_count != null && (
-                  <span>{t('Ratings: {count}', { count: number.format(item.ratings_count) })}</span>
-                )}
-                {item.reviews_count != null && (
-                  <span>{t('Reviews: {count}', { count: number.format(item.reviews_count) })}</span>
-                )}
-                {item.popularity_count != null && (
-                  <span>{t('Readers: {count}', { count: number.format(item.popularity_count) })}</span>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
+      <button type="button" className={styles.externalRatingsRefresh}
+        title={t('Refresh ratings')} aria-label={t('Refresh ratings')}
+        disabled={refresh.isPending || ratings.isFetching}
+        onClick={() => refresh.mutate()}>
+        {refresh.isPending || ratings.isFetching
+          ? <Spinner size={14} />
+          : <RefreshCw size={14} aria-hidden="true" />}
+      </button>
 
-      {unavailable > 0 && items.length > 0 && (
-        <p className={styles.externalRatingsFootnote}>
-          {t('{count} sources unavailable', { count: unavailable })}
-        </p>
-      )}
-      {ratings.data?.fetched_at && items.length > 0 && (
-        <p className={styles.externalRatingsFootnote}>
-          {t('Updated {date}', { date: formatDate(ratings.data.fetched_at, true) })}
-        </p>
-      )}
       {error && (
-        <p className={styles.externalRatingsError} role="alert">
+        <span className={styles.externalRatingsError} role="alert">
           {error instanceof Error ? error.message : t('Could not load external ratings.')}
-        </p>
+        </span>
       )}
-    </section>
+    </div>
   );
 }
 

@@ -1,14 +1,8 @@
 import { Star } from 'lucide-react';
 import type { ExternalRatingSummary } from '../lib/api';
 import { useT } from '../lib/i18n';
+import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
 import styles from './CoverRatingBadge.module.css';
-
-const SOURCE_LABELS: Record<string, string> = {
-  goodreads: 'Goodreads',
-  hardcover: 'Hardcover',
-  google_books: 'Google Books',
-  open_library: 'Open Library',
-};
 
 interface CoverRatingBadgeProps {
   rating?: ExternalRatingSummary | null;
@@ -18,8 +12,8 @@ export function CoverRatingBadge({ rating }: CoverRatingBadgeProps) {
   const t = useT();
   if (!rating || !Number.isFinite(rating.rating)) return null;
 
-  const source = SOURCE_LABELS[rating.source] ?? rating.source;
-  const score = rating.rating.toFixed(1);
+  const source = EXTERNAL_RATING_SOURCE_LABELS[rating.source] ?? rating.source;
+  const score = formatExternalRatingScore(rating.rating);
   const voteText = rating.ratings_count != null
     ? t('Ratings: {count}', { count: new Intl.NumberFormat().format(rating.ratings_count) })
     : null;

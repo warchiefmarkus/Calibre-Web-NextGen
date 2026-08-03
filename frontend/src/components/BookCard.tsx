@@ -62,7 +62,7 @@ export function BookCard({
   // Cover + overlay badges. All non-interactive (pointer-events: none via CSS) so
   // the single wrapping control (link or toggle button) is the only tab stop.
   const cover = (
-    <div className={book.external_rating ? `${styles.coverWrap} ${styles.coverWrapRated}` : styles.coverWrap}>
+    <div className={styles.coverWrap}>
       <BookCover coverUrl={book.cover_url} title={book.title} authors={book.authors} externalRating={book.external_rating} />
       {/* One bottom-left row rather than three independently-positioned badges.
           `hiddenBadge` and `seriesBadge` were BOTH pinned to bottom-left, so a
