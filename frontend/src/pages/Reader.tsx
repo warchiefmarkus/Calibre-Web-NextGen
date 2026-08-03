@@ -18,7 +18,7 @@ import {
   type ReaderTranslationRun, type ReaderTranslationRunMark,
 } from '../lib/queries';
 import { useT } from '../lib/i18n';
-import { parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
+import { formatReadingProgress, parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
 import { ReaderTranslationSettings } from './ReaderTranslationSettings';
 import styles from './Reader.module.css';
 
@@ -2305,7 +2305,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   };
 
   const progress = Math.max(0, Math.min(1, location.fraction ?? 0));
-  const percent = Math.round(progress * 100);
+  const percent = formatReadingProgress(progress * 100);
   const translationRequested = !!settings?.translationEnabled
     && settings.translationView === 'translated'
     && !!settings.translationProfileId;
@@ -2699,7 +2699,7 @@ function ReaderSidePanel(props: ReaderSidePanelProps) {
             <div className={styles.savedItem} key={bookmark.bookmark_id}>
               <button onClick={() => props.openBookmark(bookmark)}>
                 <strong>{bookmark.chapter || t('Bookmark')}</strong>
-                <span>{Math.round(bookmark.progression * 100)}%
+                <span>{formatReadingProgress(bookmark.progression * 100)}%
                   {bookmark.label ? ` · ${bookmark.label}` : ''}</span>
               </button>
               <button className={styles.deleteButton} onClick={() => props.deleteBookmark(bookmark.bookmark_id)}

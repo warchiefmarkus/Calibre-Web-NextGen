@@ -65,3 +65,5 @@ def test_cover_rating_badge_is_shared_and_placed_top_right():
     assert "top: var(--sp-2)" in BADGE_CSS
     assert "bottom: var(--sp-2)" not in BADGE_CSS
     assert "@container book-card" in BADGE_CSS
+    assert "max-width: 132px" in BADGE_CSS
+    assert "padding: 0 3px" in BADGE_CSS

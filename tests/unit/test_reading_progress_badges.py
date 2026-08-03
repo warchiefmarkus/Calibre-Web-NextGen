@@ -166,8 +166,14 @@ def test_catalog_and_detail_render_progress_badges():
     assert "externalRatingName" not in detail
     assert "KOReader Progress" not in detail
     assert 'coverReadHint' not in detail
+    reader = (ROOT / "frontend/src/pages/Reader.tsx").read_text(encoding="utf-8")
+    progress_lib = (ROOT / "frontend/src/lib/readerProgress.ts").read_text(encoding="utf-8")
+    assert "formatReadingProgress(progress * 100)" in reader
+    assert "Math.round(progress * 100)" not in reader
+    assert "Math.round(value * 10) / 10" in progress_lib
     assert '<BookOpen size={20} />' not in detail
-    assert "top: 35px" in card_css and "top: 68px" in card_css
+    assert "top: 35px" not in card_css and "top: 68px" not in card_css
+    assert "max-width: 132px" in badge_css
     assert "className={styles.fileList}" in moon
     assert ".fileList li" in moon_css
     assert "MAX_SUMMARY_ITEMS = 500" in moon_service

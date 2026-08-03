@@ -22,7 +22,8 @@ import { ApiError, resourceUrl } from '../lib/api';
 import { useT } from '../lib/i18n';
 import { getPrimaryReadTarget } from '../lib/readerTarget';
 import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
-import { CoverProgressBadge, formatReadingProgress } from '../components/CoverProgressBadge';
+import { CoverProgressBadge } from '../components/CoverProgressBadge';
+import { formatReadingProgress } from '../lib/readerProgress';
 import styles from './BookDetail.module.css';
 
 function formatBytes(bytes: number): string {

@@ -1,15 +1,11 @@
 import type { ReadingProgressSummary } from '../lib/api';
 import { useT } from '../lib/i18n';
+import { formatReadingProgress } from '../lib/readerProgress';
 import styles from './CoverProgressBadge.module.css';
 
 interface CoverProgressBadgeProps {
   progress?: ReadingProgressSummary | null;
   side?: 'left' | 'right';
-}
-
-export function formatReadingProgress(value: number): string {
-  const rounded = Math.round(value * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 export function CoverProgressBadge({ progress, side = 'left' }: CoverProgressBadgeProps) {

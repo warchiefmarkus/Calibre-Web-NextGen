@@ -27,12 +27,12 @@
   right: var(--sp-2);
 }
 
-@container book-card (max-width: 110px) {
+@container book-card (max-width: 132px) {
   .badge {
     left: 5px;
     top: 5px;
     min-height: 20px;
-    padding: 0 5px;
+    padding: 0 3px;
     font-size: 10px;
   }
 

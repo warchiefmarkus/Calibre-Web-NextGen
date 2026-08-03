@@ -26,19 +26,19 @@
   flex: 0 0 auto;
 }
 
-@container book-card (max-width: 110px) {
+@container book-card (max-width: 132px) {
   .badge {
     right: 5px;
     top: 5px;
     min-height: 20px;
-    padding: 0 5px;
-    gap: 3px;
+    padding: 0 3px;
+    gap: 1px;
     font-size: 10px;
   }
 
   .star {
-    width: 11px;
-    height: 11px;
+    width: 9px;
+    height: 9px;
   }
 }
 

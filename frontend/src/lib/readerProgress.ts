@@ -42,6 +42,11 @@ export function clampReadingFraction(value: number): number {
   return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
 }
 
+export function formatReadingProgress(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 export function fb2ScrollBookmark(fraction: number): string {
   return `fb2-scroll:${clampReadingFraction(fraction).toFixed(8)}`;
 }
