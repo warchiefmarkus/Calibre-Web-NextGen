@@ -496,6 +496,51 @@ export interface Account {
   app_passwords: AppPassword[];
 }
 
+export interface MoonReaderSyncSummary {
+  cache_path: string | null;
+  cache_found: boolean;
+  files_found: number;
+  parsed: number;
+  matched: number;
+  updated: number;
+  stored_only: number;
+  unchanged: number;
+  unmatched: string[];
+  errors: { file: string; message: string }[];
+}
+
+export interface MoonReaderSettings {
+  enabled: boolean;
+  base_url: string;
+  username: string;
+  password_configured: boolean;
+  cache_path: string;
+  last_test_at: string | null;
+  last_test_status: string | null;
+  last_test_error: string | null;
+  last_sync_at: string | null;
+  sync_status: 'idle' | 'queued' | 'running' | 'success' | 'error';
+  last_sync_error: string | null;
+  last_sync_summary: Partial<MoonReaderSyncSummary>;
+  queued?: boolean;
+  test?: {
+    ok: boolean;
+    base_url: string;
+    cache_path: string;
+    cache_found: boolean;
+    position_files: number;
+  };
+}
+
+export interface MoonReaderSettingsUpdate {
+  enabled?: boolean;
+  base_url?: string;
+  username?: string;
+  password?: string;
+  clear_password?: boolean;
+  cache_path?: string;
+}
+
 export interface ProfileUpdate {
   email?: string;
   kindle_mail?: string;

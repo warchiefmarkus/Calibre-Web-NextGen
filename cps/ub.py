@@ -891,6 +891,63 @@ class BookOriginalFilename(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class MoonReaderWebdavSettings(Base):
+    """Per-user Moon+ Reader WebDAV import configuration.
+
+    Passwords are encrypted with the installation Fernet key. Cleartext is
+    never serialized to the SPA or written to logs.
+    """
+    __tablename__ = "moonreader_webdav_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"),
+                     nullable=False, unique=True, index=True)
+    enabled = Column(Boolean, nullable=False, default=False)
+    base_url = Column(String(2048), nullable=False,
+                      default="http://192.168.31.150:18283/books/")
+    username = Column(String(255), nullable=False, default="reader")
+    password_encrypted = Column(Text, nullable=True)
+    cache_path = Column(String(1024), nullable=False, default="")
+    last_test_at = Column(DateTime, nullable=True)
+    last_test_status = Column(String(24), nullable=True)
+    last_test_error = Column(String(1024), nullable=True)
+    last_sync_at = Column(DateTime, nullable=True)
+    sync_status = Column(String(24), nullable=False, default="idle")
+    last_sync_error = Column(String(2048), nullable=True)
+    last_sync_summary = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+class MoonReaderProgress(Base):
+    """Raw Moon+ locator plus normalized per-user progress for one remote file."""
+    __tablename__ = "moonreader_progress"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    book_id = Column(Integer, nullable=False, index=True)
+    format = Column(String(32), nullable=True)
+    remote_path = Column(String(2048), nullable=False)
+    remote_etag = Column(String(512), nullable=True)
+    remote_modified = Column(DateTime, nullable=True)
+    raw_position = Column(Text, nullable=False)
+    percentage = Column(Float, nullable=False)
+    chapter = Column(Integer, nullable=True)
+    moon_timestamp = Column(DateTime, nullable=False)
+    synced_at = Column(DateTime, nullable=False,
+                       default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "remote_path",
+                         name="uq_moonreader_progress_user_path"),
+        Index("ix_moonreader_progress_user_book", "user_id", "book_id"),
+    )
+
+
 class ExternalBookRatingCache(Base):
     """Cached third-party rating/popularity aggregates for a Calibre book.
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Mail, Globe, KeyRound, Check, Smartphone, Trash2, Copy } from 'lucide-react';
+import { Link } from 'wouter';
+import { Mail, Globe, KeyRound, Check, Smartphone, Trash2, Copy, Cloud, ChevronRight } from 'lucide-react';
 import {
   useAccount, useMe, useUpdateProfile, useChangePassword,
   useCreateAppPassword, useRevokeAppPassword,
@@ -189,6 +190,17 @@ export function Account() {
             />
           </div>
         )}
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.cardTitle}><Cloud size={16} aria-hidden="true" /> {t('Moon+ Reader sync')}</h2>
+        <p className={styles.hint}>
+          {t('Import reading positions from Moon+ Reader through a WebDAV connection.')}
+        </p>
+        <Link href="/account/moonreader" className={styles.settingsLink}>
+          <span>{t('Configure Moon+ Reader WebDAV')}</span>
+          <ChevronRight size={17} aria-hidden="true" />
+        </Link>
       </section>
 
       {/* Profile */}

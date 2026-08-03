@@ -12,7 +12,7 @@ import type {
   SearchOptions, AdvancedSearchParams, AdvSearchResult, Account, ProfileUpdate,
   BookMetadata, MetadataUpdate, UploadResult, AdminUser, AboutInfo, TaskItem, AuthConfig,
   RagOcrConfig, RagSearchRequest, RagSearchResponse, RagStatus, BookOcrResponse,
-  ExternalBookRatingsResponse,
+  ExternalBookRatingsResponse, MoonReaderSettings, MoonReaderSettingsUpdate,
 } from './api';
 
 /** Entity kinds the catalog can be filtered by. Singular here; the browse-list
@@ -1229,6 +1229,43 @@ export function useUpdateProfile() {
       void qc.invalidateQueries({ queryKey: ['magicshelves'] });
       void qc.invalidateQueries({ queryKey: ['magicshelf'] });
     },
+  });
+}
+
+export function useMoonReaderSettings() {
+  return useQuery<MoonReaderSettings>({
+    queryKey: ['moonreader-settings'],
+    queryFn: () => apiGet<MoonReaderSettings>('/api/v1/account/moonreader'),
+    refetchInterval: (query) => {
+      const status = query.state.data?.sync_status;
+      return status === 'queued' || status === 'running' ? 1_500 : false;
+    },
+  });
+}
+
+export function useSaveMoonReaderSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MoonReaderSettingsUpdate) =>
+      apiPost<MoonReaderSettings>('/api/v1/account/moonreader', vars),
+    onSuccess: (data) => qc.setQueryData(['moonreader-settings'], data),
+  });
+}
+
+export function useTestMoonReaderConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MoonReaderSettingsUpdate) =>
+      apiPost<MoonReaderSettings>('/api/v1/account/moonreader/test', vars),
+    onSuccess: (data) => qc.setQueryData(['moonreader-settings'], data),
+  });
+}
+
+export function useStartMoonReaderSync() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<MoonReaderSettings>('/api/v1/account/moonreader/sync'),
+    onSuccess: (data) => qc.setQueryData(['moonreader-settings'], data),
   });
 }
 

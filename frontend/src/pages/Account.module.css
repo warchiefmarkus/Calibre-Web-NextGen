@@ -163,3 +163,20 @@
 
 .appPwForm { display: flex; gap: var(--sp-2); align-items: stretch; }
 .appPwForm .input { flex: 1; }
+
+.settingsLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+.settingsLink:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

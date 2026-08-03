@@ -5217,7 +5217,7 @@ msgstr ""
 
 #: cps/spa_strings.py:772
 msgid "Save settings"
-msgstr ""
+msgstr "Зберегти налаштування"
 
 #: cps/spa_strings.py:773
 msgid "Saved. Restart the server for the login changes to take effect."
@@ -12468,3 +12468,176 @@ msgstr "Оновлено {date}"
 #: cps/spa_strings.py
 msgid "{count} sources unavailable"
 msgstr "Недоступних джерел: {count}"
+
+#: cps/spa_strings.py
+msgid "Back to account"
+msgstr "Назад до облікового запису"
+
+
+#: cps/spa_strings.py
+msgid "Configure Moon+ Reader WebDAV"
+msgstr "Налаштувати WebDAV Moon+ Reader"
+
+
+#: cps/spa_strings.py
+msgid "Configured — leave blank to keep"
+msgstr "Налаштовано — залиште порожнім, щоб не змінювати"
+
+
+#: cps/spa_strings.py
+msgid "Could not load Moon+ Reader settings."
+msgstr "Не вдалося завантажити налаштування Moon+ Reader."
+
+
+#: cps/spa_strings.py
+msgid "Enable Moon+ Reader position sync"
+msgstr "Увімкнути синхронізацію позицій Moon+ Reader"
+
+
+#: cps/spa_strings.py
+msgid "Enter WebDAV password"
+msgstr "Введіть пароль WebDAV"
+
+
+#: cps/spa_strings.py
+msgid ""
+"Import Moon+ Reader WebDAV positions into your Calibre-Web reading progress."
+msgstr ""
+"Імпортуйте позиції Moon+ Reader через WebDAV у прогрес читання Calibre-Web."
+
+
+#: cps/spa_strings.py
+msgid "Import errors ({count})"
+msgstr "Помилки імпорту ({count})"
+
+
+#: cps/spa_strings.py
+msgid ""
+"Import reading positions from Moon+ Reader through a WebDAV connection."
+msgstr "Імпорт позицій читання з Moon+ Reader через з’єднання WebDAV."
+
+
+#: cps/spa_strings.py
+msgid "Importing Moon+ positions…"
+msgstr "Імпорт позицій Moon+…"
+
+
+#: cps/spa_strings.py
+msgid "Last sync: {date}"
+msgstr "Остання синхронізація: {date}"
+
+
+#: cps/spa_strings.py
+msgid "Last synchronization failed"
+msgstr "Остання синхронізація завершилася помилкою"
+
+
+#: cps/spa_strings.py
+msgid "Leave blank to auto-detect .Moon+/Cache or Books/.Moon+/Cache."
+msgstr ""
+"Залиште порожнім для автоматичного пошуку .Moon+/Cache або "
+"Books/.Moon+/Cache."
+
+
+#: cps/spa_strings.py
+msgid "Matched books"
+msgstr "Зіставлено книг"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader operation failed."
+msgstr "Операція Moon+ Reader завершилася помилкою."
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader settings saved."
+msgstr "Налаштування Moon+ Reader збережено."
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader sync"
+msgstr "Синхронізація Moon+ Reader"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ cache path"
+msgstr "Шлях до кешу Moon+"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ position sync queued."
+msgstr "Синхронізацію позицій Moon+ поставлено в чергу."
+
+
+#: cps/spa_strings.py
+msgid "Position files"
+msgstr "Файлів позицій"
+
+
+#: cps/spa_strings.py
+msgid "Ready"
+msgstr "Готово"
+
+
+#: cps/spa_strings.py
+msgid "Sync now"
+msgstr "Синхронізувати зараз"
+
+
+#: cps/spa_strings.py
+msgid "Synchronization is one-way from Moon+ Reader to Calibre-Web for now."
+msgstr "Поки що синхронізація одностороння: з Moon+ Reader до Calibre-Web."
+
+
+#: cps/spa_strings.py
+msgid "Synchronization status"
+msgstr "Стан синхронізації"
+
+
+#: cps/spa_strings.py
+msgid "Syncing positions…"
+msgstr "Синхронізація позицій…"
+
+
+#: cps/spa_strings.py
+msgid ""
+"The WebDAV password is encrypted on the server and is never returned to the "
+"browser after saving."
+msgstr ""
+"Пароль WebDAV шифрується на сервері й після збереження ніколи не "
+"повертається у браузер."
+
+
+#: cps/spa_strings.py
+msgid "Unchanged"
+msgstr "Без змін"
+
+
+#: cps/spa_strings.py
+msgid "Unmatched Moon+ files ({count})"
+msgstr "Не зіставлено файлів Moon+ ({count})"
+
+
+#: cps/spa_strings.py
+msgid "Updated positions"
+msgstr "Оновлено позицій"
+
+
+#: cps/spa_strings.py
+msgid "WebDAV URL"
+msgstr "URL WebDAV"
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Found {count} Moon+ position files."
+msgstr "WebDAV підключено. Знайдено файлів позицій Moon+: {count}."
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Moon+ cache folder has not been created yet."
+msgstr "WebDAV підключено. Папку кешу Moon+ ще не створено."
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connection"
+msgstr "З’єднання WebDAV"

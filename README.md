@@ -53,6 +53,7 @@ Library, settings, users, OAuth tokens, and KOReader sync state are preserved. S
   - [Reverse proxy / Cloudflare Tunnel](#reverse-proxy--cloudflare-tunnel)
   - [Hardcover metadata provider](#hardcover-metadata-provider)
   - [KOReader sync](#koreader-sync)
+  - [Moon+ Reader WebDAV progress](#moon-reader-webdav-progress)
   - [Kobo sync](#kobo-sync)
 - [Troubleshooting](#troubleshooting)
 - [Differences from upstream](#differences-from-upstream)
@@ -548,6 +549,31 @@ CWA has built-in KOReader progress sync; no separate kosync server is needed.
 If your update manager is still pointed at this repository, switch it. That setup keeps working — a release that changes the plugin attaches the plugin download — but the plugin only appears on those releases, which is easy to misread as "no update available". The download on `/kosync` always serves the plugin bundled with your running server if you would rather update by hand.
 
 **Matching filenames across devices (OPDS downloads).** If you download books to KOReader over OPDS and sync progress by filename across several e-readers, turn on **Use server filenames** in KOReader's OPDS catalog settings (the checkbox when you add or edit the catalog). By default KOReader names a downloaded file `Author - Title.epub` from the catalog entry, which differs from the on-disk library name `Title - Author.epub` and forces a manual rename. CWA already sends the library name in the download's `Content-Disposition` header; with **Use server filenames** on, KOReader uses that name, so the file matches your library and your other devices without renaming.
+
+### Moon+ Reader WebDAV progress
+
+Moon+ Reader can store per-book position files on WebDAV. Open **Account →
+Moon+ Reader sync** to configure a WebDAV URL, username, password, and optional
+cache path. The password is encrypted with the installation key and is never
+returned to the browser after it is saved.
+
+The initial integration is one-way: **Moon+ Reader → Calibre-Web NextGen**.
+`Sync now` runs as a background task, imports Moon+ `.po` files, updates the
+book's normalized reading percentage and read/in-progress status, and preserves
+the original Moon+ locator separately for future exact-position adapters. It
+does not write Calibre-Web positions back to WebDAV yet.
+
+The cache path may be left empty. The server then tries `.Moon+/Cache`,
+`Books/.Moon+/Cache`, and `books/.Moon+/Cache`. Books are matched using the
+exact Calibre filename, a unique normalized filename stem, and finally a SHA-256
+comparison when Moon+ reads a renamed copy stored at the WebDAV root. Ambiguous
+matches are skipped and shown in the synchronization summary rather than being
+assigned to the wrong book.
+
+The WebDAV connection is always made through HTTP/WebDAV, even when it points
+back to the same host. Redirects are rejected so Basic Auth credentials cannot
+be forwarded to another origin. Directory listings, position files, and
+checksum downloads have explicit size and timeout limits.
 
 ### Kobo sync
 

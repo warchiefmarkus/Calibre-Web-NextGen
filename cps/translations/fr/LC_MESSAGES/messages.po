@@ -13870,3 +13870,181 @@ msgstr "Mis à jour le {date}"
 #: cps/spa_strings.py
 msgid "{count} sources unavailable"
 msgstr "{count} sources indisponibles"
+
+#: cps/spa_strings.py
+msgid "Back to account"
+msgstr "Retour au compte"
+
+
+#: cps/spa_strings.py
+msgid "Configure Moon+ Reader WebDAV"
+msgstr "Configurer WebDAV pour Moon+ Reader"
+
+
+#: cps/spa_strings.py
+msgid "Configured — leave blank to keep"
+msgstr "Configuré — laissez vide pour conserver"
+
+
+#: cps/spa_strings.py
+msgid "Could not load Moon+ Reader settings."
+msgstr "Impossible de charger les paramètres de Moon+ Reader."
+
+
+#: cps/spa_strings.py
+msgid "Enable Moon+ Reader position sync"
+msgstr "Activer la synchronisation des positions Moon+ Reader"
+
+
+#: cps/spa_strings.py
+msgid "Enter WebDAV password"
+msgstr "Saisissez le mot de passe WebDAV"
+
+
+#: cps/spa_strings.py
+msgid ""
+"Import Moon+ Reader WebDAV positions into your Calibre-Web reading progress."
+msgstr ""
+"Importez les positions WebDAV de Moon+ Reader dans votre progression de "
+"lecture Calibre-Web."
+
+
+#: cps/spa_strings.py
+msgid "Import errors ({count})"
+msgstr "Erreurs d’importation ({count})"
+
+
+#: cps/spa_strings.py
+msgid ""
+"Import reading positions from Moon+ Reader through a WebDAV connection."
+msgstr ""
+"Importer les positions de lecture depuis Moon+ Reader via une connexion "
+"WebDAV."
+
+
+#: cps/spa_strings.py
+msgid "Importing Moon+ positions…"
+msgstr "Importation des positions Moon+…"
+
+
+#: cps/spa_strings.py
+msgid "Last sync: {date}"
+msgstr "Dernière synchronisation : {date}"
+
+
+#: cps/spa_strings.py
+msgid "Last synchronization failed"
+msgstr "La dernière synchronisation a échoué"
+
+
+#: cps/spa_strings.py
+msgid "Leave blank to auto-detect .Moon+/Cache or Books/.Moon+/Cache."
+msgstr ""
+"Laissez vide pour détecter automatiquement .Moon+/Cache ou "
+"Books/.Moon+/Cache."
+
+
+#: cps/spa_strings.py
+msgid "Matched books"
+msgstr "Livres associés"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader operation failed."
+msgstr "L’opération Moon+ Reader a échoué."
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader settings saved."
+msgstr "Paramètres Moon+ Reader enregistrés."
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader sync"
+msgstr "Synchronisation Moon+ Reader"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ cache path"
+msgstr "Chemin du cache Moon+"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ position sync queued."
+msgstr "Synchronisation des positions Moon+ mise en file d’attente."
+
+
+#: cps/spa_strings.py
+msgid "Position files"
+msgstr "Fichiers de position"
+
+
+#: cps/spa_strings.py
+msgid "Ready"
+msgstr "Prêt"
+
+
+#: cps/spa_strings.py
+msgid "Sync now"
+msgstr "Synchroniser maintenant"
+
+
+#: cps/spa_strings.py
+msgid "Synchronization is one-way from Moon+ Reader to Calibre-Web for now."
+msgstr ""
+"La synchronisation est actuellement unidirectionnelle, de Moon+ Reader vers "
+"Calibre-Web."
+
+
+#: cps/spa_strings.py
+msgid "Synchronization status"
+msgstr "État de la synchronisation"
+
+
+#: cps/spa_strings.py
+msgid "Syncing positions…"
+msgstr "Synchronisation des positions…"
+
+
+#: cps/spa_strings.py
+msgid ""
+"The WebDAV password is encrypted on the server and is never returned to the "
+"browser after saving."
+msgstr ""
+"Le mot de passe WebDAV est chiffré sur le serveur et n’est jamais renvoyé au"
+" navigateur après son enregistrement."
+
+
+#: cps/spa_strings.py
+msgid "Unchanged"
+msgstr "Inchangé"
+
+
+#: cps/spa_strings.py
+msgid "Unmatched Moon+ files ({count})"
+msgstr "Fichiers Moon+ non associés ({count})"
+
+
+#: cps/spa_strings.py
+msgid "Updated positions"
+msgstr "Positions mises à jour"
+
+
+#: cps/spa_strings.py
+msgid "WebDAV URL"
+msgstr "URL WebDAV"
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Found {count} Moon+ position files."
+msgstr "WebDAV connecté. {count} fichier(s) de position Moon+ trouvé(s)."
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Moon+ cache folder has not been created yet."
+msgstr "WebDAV connecté. Le dossier de cache Moon+ n’a pas encore été créé."
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connection"
+msgstr "Connexion WebDAV"

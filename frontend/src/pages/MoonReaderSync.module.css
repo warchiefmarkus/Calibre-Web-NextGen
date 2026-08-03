@@ -1,0 +1,94 @@
+.container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--sp-6) var(--sp-5);
+}
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-4);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: var(--fs-sm);
+}
+.backLink:hover { color: var(--accent); }
+.heading { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-5); }
+.headingIcon {
+  width: 46px; height: 46px; flex: 0 0 46px;
+  display: grid; place-items: center;
+  border-radius: var(--r-lg);
+  color: var(--accent); background: var(--accent-soft);
+  border: 1px solid var(--border);
+}
+.title { font-family: var(--font-display); font-size: var(--fs-xl); color: var(--text); }
+.subtitle { margin-top: var(--sp-1); color: var(--text-muted); font-size: var(--fs-sm); }
+.card {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.cardTitle {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+  font-family: var(--font-display); font-size: var(--fs-md); color: var(--text);
+}
+.cardTitle svg { color: var(--accent); }
+.toggle {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  padding: var(--sp-3); margin-bottom: var(--sp-4);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.toggle input { margin-top: 3px; }
+.toggle span { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
+.toggle small { color: var(--text-muted); }
+.row { display: flex; gap: var(--sp-4); }
+.field { flex: 1 1 0; display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.field label { color: var(--text-muted); font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.input {
+  width: 100%; box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-3); color: var(--text); font: inherit; outline: none;
+}
+.input:focus { border-color: var(--accent); }
+.hint { color: var(--text-muted); font-size: var(--fs-xs); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.actions button { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.liveMessage { min-height: 1.5em; margin-top: var(--sp-3); font-size: var(--fs-sm); }
+.success { color: var(--success); }
+.failure { color: var(--danger); font-size: var(--fs-sm); }
+.statusLine { display: flex; align-items: center; gap: var(--sp-3); color: var(--accent); }
+.statusLine > div { display: flex; flex-direction: column; gap: 2px; }
+.statusLine strong { color: var(--text); }
+.statusLine span { color: var(--text-muted); font-size: var(--fs-sm); }
+.summaryGrid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2); margin-top: var(--sp-4);
+}
+.summaryItem {
+  min-width: 0; padding: var(--sp-3);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); text-align: center;
+}
+.summaryItem strong { display: block; color: var(--text); font-size: var(--fs-lg); }
+.summaryItem span { display: block; color: var(--text-muted); font-size: var(--fs-xs); }
+.details { margin-top: var(--sp-3); color: var(--text-muted); font-size: var(--fs-sm); }
+.details summary { cursor: pointer; color: var(--text); }
+.details ul { margin: var(--sp-2) 0 0 var(--sp-5); word-break: break-word; }
+.securityNote {
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-3); color: var(--text-muted); font-size: var(--fs-sm);
+}
+.securityNote svg { flex: 0 0 auto; color: var(--success); }
+@media (max-width: 640px) {
+  .container { padding: var(--sp-4) var(--sp-3); }
+  .card { padding: var(--sp-4); }
+  .row { flex-direction: column; gap: 0; }
+  .summaryGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .actions { align-items: stretch; }
+  .actions button { flex: 1 1 auto; justify-content: center; }
+}

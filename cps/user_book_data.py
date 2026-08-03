@@ -62,6 +62,7 @@ PER_USER_BOOK_MODELS = (
     "UserHiddenBook",
     "FavoriteBook",
     "BookCoverPreview",
+    "MoonReaderProgress",
 )
 
 
@@ -181,6 +182,14 @@ def migrate_user_book_data(from_book_id, to_book_id, session=None):
                 row.book_id = to_book_id
     session.flush()
 
+    # Moon+ WebDAV positions are keyed by remote path. Different files may
+    # legitimately map to the same conceptual book, so re-point every row and
+    # retain both histories.
+    session.query(ub.MoonReaderProgress).filter(
+        ub.MoonReaderProgress.book_id == from_book_id).update(
+        {ub.MoonReaderProgress.book_id: to_book_id}, synchronize_session=False)
+    session.flush()
+
     # External rating aggregates are shared book metadata (not per-user). On a
     # merge, keep the freshest row for each source and discard the duplicate.
     rating_fields = (
@@ -262,7 +271,7 @@ def purge_user_book_data(book_id=None, user_id=None, session=None,
 
     for model in (ub.Bookmark, ub.ReadBook, ub.ArchivedBook, ub.Downloads,
                   ub.KoboSyncedBooks, ub.UserHiddenBook, ub.FavoriteBook,
-                  ub.BookCoverPreview):
+                  ub.BookCoverPreview, ub.MoonReaderProgress):
         _scoped(session.query(model), model).delete(synchronize_session=False)
 
     # BookShelf and external rating aggregates have no user_id. Shelf
@@ -278,6 +287,13 @@ def purge_user_book_data(book_id=None, user_id=None, session=None,
         if book_id is not None:
             ratings = ratings.filter(ub.ExternalBookRatingCache.book_id == book_id)
         ratings.delete(synchronize_session=False)
+
+    # Connection credentials are user-scoped rather than book-scoped. Delete
+    # them only with the owning user, never during a library database swap.
+    if user_id is not None:
+        session.query(ub.MoonReaderWebdavSettings).filter(
+            ub.MoonReaderWebdavSettings.user_id == user_id).delete(
+                synchronize_session=False)
 
     if remove_backup_files:
         backups = _scoped(session.query(ub.KoboAnnotationBackup),

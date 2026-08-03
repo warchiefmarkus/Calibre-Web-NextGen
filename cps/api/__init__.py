@@ -89,6 +89,7 @@ from . import browse   # noqa: E402,F401
 from . import shelves  # noqa: E402,F401
 from . import search   # noqa: E402,F401
 from . import account  # noqa: E402,F401
+from . import moonreader  # noqa: E402,F401
 from . import reader   # noqa: E402,F401
 from . import reader_translation  # noqa: E402,F401
 from . import rag      # noqa: E402,F401

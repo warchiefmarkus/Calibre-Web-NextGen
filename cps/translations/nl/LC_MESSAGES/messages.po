@@ -13407,3 +13407,177 @@ msgstr "Bijgewerkt op {date}"
 #: cps/spa_strings.py
 msgid "{count} sources unavailable"
 msgstr "{count} bronnen niet beschikbaar"
+
+#: cps/spa_strings.py
+msgid "Back to account"
+msgstr "Terug naar account"
+
+
+#: cps/spa_strings.py
+msgid "Configure Moon+ Reader WebDAV"
+msgstr "Moon+ Reader WebDAV configureren"
+
+
+#: cps/spa_strings.py
+msgid "Configured — leave blank to keep"
+msgstr "Geconfigureerd — laat leeg om te behouden"
+
+
+#: cps/spa_strings.py
+msgid "Could not load Moon+ Reader settings."
+msgstr "Kan Moon+ Reader-instellingen niet laden."
+
+
+#: cps/spa_strings.py
+msgid "Enable Moon+ Reader position sync"
+msgstr "Synchronisatie van Moon+ Reader-posities inschakelen"
+
+
+#: cps/spa_strings.py
+msgid "Enter WebDAV password"
+msgstr "Voer het WebDAV-wachtwoord in"
+
+
+#: cps/spa_strings.py
+msgid ""
+"Import Moon+ Reader WebDAV positions into your Calibre-Web reading progress."
+msgstr ""
+"Importeer Moon+ Reader WebDAV-posities in je leesvoortgang in Calibre-Web."
+
+
+#: cps/spa_strings.py
+msgid "Import errors ({count})"
+msgstr "Importfouten ({count})"
+
+
+#: cps/spa_strings.py
+msgid ""
+"Import reading positions from Moon+ Reader through a WebDAV connection."
+msgstr "Leesposities uit Moon+ Reader importeren via een WebDAV-verbinding."
+
+
+#: cps/spa_strings.py
+msgid "Importing Moon+ positions…"
+msgstr "Moon+-posities importeren…"
+
+
+#: cps/spa_strings.py
+msgid "Last sync: {date}"
+msgstr "Laatste synchronisatie: {date}"
+
+
+#: cps/spa_strings.py
+msgid "Last synchronization failed"
+msgstr "Laatste synchronisatie is mislukt"
+
+
+#: cps/spa_strings.py
+msgid "Leave blank to auto-detect .Moon+/Cache or Books/.Moon+/Cache."
+msgstr ""
+"Laat leeg om .Moon+/Cache of Books/.Moon+/Cache automatisch te detecteren."
+
+
+#: cps/spa_strings.py
+msgid "Matched books"
+msgstr "Gekoppelde boeken"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader operation failed."
+msgstr "Moon+ Reader-bewerking is mislukt."
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader settings saved."
+msgstr "Moon+ Reader-instellingen opgeslagen."
+
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader sync"
+msgstr "Moon+ Reader-synchronisatie"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ cache path"
+msgstr "Moon+-cachepad"
+
+
+#: cps/spa_strings.py
+msgid "Moon+ position sync queued."
+msgstr "Synchronisatie van Moon+-posities in de wachtrij geplaatst."
+
+
+#: cps/spa_strings.py
+msgid "Position files"
+msgstr "Positiebestanden"
+
+
+#: cps/spa_strings.py
+msgid "Ready"
+msgstr "Gereed"
+
+
+#: cps/spa_strings.py
+msgid "Sync now"
+msgstr "Nu synchroniseren"
+
+
+#: cps/spa_strings.py
+msgid "Synchronization is one-way from Moon+ Reader to Calibre-Web for now."
+msgstr ""
+"Synchronisatie is voorlopig eenrichtingsverkeer van Moon+ Reader naar "
+"Calibre-Web."
+
+
+#: cps/spa_strings.py
+msgid "Synchronization status"
+msgstr "Synchronisatiestatus"
+
+
+#: cps/spa_strings.py
+msgid "Syncing positions…"
+msgstr "Posities synchroniseren…"
+
+
+#: cps/spa_strings.py
+msgid ""
+"The WebDAV password is encrypted on the server and is never returned to the "
+"browser after saving."
+msgstr ""
+"Het WebDAV-wachtwoord wordt op de server versleuteld en na het opslaan nooit"
+" teruggestuurd naar de browser."
+
+
+#: cps/spa_strings.py
+msgid "Unchanged"
+msgstr "Ongewijzigd"
+
+
+#: cps/spa_strings.py
+msgid "Unmatched Moon+ files ({count})"
+msgstr "Niet-gekoppelde Moon+-bestanden ({count})"
+
+
+#: cps/spa_strings.py
+msgid "Updated positions"
+msgstr "Bijgewerkte posities"
+
+
+#: cps/spa_strings.py
+msgid "WebDAV URL"
+msgstr "WebDAV-URL"
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Found {count} Moon+ position files."
+msgstr "WebDAV verbonden. {count} Moon+-positiebestand(en) gevonden."
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Moon+ cache folder has not been created yet."
+msgstr "WebDAV verbonden. De Moon+-cachemap is nog niet aangemaakt."
+
+
+#: cps/spa_strings.py
+msgid "WebDAV connection"
+msgstr "WebDAV-verbinding"

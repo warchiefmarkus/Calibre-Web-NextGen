@@ -16,6 +16,7 @@ import { Shelf } from './pages/Shelf';
 import { AdvancedSearch } from './pages/AdvancedSearch';
 import { AiSearch } from './pages/AiSearch';
 import { Account } from './pages/Account';
+import { MoonReaderSync } from './pages/MoonReaderSync';
 import { EditBook } from './pages/EditBook';
 import { CoverPicker } from './pages/CoverPicker';
 import { Upload } from './pages/Upload';
@@ -240,6 +241,7 @@ export function App() {
           <Route path={SPA_ROUTES.aiSearch}>{() => <AiSearch />}</Route>
 
           {/* Account / settings */}
+          <Route path={SPA_ROUTES.moonReader}>{() => <MoonReaderSync />}</Route>
           <Route path={SPA_ROUTES.account}>{() => <Account />}</Route>
 
           {/* Upload */}
