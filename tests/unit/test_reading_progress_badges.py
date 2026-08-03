@@ -147,6 +147,7 @@ def test_catalog_and_detail_render_progress_badges():
     card = (ROOT / "frontend/src/components/BookCard.tsx").read_text(encoding="utf-8")
     badge = (ROOT / "frontend/src/components/CoverProgressBadge.tsx").read_text(encoding="utf-8")
     badge_css = (ROOT / "frontend/src/components/CoverProgressBadge.module.css").read_text(encoding="utf-8")
+    card_css = (ROOT / "frontend/src/components/BookCard.module.css").read_text(encoding="utf-8")
     detail = (ROOT / "frontend/src/pages/BookDetail.tsx").read_text(encoding="utf-8")
     moon = (ROOT / "frontend/src/pages/MoonReaderSync.tsx").read_text(encoding="utf-8")
     moon_css = (ROOT / "frontend/src/pages/MoonReaderSync.module.css").read_text(encoding="utf-8")
@@ -164,8 +165,9 @@ def test_catalog_and_detail_render_progress_badges():
     assert "unifiedProgress" in detail
     assert "externalRatingName" not in detail
     assert "KOReader Progress" not in detail
-    assert '<BookOpen size={20} />' in detail
-    assert "{t('Read now')}" not in detail.split('className={styles.coverReadHint}', 1)[1].split('</span>', 1)[0]
+    assert 'coverReadHint' not in detail
+    assert '<BookOpen size={20} />' not in detail
+    assert "top: 35px" in card_css and "top: 68px" in card_css
     assert "className={styles.fileList}" in moon
     assert ".fileList li" in moon_css
     assert "MAX_SUMMARY_ITEMS = 500" in moon_service

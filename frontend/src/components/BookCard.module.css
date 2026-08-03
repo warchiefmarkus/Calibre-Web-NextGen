@@ -70,6 +70,20 @@
   pointer-events: auto;
 }
 
+/* At dense-grid widths the two top pills cannot share one line reliably.
+   Keep progress in the first row and move the hover rating below it. Selection
+   mode already owns row one with its checkbox, so its rating uses row three. */
+@container book-card (max-width: 132px) {
+  .coverWrap [data-cover-rating] {
+    top: 35px;
+    right: 5px;
+  }
+
+  .coverWrapSelectable [data-cover-rating] {
+    top: 68px;
+  }
+}
+
 /* Lift on hover or when anything in the card (card control or an action button)
    is focused. Keyed off .wrap so focusing a sibling action button lifts too. */
 .wrap:hover .coverWrap,

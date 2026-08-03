@@ -557,11 +557,13 @@ Moon+ Reader sync** to configure a WebDAV URL, username, password, and optional
 cache path. The password is encrypted with the installation key and is never
 returned to the browser after it is saved.
 
-The initial integration is one-way: **Moon+ Reader → Calibre-Web NextGen**.
-`Sync now` runs as a background task, imports Moon+ `.po` files, updates the
-book's normalized reading percentage and read/in-progress status, and preserves
-the original Moon+ locator separately for future exact-position adapters. It
-does not write Calibre-Web positions back to WebDAV yet.
+The initial integration is one-way and manual: **Moon+ Reader → Calibre-Web
+NextGen**. Nothing is imported merely by opening a library or book page. Press
+`Sync now` to run the background task: it imports Moon+ `.po` files, mirrors the
+newer normalized percentage into Calibre's native `last_read_positions`, updates
+read/in-progress status, and preserves the original Moon+ locator separately for
+future exact-position adapters. It does not write Calibre-Web positions back to
+WebDAV yet.
 
 The cache path may be left empty. The server then tries `.Moon+/Cache`,
 `Books/.Moon+/Cache`, and `books/.Moon+/Cache`. Books are matched using the

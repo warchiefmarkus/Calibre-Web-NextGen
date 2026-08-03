@@ -160,6 +160,7 @@ def test_apply_position_stores_raw_locator_and_normalized_progress():
 
     session.query.side_effect = query
     with patch.object(mod.ub, "session", session), \
+         patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=False), \
          patch("cps.progress_syncing.protocols.kosync.get_book_checksums", return_value=[]), \
          patch("cps.progress_syncing.protocols.kosync.update_book_read_status") as update:
         result = mod._apply_position(user, resource, position, match)
@@ -201,6 +202,7 @@ def test_newer_other_device_progress_is_not_overwritten():
 
     session.query.side_effect = query
     with patch.object(mod.ub, "session", session), \
+         patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=False), \
          patch("cps.progress_syncing.protocols.kosync.get_book_checksums", return_value=["sha"]), \
          patch("cps.progress_syncing.protocols.kosync.update_book_read_status") as update:
         result = mod._apply_position(user, resource, position, match)
@@ -210,3 +212,112 @@ def test_newer_other_device_progress_is_not_overwritten():
     assert all(not isinstance(call.args[0], KOSyncProgress)
                for call in session.add.call_args_list)
     session.commit.assert_called_once()
+
+
+def test_native_locator_uses_pdf_page_and_reflowable_cfi():
+    from cps.services import moonreader_webdav as mod
+    pdf = mod.parse_position("1703297605115*28:9.4%")
+    epub = mod.parse_position("1703297605115*4@0#99:42.5%")
+    assert mod._native_locator(pdf, "PDF") == (
+        '{"type":"pdf-position","version":1,"page":28,"scroll":{"x":0,"y":0}}'
+    )
+    assert mod._native_locator(epub, "FB2") == "epubcfi(/6/2!/4/2)"
+
+
+def test_manual_sync_backfills_missing_native_calibre_position():
+    from cps.services import moonreader_webdav as mod
+    resource = mod.WebDavResource(
+        ".Moon+/Cache/Book.fb2.po", False,
+        modified=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+    position = mod.parse_position("1703297605115*4@0#99:42.5%")
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    user = SimpleNamespace(id=3, name="admin")
+
+    with patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+         patch("cps.services.calibremcp_client.get_reader_position",
+               return_value={"positions": []}), \
+         patch("cps.services.calibremcp_client.set_reader_position") as save:
+        changed = mod._sync_native_position(user, resource, position, match)
+
+    assert changed is True
+    save.assert_called_once_with(
+        "admin", 7, "FB2", cfi="epubcfi(/6/2!/4/2)", position_fraction=.425,
+        device="moonreader-webdav:3",
+    )
+
+
+def test_manual_sync_replaces_technical_native_zero():
+    from cps.services import moonreader_webdav as mod
+    resource = mod.WebDavResource(
+        ".Moon+/Cache/Book.fb2.po", False,
+        modified=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+    position = mod.parse_position("1703297605115*4@0#99:42.5%")
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    user = SimpleNamespace(id=3, name="admin")
+    native = {"positions": [{
+        "pos_frac": 0.0,
+        "epoch": datetime(2026, 8, 3, tzinfo=timezone.utc).timestamp(),
+    }]}
+
+    with patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+         patch("cps.services.calibremcp_client.get_reader_position", return_value=native), \
+         patch("cps.services.calibremcp_client.set_reader_position") as save:
+        changed = mod._sync_native_position(user, resource, position, match)
+
+    assert changed is True
+    assert save.call_args.kwargs["position_fraction"] == .425
+
+
+def test_manual_sync_keeps_newer_nonzero_native_position():
+    from cps.services import moonreader_webdav as mod
+    resource = mod.WebDavResource(
+        ".Moon+/Cache/Book.fb2.po", False,
+        modified=datetime(2026, 4, 10, tzinfo=timezone.utc),
+    )
+    position = mod.parse_position("1703297605115*4@0#99:42.5%")
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    user = SimpleNamespace(id=3, name="admin")
+    native = {"positions": [{
+        "pos_frac": .67,
+        "epoch": datetime(2026, 8, 3, tzinfo=timezone.utc).timestamp(),
+    }]}
+
+    with patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+         patch("cps.services.calibremcp_client.get_reader_position", return_value=native), \
+         patch("cps.services.calibremcp_client.set_reader_position") as save:
+        changed = mod._sync_native_position(user, resource, position, match)
+
+    assert changed is False
+    save.assert_not_called()
+
+
+def test_unchanged_moon_file_can_backfill_native_position():
+    from cps.services import moonreader_webdav as mod
+    from cps.progress_syncing.models import KOSyncProgress
+    resource = mod.WebDavResource(".Moon+/Cache/Book.fb2.po", False)
+    position = mod.parse_position("1703297605115*4@0#99:42.5%")
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    user = SimpleNamespace(id=3, name="admin")
+    existing = SimpleNamespace(moon_timestamp=position.timestamp)
+    own = SimpleNamespace(timestamp=position.timestamp, device_id="moonreader-webdav:3")
+    session = MagicMock()
+
+    def query(model):
+        q = MagicMock()
+        if model is mod.ub.MoonReaderProgress:
+            q.filter.return_value.first.return_value = existing
+        elif model is KOSyncProgress:
+            q.filter.return_value.order_by.return_value.first.return_value = own
+        return q
+
+    session.query.side_effect = query
+    with patch.object(mod.ub, "session", session), \
+         patch("cps.progress_syncing.protocols.kosync.get_book_checksums", return_value=[]), \
+         patch.object(mod, "_sync_native_position", return_value=True) as native:
+        result = mod._apply_position(user, resource, position, match)
+
+    assert result == "updated"
+    native.assert_called_once_with(user, resource, position, match)
+    session.commit.assert_not_called()

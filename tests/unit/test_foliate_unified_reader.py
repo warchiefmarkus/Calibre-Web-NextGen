@@ -48,5 +48,6 @@ def test_book_detail_cover_opens_primary_reader_without_hiding_cover_edit():
     assert 'onClick={() => primaryReadTarget && navigate(primaryReadTarget)}' in detail
     assert 'disabled={!primaryReadTarget}' in detail
     assert 'className={styles.changeCover}' in detail
-    assert '.coverReadHint' in css
+    assert '.coverReadHint' not in css
+    assert '.coverWrap:hover .changeCover' not in css
     assert '.coverReadButton:focus-visible' in css

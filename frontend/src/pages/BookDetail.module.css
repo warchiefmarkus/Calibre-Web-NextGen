@@ -58,34 +58,6 @@
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
-.coverReadHint {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) translateY(4px);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 46px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, .28);
-  border-radius: var(--r-full);
-  background: rgba(20, 28, 36, .84);
-  color: #f2efe9;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-
-.coverReadButton:hover .coverReadHint,
-.coverReadButton:focus-visible .coverReadHint {
-  opacity: 1;
-  transform: translate(-50%, -50%);
-}
-
 /* #987 — hairline so a cover whose artwork background matches the page surface
    still has a visible edge. Matches the shared BookCover frame and EditBook. */
 .cover {
@@ -126,7 +98,6 @@
   opacity: .92;
   transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
-.coverWrap:hover .changeCover,
 .changeCover:hover,
 .changeCover:focus-visible {
   background: var(--accent);

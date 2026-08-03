@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import hashlib
+import json
 import os
 import re
 import unicodedata
@@ -23,7 +24,7 @@ import requests
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import selectinload
 
-from .. import calibre_db, cli_param, config, config_sql, db, logger, ub
+from .. import calibre_db, cli_param, config, config_sql, db, deployment_profile, logger, ub
 
 log = logger.create()
 
@@ -522,30 +523,102 @@ def _same_or_newer(left: datetime | None, right: datetime | None) -> bool:
     return left >= right
 
 
+def _latest_native_position(payload: Any) -> dict[str, Any] | None:
+    positions = payload.get("positions", []) if isinstance(payload, dict) else []
+    rows = [row for row in positions if isinstance(row, dict)]
+    if not rows:
+        return None
+    return max(rows, key=lambda row: float(row.get("epoch") or 0))
+
+
+def _native_locator(position: MoonPosition, fmt: str) -> str:
+    """Return a non-empty Calibre locator alongside the authoritative fraction.
+
+    Calibre silently ignores a last-position write whose CFI is null. PDF can
+    carry a real page locator from Moon's page number. Reflowable formats use a
+    harmless start CFI; CWNG restores the exact normalized ``pos_frac`` first.
+    """
+    if str(fmt or "").upper() == "PDF":
+        return json.dumps({
+            "type": "pdf-position",
+            "version": 1,
+            "page": max(1, int(position.chapter)),
+            "scroll": {"x": 0, "y": 0},
+        }, separators=(",", ":"))
+    return "epubcfi(/6/2!/4/2)"
+
+
+def _sync_native_position(user, resource: WebDavResource,
+                          position: MoonPosition, match: BookMatch) -> bool:
+    """Mirror a manually imported Moon percentage into Calibre's reader DB.
+
+    The WebDAV job is deliberately the only caller. Merely opening a book or a
+    catalog page never imports Moon data. Existing non-zero Calibre progress is
+    retained when it is newer than the ``.po`` file; a technical zero may be
+    replaced by real Moon progress regardless of its timestamp.
+    """
+    if not deployment_profile.use_calibre_native_reader_data():
+        return False
+
+    from .calibremcp_client import get_reader_position, set_reader_position
+
+    user_name = str(getattr(user, "name", "") or "").strip()
+    if not user_name or not match.format:
+        return False
+    payload = get_reader_position(user_name, match.book_id, match.format)
+    native = _latest_native_position(payload)
+    moon_fraction = max(0.0, min(1.0, float(position.percentage) / 100.0))
+    should_write = native is None
+    if native is not None:
+        native_fraction = max(0.0, min(1.0, float(native.get("pos_frac") or 0)))
+        if abs(native_fraction - moon_fraction) < 1e-6:
+            return False
+        if native_fraction <= 0 < moon_fraction:
+            should_write = True
+        else:
+            native_epoch = float(native.get("epoch") or 0)
+            native_modified = (datetime.fromtimestamp(native_epoch, tz=timezone.utc)
+                               if native_epoch > 0 else None)
+            moon_modified = _aware(resource.modified) or _aware(position.timestamp)
+            should_write = (moon_modified is not None and
+                            (native_modified is None or moon_modified > native_modified))
+    if not should_write:
+        return False
+
+    set_reader_position(
+        user_name, match.book_id, match.format,
+        cfi=_native_locator(position, match.format),
+        position_fraction=moon_fraction,
+        device=f"moonreader-webdav:{int(user.id)}",
+    )
+    return True
+
+
 def _apply_position(user, resource: WebDavResource, position: MoonPosition, match: BookMatch) -> str:
     existing = (ub.session.query(ub.MoonReaderProgress)
                 .filter(ub.MoonReaderProgress.user_id == int(user.id),
                         ub.MoonReaderProgress.remote_path == resource.path)
                 .first())
-    if existing is not None and _same_or_newer(existing.moon_timestamp, position.timestamp):
-        return "unchanged"
+    moon_changed = not (existing is not None and
+                        _same_or_newer(existing.moon_timestamp, position.timestamp))
 
-    if existing is None:
-        existing = ub.MoonReaderProgress(
-            user_id=int(user.id), book_id=match.book_id,
-            remote_path=resource.path, raw_position=position.raw,
-            percentage=position.percentage, moon_timestamp=position.timestamp,
-        )
-        ub.session.add(existing)
-    existing.book_id = match.book_id
-    existing.format = match.format
-    existing.remote_etag = resource.etag
-    existing.remote_modified = resource.modified
-    existing.raw_position = position.raw
-    existing.percentage = position.percentage
-    existing.chapter = position.chapter
-    existing.moon_timestamp = position.timestamp
-    existing.synced_at = datetime.now(timezone.utc)
+    if moon_changed:
+        if existing is None:
+            existing = ub.MoonReaderProgress(
+                user_id=int(user.id), book_id=match.book_id,
+                remote_path=resource.path, raw_position=position.raw,
+                percentage=position.percentage, moon_timestamp=position.timestamp,
+            )
+            ub.session.add(existing)
+        existing.book_id = match.book_id
+        existing.format = match.format
+        existing.remote_etag = resource.etag
+        existing.remote_modified = resource.modified
+        existing.raw_position = position.raw
+        existing.percentage = position.percentage
+        existing.chapter = position.chapter
+        existing.moon_timestamp = position.timestamp
+        existing.synced_at = datetime.now(timezone.utc)
 
     from ..progress_syncing.models import KOSyncProgress
     from ..progress_syncing.protocols.kosync import (
@@ -555,13 +628,18 @@ def _apply_position(user, resource: WebDavResource, position: MoonPosition, matc
 
     device_id = f"moonreader-webdav:{int(user.id)}"
     document_keys = {str(match.book_id)}
-    document_keys.update(str(value) for value in get_book_checksums(match.book_id) if value)
+    # The MCP-managed Calibre schema intentionally has no CWNG checksum table;
+    # its native reader state is keyed by book id. Avoid one noisy failed query
+    # per imported book while retaining checksum compatibility in standard mode.
+    if not deployment_profile.use_calibre_native_reader_data():
+        document_keys.update(str(value) for value in get_book_checksums(match.book_id) if value)
     newest = (ub.session.query(KOSyncProgress)
               .filter(KOSyncProgress.user_id == int(user.id),
                       KOSyncProgress.document.in_(tuple(document_keys)))
               .order_by(KOSyncProgress.timestamp.desc()).first())
-    accepted = newest is None or not _same_or_newer(newest.timestamp, position.timestamp)
-    if accepted:
+    accepted = (newest is None or getattr(newest, "device_id", None) == device_id or
+                not _same_or_newer(newest.timestamp, position.timestamp))
+    if accepted and moon_changed:
         moon_progress = (ub.session.query(KOSyncProgress)
                          .filter(KOSyncProgress.user_id == int(user.id),
                                  KOSyncProgress.device_id == device_id,
@@ -581,8 +659,13 @@ def _apply_position(user, resource: WebDavResource, position: MoonPosition, matc
             moon_progress.device = "Moon+ Reader"
             moon_progress.timestamp = position.timestamp
         update_book_read_status(user, match.book_id, position.percentage)
-    ub.session.commit()
-    return "updated" if accepted else "stored_only"
+
+    native_updated = _sync_native_position(user, resource, position, match) if accepted else False
+    if moon_changed:
+        ub.session.commit()
+    if native_updated or (accepted and moon_changed):
+        return "updated"
+    return "stored_only" if moon_changed else "unchanged"
 
 
 def sync_positions(user_id: int) -> dict[str, Any]:

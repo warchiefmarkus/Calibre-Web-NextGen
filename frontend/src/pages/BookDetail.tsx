@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import { Link, useParams, useLocation } from 'wouter';
-import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, BookOpen, Trash2, RefreshCw } from 'lucide-react';
+import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, Trash2, RefreshCw } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faOpenai } from '@fortawesome/free-brands-svg-icons';
 import {
@@ -435,11 +435,6 @@ export function BookDetail() {
                 </div>
               )}
               <CoverProgressBadge progress={book.reading_progress} side="right" />
-              {primaryReadTarget && (
-                <span className={styles.coverReadHint} aria-hidden="true">
-                  <BookOpen size={20} />
-                </span>
-              )}
             </button>
             {me?.role?.edit && (
               <Link href={`/book/${book.id}/cover`} className={styles.changeCover}>
