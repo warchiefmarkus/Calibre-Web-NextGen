@@ -10,6 +10,7 @@ pytestmark = pytest.mark.unit
 def test_queue_external_ratings_deduplicates_ids_and_hides_task():
     from cps.tasks import external_ratings as tasks
     tasks._pending_book_ids.clear()
+    tasks._last_forced_refresh_at.clear()
     try:
         with patch.object(tasks.WorkerThread, "add") as add:
             result = tasks.queue_external_rating_refresh([7, "7", None, 8, -1])
@@ -24,6 +25,7 @@ def test_queue_external_ratings_deduplicates_ids_and_hides_task():
         assert add.call_count == 1
     finally:
         tasks._pending_book_ids.clear()
+        tasks._last_forced_refresh_at.clear()
 
 
 def test_background_task_populates_each_book_without_forcing_refresh():
@@ -43,6 +45,7 @@ def test_background_task_populates_each_book_without_forcing_refresh():
     assert all(call.kwargs["hardcover_tokens"] == ["hc"] for call in loader.call_args_list)
     assert all(call.kwargs["google_books_api_key"] == "gb" for call in loader.call_args_list)
     assert all(call.kwargs["unfiltered"] is True for call in loader.call_args_list)
+    assert all(call.kwargs["force"] is False for call in loader.call_args_list)
 
 
 def test_both_import_paths_queue_external_ratings_after_book_ids_exist():
@@ -58,3 +61,30 @@ def test_both_import_paths_queue_external_ratings_after_book_ids_exist():
     metadata_hook = ingest.index("self.fetch_metadata_if_enabled")
     queued_hook = ingest.index("queue_external_ratings_for_books(", metadata_hook)
     assert metadata_hook < queued_hook
+
+
+def test_forced_detail_refresh_uses_cooldown_and_passes_force_to_task():
+    from cps.tasks import external_ratings as tasks
+    tasks._pending_book_ids.clear()
+    tasks._last_forced_refresh_at.clear()
+    try:
+        with patch.object(tasks, "monotonic", side_effect=[100.0, 101.0]), \
+             patch.object(tasks.WorkerThread, "add") as add:
+            first = tasks.queue_external_rating_refresh(
+                [7], force=True, cooldown_seconds=300,
+            )
+            queued_task = add.call_args.args[1]
+            tasks._pending_book_ids.clear()  # simulate completion
+            second = tasks.queue_external_rating_refresh(
+                [7], force=True, cooldown_seconds=300,
+            )
+
+        assert first == {"success": True, "queued": True, "book_ids": [7]}
+        assert queued_task.force is True
+        assert second == {
+            "success": True, "queued": False, "cooldown": True, "book_ids": [7],
+        }
+        assert add.call_count == 1
+    finally:
+        tasks._pending_book_ids.clear()
+        tasks._last_forced_refresh_at.clear()

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   apiGet, apiPost, apiPatch, apiDelete, apiUpload, apiPostForm, ApiError,
@@ -264,15 +265,33 @@ export function useBook(id: string | number) {
 }
 
 export function useExternalBookRatings(id: string | number) {
+  const queryClient = useQueryClient();
+  const bookId = String(id);
+  const queryKey = ['external-book-ratings', bookId] as const;
+
+  // Opening the detail page always asks the backend to refresh providers in the
+  // background. The backend deduplicates active work and applies a five-minute
+  // cooldown, so StrictMode remounts and quick Back/Forward navigation cannot
+  // create duplicate external requests.
+  useEffect(() => {
+    let cancelled = false;
+    void apiPost<ExternalBookRatingsResponse>(
+      `/api/v1/books/${bookId}/external-ratings/refresh-async`,
+    ).then((data) => {
+      if (!cancelled) queryClient.setQueryData(['external-book-ratings', bookId], data);
+    }).catch(() => {
+      // The normal cached GET below remains authoritative and exposes any
+      // provider error without making the book detail page fail to render.
+    });
+    return () => { cancelled = true; };
+  }, [bookId, queryClient]);
+
   return useQuery<ExternalBookRatingsResponse>({
-    queryKey: ['external-book-ratings', String(id)],
+    queryKey,
     queryFn: () => apiGet<ExternalBookRatingsResponse>(
-      `/api/v1/books/${id}/external-ratings`,
+      `/api/v1/books/${bookId}/external-ratings`,
     ),
     staleTime: 60 * 60 * 1000,
-    // The server endpoint itself is cache-backed and cheap. Always checking it
-    // on detail mount prevents an hour-old client result from disagreeing with
-    // cover badges populated by a background refresh.
     refetchOnMount: 'always',
     refetchInterval: (query) => query.state.data?.refreshing ? 1_500 : false,
     retry: (failureCount, error) =>

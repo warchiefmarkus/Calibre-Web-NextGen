@@ -22,6 +22,8 @@ from ..usermanagement import login_required_if_no_ano
 
 log = logger.create()
 
+_DETAIL_REFRESH_COOLDOWN_SECONDS = 5 * 60
+
 _CACHE_TTL = {
     "ok": timedelta(days=7),
     "not_found": timedelta(days=1),
@@ -301,12 +303,12 @@ def load_cached_external_ratings(book_id, queue_refresh=True):
     lookup = _book_lookup(book)
     rows = _cache_rows(book_id)
     fresh = _cache_is_fresh(rows, lookup.identity_hash)
-    refreshing = False
-    if not fresh and queue_refresh:
-        from ..tasks.external_ratings import (
-            external_rating_refresh_pending,
-            queue_external_rating_refresh,
-        )
+    from ..tasks.external_ratings import (
+        external_rating_refresh_pending,
+        queue_external_rating_refresh,
+    )
+    refreshing = external_rating_refresh_pending(book_id)
+    if not fresh and queue_refresh and not refreshing:
         result = queue_external_rating_refresh(
             [book_id],
             username=str(getattr(current_user, "name", None) or "System"),
@@ -389,6 +391,34 @@ def external_book_ratings(book_id):
     if payload is None:
         return jsonify({"error": {"code": "not_found", "message": "Book not found"}}), 404
     return jsonify(payload)
+
+
+@api_v1.route("/books/<int:book_id>/external-ratings/refresh-async", methods=["POST"])
+@login_required_if_no_ano
+def refresh_external_book_ratings_async(book_id):
+    """Queue a non-blocking provider refresh when the detail page is opened."""
+    payload = load_cached_external_ratings(book_id, queue_refresh=False)
+    if payload is None:
+        return jsonify({"error": {"code": "not_found", "message": "Book not found"}}), 404
+
+    from ..tasks.external_ratings import (
+        external_rating_refresh_pending,
+        queue_external_rating_refresh,
+    )
+    result = queue_external_rating_refresh(
+        [book_id],
+        username=str(getattr(current_user, "name", None) or "System"),
+        hardcover_tokens=_hardcover_tokens(),
+        google_books_api_key=_google_books_api_key(),
+        force=True,
+        cooldown_seconds=_DETAIL_REFRESH_COOLDOWN_SECONDS,
+    )
+    payload["refreshing"] = bool(
+        result.get("queued")
+        or result.get("pending")
+        or external_rating_refresh_pending(book_id)
+    )
+    return jsonify(payload), 202 if payload["refreshing"] else 200
 
 
 @api_v1.route("/books/<int:book_id>/external-ratings/refresh", methods=["POST"])

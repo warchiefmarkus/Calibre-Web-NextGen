@@ -61,6 +61,35 @@ def test_get_route_returns_cached_payload_without_sync_provider_fetch():
     loader.assert_called_once_with(5)
 
 
+
+def test_async_refresh_route_queues_forced_refresh_with_cooldown():
+    from cps.api import external_ratings as api
+    from cps.tasks import external_ratings as tasks
+
+    cached = {
+        "items": [{"source": "goodreads", "rating": 4.2}],
+        "errors": [], "warnings": [], "cached": True,
+        "fetched_at": "now", "refreshing": False,
+    }
+    user = SimpleNamespace(name="alice")
+    queued = {"success": True, "queued": True, "book_ids": [5]}
+    with _ctx("/api/v1/books/5/external-ratings/refresh-async", method="POST"), \
+         patch.object(api, "load_cached_external_ratings", return_value=cached.copy()) as loader, \
+         patch.object(api, "current_user", user), \
+         patch.object(api, "_hardcover_tokens", return_value=[]), \
+         patch.object(api, "_google_books_api_key", return_value=None), \
+         patch.object(tasks, "queue_external_rating_refresh", return_value=queued) as queue, \
+         patch.object(tasks, "external_rating_refresh_pending", return_value=True):
+        response, status = inspect.unwrap(api.refresh_external_book_ratings_async)(5)
+
+    assert status == 202
+    assert json.loads(response.get_data())["refreshing"] is True
+    loader.assert_called_once_with(5, queue_refresh=False)
+    queue.assert_called_once_with(
+        [5], username="alice", hardcover_tokens=[], google_books_api_key=None,
+        force=True, cooldown_seconds=api._DETAIL_REFRESH_COOLDOWN_SECONDS,
+    )
+
 def test_refresh_route_forces_provider_refresh():
     from cps.api import external_ratings as api
     expected = {"items": [], "errors": [], "warnings": [], "cached": False, "fetched_at": None}
@@ -90,7 +119,7 @@ def test_stale_cache_is_returned_immediately_and_refresh_is_queued():
          patch.object(api, "_hardcover_tokens", return_value=[]), \
          patch.object(api, "_google_books_api_key", return_value=None), \
          patch.object(tasks, "queue_external_rating_refresh", return_value=queue_result) as queue, \
-         patch.object(tasks, "external_rating_refresh_pending", return_value=True):
+         patch.object(tasks, "external_rating_refresh_pending", return_value=False):
         payload = api.load_cached_external_ratings(5)
 
     assert payload["items"][0]["rating"] == 4.2

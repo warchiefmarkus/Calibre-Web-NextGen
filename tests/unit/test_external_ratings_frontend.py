@@ -23,6 +23,9 @@ def test_external_ratings_refresh_invalidates_every_preview_surface():
     assert "/external-ratings/refresh" in QUERIES
     assert "queryClient.setQueryData(['external-book-ratings'" in QUERIES
     assert "refetchOnMount: 'always'" in QUERIES
+    assert "/external-ratings/refresh-async" in QUERIES
+    assert "useEffect(() =>" in QUERIES
+    assert "five-minute" in QUERIES
     assert "query.state.data?.refreshing ? 1_500 : false" in QUERIES
     assert "refreshing?: boolean" in API
     for key in ("books", "adv-search", "discover-strip", "shelf", "magicshelf"):
