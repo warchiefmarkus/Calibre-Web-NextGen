@@ -134,6 +134,17 @@
   border-radius: var(--r-md);
   background: var(--surface-2);
 }
+.discoveryPanelDisabled {
+  opacity: 0.5;
+  filter: grayscale(1);
+  cursor: not-allowed;
+}
+.discoveryPanelDisabled .discoveryList {
+  pointer-events: none;
+}
+.discoveryPanelDisabled .discoveryList label {
+  cursor: not-allowed;
+}
 .discoveryList {
   list-style: none;
   display: grid;

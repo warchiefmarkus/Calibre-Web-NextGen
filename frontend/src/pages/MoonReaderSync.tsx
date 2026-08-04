@@ -58,6 +58,11 @@ export function MoonReaderSync() {
   const actionBusy = saveSettings.isPending || testConnection.isPending
     || discoverCaches.isPending || startSync.isPending;
   const error = saveSettings.error ?? testConnection.error ?? discoverCaches.error ?? startSync.error;
+  const normalizedCachePath = cachePath.trim();
+  const selectedDiscoveredPath = discoverCaches.data?.locations.some(
+    (location) => location.path === normalizedCachePath,
+  ) ?? false;
+  const discoveryListDisabled = Boolean(normalizedCachePath) && !selectedDiscoveredPath;
   const summary = settings?.last_sync_summary;
   const summaryEntries = useMemo(() => [
     [t('Position files'), summary?.files_found ?? 0],
@@ -198,14 +203,20 @@ export function MoonReaderSync() {
           </p>
 
           {discoverCaches.data && (
-            <div className={styles.discoveryPanel} role="group" aria-label={t('Discovered Moon+ sync folders')}>
+            <div
+              className={`${styles.discoveryPanel} ${discoveryListDisabled ? styles.discoveryPanelDisabled : ''}`}
+              role="group"
+              aria-label={t('Discovered Moon+ sync folders')}
+              aria-disabled={discoveryListDisabled}
+            >
               {discoverCaches.data.locations.length > 0 ? (
                 <ul className={styles.discoveryList}>
                   {discoverCaches.data.locations.map((location) => (
                     <li key={location.path}>
                       <label>
                         <input type="radio" name="moon-cache-location"
-                          checked={cachePath === location.path}
+                          checked={normalizedCachePath === location.path}
+                          disabled={discoveryListDisabled}
                           onChange={() => { setCachePath(location.path); setMessage(null); }} />
                         <span>
                           <code>{location.path}</code>

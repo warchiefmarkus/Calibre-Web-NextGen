@@ -28,6 +28,13 @@ def test_moonreader_ui_never_roundtrips_cleartext_password():
     assert "The WebDAV password is encrypted on the server" in PAGE
 
 
+def test_discovered_paths_are_disabled_while_a_custom_path_is_entered():
+    assert "const discoveryListDisabled = Boolean(normalizedCachePath) && !selectedDiscoveredPath" in PAGE
+    assert "aria-disabled={discoveryListDisabled}" in PAGE
+    assert "disabled={discoveryListDisabled}" in PAGE
+    assert "styles.discoveryPanelDisabled" in PAGE
+
+
 def test_moonreader_sync_status_polls_and_surfaces_summary():
     assert "status === 'queued' || status === 'running'" in QUERIES
     assert "'/api/v1/account/moonreader/sync'" in QUERIES
