@@ -12,7 +12,7 @@ import type {
   SearchOptions, AdvancedSearchParams, AdvSearchResult, Account, ProfileUpdate,
   BookMetadata, MetadataUpdate, UploadResult, AdminUser, AboutInfo, TaskItem, AuthConfig,
   RagOcrConfig, RagSearchRequest, RagSearchResponse, RagStatus, BookOcrResponse,
-  ExternalBookRatingsResponse, MoonReaderSettings, MoonReaderSettingsUpdate,
+  ExternalBookRatingsResponse, MoonReaderDiscoveryResult, MoonReaderSettings, MoonReaderSettingsUpdate,
 } from './api';
 
 /** Entity kinds the catalog can be filtered by. Singular here; the browse-list
@@ -1258,6 +1258,13 @@ export function useTestMoonReaderConnection() {
     mutationFn: (vars: MoonReaderSettingsUpdate) =>
       apiPost<MoonReaderSettings>('/api/v1/account/moonreader/test', vars),
     onSuccess: (data) => qc.setQueryData(['moonreader-settings'], data),
+  });
+}
+
+export function useDiscoverMoonReaderCaches() {
+  return useMutation({
+    mutationFn: (vars: MoonReaderSettingsUpdate) =>
+      apiPost<MoonReaderDiscoveryResult>('/api/v1/account/moonreader/discover', vars),
   });
 }
 

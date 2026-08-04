@@ -14048,3 +14048,55 @@ msgstr "WebDAV connecté. Le dossier de cache Moon+ n’a pas encore été cré�
 #: cps/spa_strings.py
 msgid "WebDAV connection"
 msgstr "Connexion WebDAV"
+
+#: cps/spa_strings.py
+msgid "Discovered Moon+ sync folders"
+msgstr "Dossiers de synchronisation Moon+ détectés"
+
+#: cps/spa_strings.py
+msgid "Find Moon sync files"
+msgstr "Rechercher les fichiers de synchronisation Moon"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Found {count} Moon+ sync folders. Select one below."
+msgstr "{count} dossiers de synchronisation Moon+ trouvés. Sélectionnez-en un ci-dessous."
+
+#: cps/spa_strings.py
+msgid "Leave blank, search the WebDAV server, then select one discovered Moon+ folder."
+msgstr "Laissez vide, recherchez sur le serveur WebDAV, puis sélectionnez un dossier Moon+ détecté."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Newest: {date}"
+msgstr "Plus récent : {date}"
+
+#: cps/spa_strings.py
+msgid "No Moon+ sync folders found."
+msgstr "Aucun dossier de synchronisation Moon+ trouvé."
+
+#: cps/spa_strings.py
+msgid "No Moon+ sync folders were found in the scanned WebDAV area."
+msgstr "Aucun dossier de synchronisation Moon+ n’a été trouvé dans la zone WebDAV analysée."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Scanned {count} WebDAV folders up to {depth} levels deep."
+msgstr "{count} dossiers WebDAV analysés jusqu’à {depth} niveaux de profondeur."
+
+#: cps/spa_strings.py
+msgid "The scan reached its safety limit and may be incomplete."
+msgstr "L’analyse a atteint sa limite de sécurité et peut être incomplète."
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. The selected Moon+ cache folder was not found."
+msgstr "WebDAV connecté. Le dossier de cache Moon+ sélectionné est introuvable."
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Use Find Moon sync files to choose a folder."
+msgstr "WebDAV connecté. Utilisez « Rechercher les fichiers de synchronisation Moon » pour choisir un dossier."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} position files"
+msgstr "{count} fichiers de position"

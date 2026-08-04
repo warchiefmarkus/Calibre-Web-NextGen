@@ -12,6 +12,7 @@ from ..services.moonreader_webdav import (
     MoonReaderError,
     decrypt_password,
     encrypt_password,
+    find_cache_locations,
     get_or_create_settings,
     normalize_base_url,
     normalize_cache_path,
@@ -143,6 +144,29 @@ def test_moonreader_connection():
         return _err("connection_failed", "Could not test the WebDAV connection.", 502)
 
 
+@api_v1.route("/account/moonreader/discover", methods=["POST"])
+def discover_moonreader_caches():
+    guard = _guard()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _err("invalid_settings", "Connection settings must be an object.", 400)
+    row = _row()
+    try:
+        base_url = normalize_base_url(payload.get("base_url", row.base_url))
+        username = _text(payload.get("username", row.username), "Username", 255, required=True)
+        password = str(payload.get("password") or "") or decrypt_password(row.password_encrypted)
+        return jsonify(find_cache_locations(
+            base_url=base_url, username=username, password=password,
+        ))
+    except MoonReaderError as exc:
+        return _err(exc.code, str(exc), exc.status)
+    except Exception:
+        log.exception("Moon+ Reader cache discovery failed")
+        return _err("discovery_failed", "Could not search the WebDAV server for Moon+ sync folders.", 502)
+
+
 @api_v1.route("/account/moonreader/sync", methods=["POST"])
 def start_moonreader_sync():
     guard = _guard()
@@ -153,6 +177,12 @@ def start_moonreader_sync():
         return _err("sync_disabled", "Enable Moon+ Reader sync first.", 400)
     if not row.password_encrypted:
         return _err("password_required", "Configure the WebDAV password first.", 400)
+    if not row.cache_path:
+        return _err(
+            "cache_path_required",
+            "Find and select a Moon+ sync folder before synchronizing.",
+            400,
+        )
     try:
         result = queue_moonreader_sync(int(current_user.id), current_user.name)
     except Exception:

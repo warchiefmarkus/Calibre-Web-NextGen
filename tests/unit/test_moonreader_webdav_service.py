@@ -82,17 +82,53 @@ def test_propfind_decodes_moon_plus_path_and_metadata():
     assert rows[1].modified == datetime(2026, 8, 3, 10, 0, tzinfo=timezone.utc)
 
 
-def test_discover_positions_tries_supported_cache_layouts():
+def test_discover_positions_requires_an_explicit_selected_path():
     from cps.services.moonreader_webdav import WebDavClient, WebDavResource
     client = WebDavClient("http://host/books/", "reader", "secret")
-    position = WebDavResource("Books/.Moon+/Cache/Book.fb2.po", False)
-    with patch.object(client, "propfind", side_effect=[None, [position]]) as propfind:
-        path, rows, found = client.discover_positions("")
-    assert path == "Books/.Moon+/Cache"
+    position = WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False)
+    with patch.object(client, "propfind", return_value=[position]) as propfind:
+        assert client.discover_positions("") == ("", [], False)
+        path, rows, found = client.discover_positions("Moon/.Moon+/Cache")
+    assert path == "Moon/.Moon+/Cache"
     assert rows == [position]
     assert found is True
-    assert [call.args[0] for call in propfind.call_args_list] == [
-        ".Moon+/Cache", "Books/.Moon+/Cache",
+    propfind.assert_called_once_with("Moon/.Moon+/Cache", depth=1)
+
+
+def test_bounded_discovery_finds_and_reports_multiple_moon_cache_locations():
+    from cps.services.moonreader_webdav import WebDavClient, WebDavResource
+    client = WebDavClient("http://host/books/", "reader", "secret")
+    modified = datetime(2026, 8, 4, 10, 0, tzinfo=timezone.utc)
+    tree = {
+        "": [WebDavResource("", True), WebDavResource("Moon", True),
+             WebDavResource("Apps", True), WebDavResource("Author", True)],
+        "Moon": [WebDavResource("Moon", True), WebDavResource("Moon/.Moon+", True)],
+        "Moon/.Moon+": [WebDavResource("Moon/.Moon+", True),
+                         WebDavResource("Moon/.Moon+/Cache", True)],
+        "Moon/.Moon+/Cache": [
+            WebDavResource("Moon/.Moon+/Cache", True),
+            WebDavResource("Moon/.Moon+/Cache/One.fb2.po", False, modified=modified),
+        ],
+        "Apps": [WebDavResource("Apps", True), WebDavResource("Apps/Books", True)],
+        "Apps/Books": [WebDavResource("Apps/Books", True),
+                         WebDavResource("Apps/Books/.Moon+", True)],
+        "Apps/Books/.Moon+": [WebDavResource("Apps/Books/.Moon+", True),
+                                WebDavResource("Apps/Books/.Moon+/Cache", True)],
+        "Apps/Books/.Moon+/Cache": [
+            WebDavResource("Apps/Books/.Moon+/Cache", True),
+            WebDavResource("Apps/Books/.Moon+/Cache/Two.epub.po", False),
+            WebDavResource("Apps/Books/.Moon+/Cache/notes.an", False),
+        ],
+        "Author": [WebDavResource("Author", True)],
+    }
+    with patch.object(client, "propfind", side_effect=lambda path, depth=1: tree.get(path)):
+        result = client.discover_cache_locations(max_depth=5, max_collections=50)
+    assert result["truncated"] is False
+    assert result["scanned_collections"] == len(tree)
+    assert result["locations"] == [
+        {"path": "Apps/Books/.Moon+/Cache", "position_files": 1, "last_modified": None},
+        {"path": "Moon/.Moon+/Cache", "position_files": 1,
+         "last_modified": modified.isoformat()},
     ]
 
 

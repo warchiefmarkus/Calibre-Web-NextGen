@@ -34,3 +34,14 @@ def test_moonreader_sync_status_polls_and_surfaces_summary():
     assert "Syncing positions…" in PAGE
     assert "summary?.matched" in PAGE
     assert "summary?.updated" in PAGE
+
+
+def test_moonreader_folder_discovery_requires_an_explicit_selection():
+    assert "useDiscoverMoonReaderCaches" in QUERIES
+    assert "'/api/v1/account/moonreader/discover'" in QUERIES
+    assert "MoonReaderDiscoveryResult" in API
+    assert "Find Moon sync files" in PAGE
+    assert "discoverCaches.data.locations.map" in PAGE
+    assert 'type="radio" name="moon-cache-location"' in PAGE
+    assert "!cachePath.trim()" in PAGE
+    assert "select one discovered Moon+ folder" in PAGE

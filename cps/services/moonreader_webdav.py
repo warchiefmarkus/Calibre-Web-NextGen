@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import hashlib
+import heapq
 import json
 import os
 import re
@@ -30,7 +31,10 @@ log = logger.create()
 
 DEFAULT_BASE_URL = "http://192.168.31.150:18283/books/"
 DEFAULT_USERNAME = "reader"
-DEFAULT_CACHE_PATHS = (".Moon+/Cache", "Books/.Moon+/Cache", "books/.Moon+/Cache")
+DISCOVERY_MAX_DEPTH = 5
+DISCOVERY_MAX_COLLECTIONS = 400
+DISCOVERY_MAX_LOCATIONS = 50
+DISCOVERY_PRIORITY_NAMES = frozenset({".moon+", "moon", "cache", "books", "apps"})
 MAX_PROPFIND_BYTES = 5 * 1024 * 1024
 MAX_POSITION_BYTES = 64 * 1024
 MAX_CHECKSUM_BOOK_BYTES = 100 * 1024 * 1024
@@ -339,15 +343,97 @@ class WebDavClient:
         finally:
             response.close()
 
-    def discover_positions(self, cache_path: str = "") -> tuple[str, list[WebDavResource], bool]:
-        candidates = (normalize_cache_path(cache_path),) if cache_path else DEFAULT_CACHE_PATHS
-        for candidate in candidates:
-            resources = self.propfind(candidate, depth=1)
+    @staticmethod
+    def _is_moon_cache_path(path: str) -> bool:
+        parts = [part.casefold() for part in normalize_cache_path(path).split("/") if part]
+        return len(parts) >= 2 and parts[-2:] == [".moon+", "cache"]
+
+    @staticmethod
+    def _discovery_priority(path: str) -> int:
+        parts = [part.casefold() for part in normalize_cache_path(path).split("/") if part]
+        if len(parts) >= 2 and parts[-2:] == [".moon+", "cache"]:
+            return 0
+        if parts and parts[-1] in DISCOVERY_PRIORITY_NAMES:
+            return 1
+        return 10
+
+    def discover_cache_locations(
+            self, *, max_depth: int = DISCOVERY_MAX_DEPTH,
+            max_collections: int = DISCOVERY_MAX_COLLECTIONS,
+            max_locations: int = DISCOVERY_MAX_LOCATIONS) -> dict[str, Any]:
+        """Find Moon+ ``.Moon+/Cache`` collections with bounded WebDAV traversal.
+
+        Likely Moon/Books/Apps paths are visited first so a large Calibre library
+        does not make the useful locations wait behind hundreds of author folders.
+        The limits are part of the public result so the UI can disclose a partial
+        scan rather than pretending the whole WebDAV tree was searched.
+        """
+        max_depth = max(1, min(int(max_depth), 8))
+        max_collections = max(1, min(int(max_collections), 1000))
+        max_locations = max(1, min(int(max_locations), 100))
+        queue: list[tuple[int, int, int, str]] = []
+        serial = 0
+        heapq.heappush(queue, (0, 0, serial, ""))
+        seen: set[str] = set()
+        locations: list[dict[str, Any]] = []
+        scanned = 0
+        truncated = False
+
+        while queue:
+            if scanned >= max_collections or len(locations) >= max_locations:
+                truncated = True
+                break
+            _, depth, _, path = heapq.heappop(queue)
+            key = path.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            scanned += 1
+            resources = self.propfind(path, depth=1)
             if resources is None:
                 continue
-            files = [row for row in resources if not row.is_collection and row.path.casefold().endswith(".po")]
-            return candidate, files, True
-        return candidates[0], [], False
+
+            if self._is_moon_cache_path(path):
+                files = [row for row in resources
+                         if not row.is_collection and row.path.casefold().endswith(".po")]
+                modified = max((_aware(row.modified) for row in files if row.modified), default=None)
+                locations.append({
+                    "path": path,
+                    "position_files": len(files),
+                    "last_modified": modified.isoformat() if modified else None,
+                })
+                continue
+
+            if depth >= max_depth:
+                continue
+            children = [row.path for row in resources
+                        if row.is_collection and row.path and row.path.casefold() != key
+                        and row.path.rpartition("/")[0].casefold() == key]
+            for child in sorted(set(children), key=lambda value: value.casefold()):
+                child_key = child.casefold()
+                if child_key in seen:
+                    continue
+                serial += 1
+                heapq.heappush(queue, (self._discovery_priority(child), depth + 1, serial, child))
+
+        locations.sort(key=lambda row: str(row["path"]).casefold())
+        return {
+            "locations": locations,
+            "scanned_collections": scanned,
+            "max_depth": max_depth,
+            "max_collections": max_collections,
+            "truncated": truncated,
+        }
+
+    def discover_positions(self, cache_path: str = "") -> tuple[str, list[WebDavResource], bool]:
+        candidate = normalize_cache_path(cache_path)
+        if not candidate:
+            return "", [], False
+        resources = self.propfind(candidate, depth=1)
+        if resources is None:
+            return candidate, [], False
+        files = [row for row in resources if not row.is_collection and row.path.casefold().endswith(".po")]
+        return candidate, files, True
 
     def root_files(self) -> list[WebDavResource]:
         rows = self.propfind("", depth=1) or []
@@ -508,7 +594,21 @@ def test_connection(*, base_url: str, username: str, password: str, cache_path: 
             "cache_path": detected,
             "cache_found": found,
             "position_files": len(files),
+            "selection_required": not bool(detected),
         }
+    finally:
+        client.close()
+
+
+def find_cache_locations(*, base_url: str, username: str, password: str) -> dict[str, Any]:
+    client = WebDavClient(base_url, username, password)
+    try:
+        root = client.propfind("", depth=0)
+        if root is None:
+            raise MoonReaderError("WebDAV root was not found.", code="not_found", status=404)
+        result = client.discover_cache_locations()
+        result.update({"ok": True, "base_url": client.base_url})
+        return result
     finally:
         client.close()
 
@@ -672,6 +772,11 @@ def sync_positions(user_id: int) -> dict[str, Any]:
     settings = get_or_create_settings(user_id)
     if not settings.enabled:
         raise MoonReaderError("Moon+ Reader sync is disabled.", code="sync_disabled")
+    if not normalize_cache_path(settings.cache_path or ""):
+        raise MoonReaderError(
+            "Find and select a Moon+ sync folder before synchronizing.",
+            code="cache_path_required",
+        )
     password = decrypt_password(settings.password_encrypted)
     client = WebDavClient(settings.base_url, settings.username, password)
     summary: dict[str, Any] = {

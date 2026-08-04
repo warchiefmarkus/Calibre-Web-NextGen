@@ -74,9 +74,24 @@ def test_connection_test_uses_stored_password_without_returning_it():
                                  password="secret", cache_path="")
 
 
-def test_sync_requires_enabled_connection_and_queues_hidden_task():
+def test_discovery_uses_current_form_credentials_without_saving_password():
     from cps.api import moonreader as mod
     row = _row()
+    expected = {"ok": True, "locations": [{"path": "Moon/.Moon+/Cache", "position_files": 1}],
+                "scanned_collections": 4, "max_depth": 5, "max_collections": 400,
+                "truncated": False, "base_url": row.base_url}
+    with _ctx("/api/v1/account/moonreader/discover", {"password": "typed"}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod, "find_cache_locations", return_value=expected) as discover:
+        response = inspect.unwrap(mod.discover_moonreader_caches)()
+    assert json.loads(response.get_data()) == expected
+    discover.assert_called_once_with(base_url=row.base_url, username="reader", password="typed")
+
+
+def test_sync_requires_enabled_connection_and_queues_hidden_task():
+    from cps.api import moonreader as mod
+    row = _row(cache_path="Moon/.Moon+/Cache")
     with _ctx("/api/v1/account/moonreader/sync", {}), \
          patch.object(mod, "current_user", _user()), \
          patch.object(mod, "_row", return_value=row), \
@@ -85,3 +100,15 @@ def test_sync_requires_enabled_connection_and_queues_hidden_task():
     assert status == 202
     assert json.loads(response.get_data())["queued"] is True
     queue.assert_called_once_with(1, "alice")
+
+def test_sync_rejects_empty_cache_path_until_user_selects_discovery_result():
+    from cps.api import moonreader as mod
+    row = _row(cache_path="")
+    with _ctx("/api/v1/account/moonreader/sync", {}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod, "queue_moonreader_sync") as queue:
+        response, status = inspect.unwrap(mod.start_moonreader_sync)()
+    assert status == 400
+    assert json.loads(response.get_data())["error"]["code"] == "cache_path_required"
+    queue.assert_not_called()

@@ -539,6 +539,7 @@ export interface MoonReaderSettings {
     cache_path: string;
     cache_found: boolean;
     position_files: number;
+    selection_required?: boolean;
   };
 }
 
@@ -549,6 +550,22 @@ export interface MoonReaderSettingsUpdate {
   password?: string;
   clear_password?: boolean;
   cache_path?: string;
+}
+
+export interface MoonReaderCacheLocation {
+  path: string;
+  position_files: number;
+  last_modified: string | null;
+}
+
+export interface MoonReaderDiscoveryResult {
+  ok: boolean;
+  base_url: string;
+  locations: MoonReaderCacheLocation[];
+  scanned_collections: number;
+  max_depth: number;
+  max_collections: number;
+  truncated: boolean;
 }
 
 export interface ProfileUpdate {

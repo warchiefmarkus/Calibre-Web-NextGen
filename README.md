@@ -565,12 +565,18 @@ read/in-progress status, and preserves the original Moon+ locator separately for
 future exact-position adapters. It does not write Calibre-Web positions back to
 WebDAV yet.
 
-The cache path may be left empty. The server then tries `.Moon+/Cache`,
-`Books/.Moon+/Cache`, and `books/.Moon+/Cache`. Books are matched using the
-exact Calibre filename, a unique normalized filename stem, and finally a SHA-256
-comparison when Moon+ reads a renamed copy stored at the WebDAV root. Ambiguous
-matches are skipped and shown in the synchronization summary rather than being
-assigned to the wrong book.
+The cache path may be left empty while configuring the connection, but a folder
+must be selected before synchronization. Use **Find Moon sync files** to perform
+a bounded WebDAV scan for every `.Moon+/Cache` collection. The page lists each
+location with its `.po` file count and newest modification time; selecting one
+fills the cache-path field. The scan prioritizes likely `Moon`, `Books`, and
+`Apps` paths, is limited to five levels and 400 collections, and explicitly
+reports when that safety limit makes the result potentially incomplete.
+
+Books are matched using the exact Calibre filename, a unique normalized filename
+stem, and finally a SHA-256 comparison when Moon+ reads a renamed copy stored at
+the WebDAV root. Ambiguous matches are skipped and shown in the synchronization
+summary rather than being assigned to the wrong book.
 
 The WebDAV connection is always made through HTTP/WebDAV, even when it points
 back to the same host. Redirects are rejected so Basic Auth credentials cannot

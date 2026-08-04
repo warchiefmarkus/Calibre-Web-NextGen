@@ -12641,3 +12641,55 @@ msgstr "WebDAV підключено. Папку кешу Moon+ ще не ств�
 #: cps/spa_strings.py
 msgid "WebDAV connection"
 msgstr "З’єднання WebDAV"
+
+#: cps/spa_strings.py
+msgid "Discovered Moon+ sync folders"
+msgstr "Знайдені папки синхронізації Moon+"
+
+#: cps/spa_strings.py
+msgid "Find Moon sync files"
+msgstr "Знайти файли синхронізації Moon"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Found {count} Moon+ sync folders. Select one below."
+msgstr "Знайдено папок синхронізації Moon+: {count}. Виберіть одну нижче."
+
+#: cps/spa_strings.py
+msgid "Leave blank, search the WebDAV server, then select one discovered Moon+ folder."
+msgstr "Залиште поле порожнім, виконайте пошук на WebDAV-сервері та виберіть одну знайдену папку Moon+."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Newest: {date}"
+msgstr "Найновіший файл: {date}"
+
+#: cps/spa_strings.py
+msgid "No Moon+ sync folders found."
+msgstr "Папок синхронізації Moon+ не знайдено."
+
+#: cps/spa_strings.py
+msgid "No Moon+ sync folders were found in the scanned WebDAV area."
+msgstr "У просканованій області WebDAV не знайдено папок синхронізації Moon+."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Scanned {count} WebDAV folders up to {depth} levels deep."
+msgstr "Проскановано папок WebDAV: {count}, глибина — до {depth} рівнів."
+
+#: cps/spa_strings.py
+msgid "The scan reached its safety limit and may be incomplete."
+msgstr "Сканування досягло безпечного ліміту й може бути неповним."
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. The selected Moon+ cache folder was not found."
+msgstr "WebDAV підключено. Вибрану папку кешу Moon+ не знайдено."
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Use Find Moon sync files to choose a folder."
+msgstr "WebDAV підключено. Натисніть «Знайти файли синхронізації Moon», щоб вибрати папку."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} position files"
+msgstr "Файлів позицій: {count}"

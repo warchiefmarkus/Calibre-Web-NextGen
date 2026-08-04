@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'wouter';
 import {
-  ArrowLeft, BookOpenCheck, CheckCircle2, Cloud, FileWarning, Play, Save,
+  ArrowLeft, BookOpenCheck, CheckCircle2, Cloud, FileSearch, FileWarning, Play, Save,
   Server, ShieldCheck, Wifi,
 } from 'lucide-react';
 import {
-  useMoonReaderSettings, useSaveMoonReaderSettings,
+  useDiscoverMoonReaderCaches, useMoonReaderSettings, useSaveMoonReaderSettings,
   useStartMoonReaderSync, useTestMoonReaderConnection,
 } from '../lib/queries';
 import type { MoonReaderSettingsUpdate } from '../lib/api';
@@ -27,6 +27,7 @@ export function MoonReaderSync() {
   const settingsQuery = useMoonReaderSettings();
   const saveSettings = useSaveMoonReaderSettings();
   const testConnection = useTestMoonReaderConnection();
+  const discoverCaches = useDiscoverMoonReaderCaches();
   const startSync = useStartMoonReaderSync();
 
   const [enabled, setEnabled] = useState(false);
@@ -54,8 +55,9 @@ export function MoonReaderSync() {
   });
 
   const syncBusy = settings?.sync_status === 'queued' || settings?.sync_status === 'running';
-  const actionBusy = saveSettings.isPending || testConnection.isPending || startSync.isPending;
-  const error = saveSettings.error ?? testConnection.error ?? startSync.error;
+  const actionBusy = saveSettings.isPending || testConnection.isPending
+    || discoverCaches.isPending || startSync.isPending;
+  const error = saveSettings.error ?? testConnection.error ?? discoverCaches.error ?? startSync.error;
   const summary = settings?.last_sync_summary;
   const summaryEntries = useMemo(() => [
     [t('Position files'), summary?.files_found ?? 0],
@@ -94,8 +96,25 @@ export function MoonReaderSync() {
           ? t('WebDAV connected. Found {count} Moon+ position files.', {
               count: data.test.position_files,
             })
-          : t('WebDAV connected. Moon+ cache folder has not been created yet.'),
+          : cachePath.trim()
+            ? t('WebDAV connected. The selected Moon+ cache folder was not found.')
+            : t('WebDAV connected. Use Find Moon sync files to choose a folder.'),
       }),
+    });
+  };
+
+  const onDiscover = () => {
+    setMessage(null);
+    discoverCaches.mutate(payload(), {
+      onSuccess: (data) => {
+        const count = data.locations.length;
+        setMessage({
+          ok: count > 0,
+          text: count > 0
+            ? t('Found {count} Moon+ sync folders. Select one below.', { count })
+            : t('No Moon+ sync folders were found in the scanned WebDAV area.'),
+        });
+      },
     });
   };
 
@@ -140,7 +159,7 @@ export function MoonReaderSync() {
         <div className={styles.field}>
           <label htmlFor="moon-url">{t('WebDAV URL')}</label>
           <input id="moon-url" className={styles.input} type="url" required
-            value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+            value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); discoverCaches.reset(); setMessage(null); }}
             placeholder="http://192.168.31.150:18283/books/" />
         </div>
 
@@ -148,26 +167,71 @@ export function MoonReaderSync() {
           <div className={styles.field}>
             <label htmlFor="moon-user">{t('Username')}</label>
             <input id="moon-user" className={styles.input} required
-              value={username} onChange={(e) => setUsername(e.target.value)} />
+              value={username} onChange={(e) => { setUsername(e.target.value); discoverCaches.reset(); setMessage(null); }} />
           </div>
           <div className={styles.field}>
             <label htmlFor="moon-password">{t('Password')}</label>
             <input id="moon-password" className={styles.input} type="password"
               autoComplete="new-password" value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => { setPassword(e.target.value); discoverCaches.reset(); setMessage(null); }}
               placeholder={settings.password_configured
                 ? t('Configured — leave blank to keep') : t('Enter WebDAV password')} />
           </div>
         </div>
 
         <div className={styles.field}>
-          <label htmlFor="moon-cache">{t('Moon+ cache path')}</label>
+          <div className={styles.pathLabelRow}>
+            <label htmlFor="moon-cache">{t('Moon+ cache path')}</label>
+            <Button type="button" variant="ghost" onClick={onDiscover}
+              disabled={actionBusy || syncBusy || !baseUrl.trim() || !username.trim()
+                || (!settings.password_configured && !password)}>
+              {discoverCaches.isPending
+                ? <Spinner size={14} /> : <FileSearch size={14} aria-hidden="true" />}
+              {t('Find Moon sync files')}
+            </Button>
+          </div>
           <input id="moon-cache" className={styles.input}
             value={cachePath} onChange={(e) => setCachePath(e.target.value)}
-            placeholder=".Moon+/Cache" />
+            placeholder="Moon/.Moon+/Cache" />
           <p className={styles.hint}>
-            {t('Leave blank to auto-detect .Moon+/Cache or Books/.Moon+/Cache.')}
+            {t('Leave blank, search the WebDAV server, then select one discovered Moon+ folder.')}
           </p>
+
+          {discoverCaches.data && (
+            <div className={styles.discoveryPanel} role="group" aria-label={t('Discovered Moon+ sync folders')}>
+              {discoverCaches.data.locations.length > 0 ? (
+                <ul className={styles.discoveryList}>
+                  {discoverCaches.data.locations.map((location) => (
+                    <li key={location.path}>
+                      <label>
+                        <input type="radio" name="moon-cache-location"
+                          checked={cachePath === location.path}
+                          onChange={() => { setCachePath(location.path); setMessage(null); }} />
+                        <span>
+                          <code>{location.path}</code>
+                          <small>
+                            {t('{count} position files', { count: location.position_files })}
+                            {location.last_modified
+                              ? ` · ${t('Newest: {date}', { date: displayDate(location.last_modified) })}` : ''}
+                          </small>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className={styles.hint}>{t('No Moon+ sync folders found.')}</p>
+              )}
+              <p className={styles.scanMeta}>
+                {t('Scanned {count} WebDAV folders up to {depth} levels deep.', {
+                  count: discoverCaches.data.scanned_collections,
+                  depth: discoverCaches.data.max_depth,
+                })}
+                {discoverCaches.data.truncated
+                  ? ` ${t('The scan reached its safety limit and may be incomplete.')}` : ''}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className={styles.actions}>
@@ -182,7 +246,8 @@ export function MoonReaderSync() {
             {t('Test connection')}
           </Button>
           <Button type="button" variant="ghost" onClick={onSync}
-            disabled={actionBusy || syncBusy || !enabled || (!settings.password_configured && !password)}>
+            disabled={actionBusy || syncBusy || !enabled || !cachePath.trim()
+              || (!settings.password_configured && !password)}>
             {syncBusy || startSync.isPending ? <Spinner size={15} /> : <Play size={15} aria-hidden="true" />}
             {syncBusy ? t('Syncing positions…') : t('Sync now')}
           </Button>
