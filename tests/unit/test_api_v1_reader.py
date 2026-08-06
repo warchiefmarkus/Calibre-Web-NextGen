@@ -232,3 +232,27 @@ def test_delete_reader_bookmark_is_user_and_book_scoped():
     assert resp[1] == 204
     mock_ub.session.delete.assert_called_once_with(row)
     mock_ub.session.commit.assert_called_once()
+
+
+@pytest.mark.unit
+def test_native_reader_save_queues_moon_writeback_with_text_anchor():
+    from cps.api import reader as mod
+    user = SimpleNamespace(is_authenticated=True, is_anonymous=False, id=1, name="admin")
+    body = {
+        "format": "FB2",
+        "bookmark": "epubcfi(/6/14!/4/2)",
+        "position_fraction": .0265,
+        "position_anchor": "Рад видеть тебя, Накаяма-сан",
+        "device": "cwng-web-test",
+    }
+    with _ctx("/api/v1/books/5/bookmark", method="POST", body=body):
+        with patch.object(mod, "current_user", user), _visible_book(mod), \
+             patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+             patch.object(mod, "set_reader_position") as save, \
+             patch("cps.tasks.moonreader_sync.queue_moonreader_book_sync") as queue:
+            resp = inspect.unwrap(mod.save_bookmark)(5)
+    assert resp[1] == 204
+    save.assert_called_once()
+    queue.assert_called_once_with(
+        1, 5, "fb2", anchor_text="Рад видеть тебя, Накаяма-сан", username="admin",
+    )

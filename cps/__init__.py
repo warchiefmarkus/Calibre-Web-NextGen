@@ -522,6 +522,12 @@ def create_app():
     else:
         log.info("Library scheduler and startup automation disabled by deployment profile")
 
+    # Moon+ synchronization is independent of library-ingest automation.
+    # It polls any WebDAV implementation and serializes actual reconciliation
+    # through the normal Calibre worker queue.
+    from .tasks.moonreader_sync import start_moonreader_polling
+    start_moonreader_polling(app)
+
     @app.get("/healthz")
     def _healthz():
         return {"status": "ok", "profile": deployment_profile.profile_name()}

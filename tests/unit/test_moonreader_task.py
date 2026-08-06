@@ -8,8 +8,8 @@ pytestmark = pytest.mark.unit
 
 def test_queue_moonreader_sync_deduplicates_user_and_hides_task():
     from cps.tasks import moonreader_sync as mod
-    mod._pending_user_ids.clear()
-    settings = MagicMock(sync_status="idle")
+    mod._pending_keys.clear()
+    settings = MagicMock(sync_status="idle", enabled=True, password_encrypted="x", cache_path="Moon/.Moon+/Cache")
     query = MagicMock()
     query.filter.return_value.first.return_value = settings
     session = MagicMock()
@@ -26,4 +26,14 @@ def test_queue_moonreader_sync_deduplicates_user_and_hides_task():
         assert add.call_args.args[1].user_id == 4
         assert settings.sync_status == "queued"
     finally:
-        mod._pending_user_ids.clear()
+        mod._pending_keys.clear()
+
+
+def test_poll_reconciles_native_only_positions():
+    from cps.tasks import moonreader_sync as mod
+    with patch.object(mod, "_queue", return_value={"queued": True}) as queue:
+        result = mod.queue_moonreader_poll(4, "alice")
+    assert result["queued"] is True
+    queue.assert_called_once_with(
+        4, "alice", include_native_only=True, manual=False,
+    )

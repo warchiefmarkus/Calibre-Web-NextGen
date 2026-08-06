@@ -51,3 +51,11 @@ def test_book_detail_cover_opens_primary_reader_without_hiding_cover_edit():
     assert '.coverReadHint' not in css
     assert '.coverWrap:hover .changeCover' not in css
     assert '.coverReadButton:focus-visible' in css
+
+
+def test_foliate_position_saver_sends_visible_text_anchor_for_moon_mapping():
+    reader = (ROOT / "frontend/src/pages/Reader.tsx").read_text(encoding="utf-8")
+    progress = (ROOT / "frontend/src/lib/readerProgress.ts").read_text(encoding="utf-8")
+    assert "detail.range?.toString()" in reader
+    assert "schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText" in reader
+    assert "position_anchor: pending.anchorText || undefined" in progress

@@ -34,9 +34,9 @@ def test_progress_summary_uses_newest_moon_or_native_database_timestamp():
         result = reading_progress_summary_map(
             session, 3, [7, 7, "bad"], user_name="admin", native_session=native)
     assert result == {7: {
-        "percentage": 44.5,
-        "updated_at": "2026-08-02T10:00:00+00:00",
-        "source": "moonreader",
+        "percentage": 22.0,
+        "updated_at": "2026-08-01T10:00:00+00:00",
+        "source": "calibre_web",
     }}
     params = native.execute.call_args.args[1]
     assert params["reader_user"] == "cwng-admin"

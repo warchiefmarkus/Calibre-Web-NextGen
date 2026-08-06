@@ -1945,7 +1945,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       dismissSelection();
       currentRef.current = detail;
       setLocation(detail);
-      if (detail.cfi) schedulePosition(detail.cfi, detail.fraction ?? 0);
+      if (detail.cfi) {
+        const anchorText = detail.range?.toString().replace(/\s+/gu, ' ').trim().slice(0, 1000);
+        schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText || undefined);
+      }
     };
 
     const attachSelection = (doc: Document, index: number) => {

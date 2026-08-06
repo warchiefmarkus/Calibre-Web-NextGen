@@ -13633,3 +13633,19 @@ msgstr "WebDAV verbonden. Gebruik ‘Moon-synchronisatiebestanden zoeken’ om e
 #, python-brace-format
 msgid "{count} position files"
 msgstr "{count} positiebestanden"
+
+#: cps/spa_strings.py
+msgid "Imported from Moon+"
+msgstr "Geïmporteerd uit Moon+"
+
+#: cps/spa_strings.py
+msgid "Written to Moon+"
+msgstr "Naar Moon+ geschreven"
+
+#: cps/spa_strings.py
+msgid "Positions synchronize both ways between Moon+ Reader and Calibre-Web."
+msgstr "Posities synchroniseren in beide richtingen tussen Moon+ Reader en Calibre-Web."
+
+#: cps/spa_strings.py
+msgid "Synchronize Moon+ Reader WebDAV positions with Calibre-Web reading progress."
+msgstr "Synchroniseer Moon+ Reader WebDAV-posities met de leesvoortgang van Calibre-Web."

@@ -14,7 +14,7 @@ from sqlalchemy import and_
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import api_v1
-from .. import calibre_db, deployment_profile, ub
+from .. import calibre_db, deployment_profile, logger, ub
 from ..cw_login import current_user
 from ..services.calibremcp_client import (
     CalibreMCPClientError,
@@ -24,6 +24,9 @@ from ..services.calibremcp_client import (
 from ..usermanagement import login_required_if_no_ano
 from ..reader_settings import merged_reader_settings, resolved_reader_settings
 from ..services.reading_progress import reading_progress_summary_map
+
+
+log = logger.create()
 
 
 def _err(code, message, status):
@@ -133,6 +136,17 @@ def save_bookmark(book_id):
         except (CalibreMCPClientError, TypeError, ValueError) as exc:
             status = exc.status_code if isinstance(exc, CalibreMCPClientError) else 400
             return _err("reader_backend_error", str(exc), status)
+        try:
+            from ..tasks.moonreader_sync import queue_moonreader_book_sync
+            queue_moonreader_book_sync(
+                int(current_user.id), book_id, fmt,
+                anchor_text=data.get("position_anchor"),
+                username=_cwng_user_name() or "System",
+            )
+        except Exception:
+            # Reader position persistence is authoritative and must not fail just
+            # because the optional WebDAV bridge is temporarily unavailable.
+            log.exception("Could not queue Moon+ writeback for book %s", book_id)
         return "", 204
 
     # Replace-on-write: one bookmark per (user, book, format), like the legacy route.

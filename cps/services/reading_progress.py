@@ -170,6 +170,13 @@ def reading_progress_summary_map(
                              ub.MoonReaderProgress.book_id.in_(ids)).all())
         for row in moon_rows:
             book_id = int(row.book_id)
+            # In the MCP-managed profile reconciliation mirrors Moon into
+            # last_read_positions. Once a native row exists it is the canonical
+            # carrier used by the reader and every progress badge.
+            if (deployment_profile.use_calibre_native_reader_data() and
+                    book_id in selected and
+                    float(selected[book_id].get("percentage") or 0) > 0):
+                continue
             candidate = _candidate(
                 row.percentage,
                 row.remote_modified or row.synced_at or row.moon_timestamp,

@@ -40,7 +40,8 @@ def test_moonreader_sync_status_polls_and_surfaces_summary():
     assert "'/api/v1/account/moonreader/sync'" in QUERIES
     assert "Syncing positions…" in PAGE
     assert "summary?.matched" in PAGE
-    assert "summary?.updated" in PAGE
+    assert "summary?.downloaded" in PAGE
+    assert "summary?.uploaded" in PAGE
 
 
 def test_moonreader_folder_discovery_requires_an_explicit_selection():

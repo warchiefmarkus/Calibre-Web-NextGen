@@ -10,26 +10,28 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
-def test_parse_moonreader_position():
+def test_parse_moonreader_position_uses_device_id_not_timestamp():
     from cps.services.moonreader_webdav import parse_position
     value = parse_position("1703297605115*21@0#4826:11.1%")
+    assert value.device_id == "1703297605115"
     assert value.chapter == 21
-    assert value.locator == "0#4826"
+    assert value.split_index == 0
+    assert value.offset == 4826
     assert value.percentage == 11.1
-    assert value.timestamp == datetime(2023, 12, 23, 2, 13, 25, 115000, tzinfo=timezone.utc)
 
 
-@pytest.mark.parametrize(("raw", "chapter", "locator", "percentage"), [
-    ("1634339204311*34:15.0%", 34, "34", 15.0),
-    ("1634339204311*0:100%", 0, "0", 100.0),
-    ("1634339204311*0@0#0:0,00%", 0, "0#0", 0.0),
+@pytest.mark.parametrize(("raw", "chapter", "split_index", "offset", "percentage"), [
+    ("1634339204311*34:15.0%", 34, None, 34, 15.0),
+    ("1634339204311*0:100%", 0, None, 0, 100.0),
+    ("1634339204311*0@0#0:0,00%", 0, 0, 0, 0.0),
 ])
 def test_parse_moonreader_position_supports_pdf_and_decimal_comma(
-        raw, chapter, locator, percentage):
+        raw, chapter, split_index, offset, percentage):
     from cps.services.moonreader_webdav import parse_position
     value = parse_position(raw)
     assert value.chapter == chapter
-    assert value.locator == locator
+    assert value.split_index == split_index
+    assert value.offset == offset
     assert value.percentage == percentage
 
 
@@ -177,77 +179,115 @@ def test_checksum_fallback_matches_identical_remote_copy(tmp_path):
     assert result.method == "sha256"
 
 
-def test_apply_position_stores_raw_locator_and_normalized_progress():
-    from cps.services import moonreader_webdav as mod
-    from cps.progress_syncing.models import KOSyncProgress
-    resource = mod.WebDavResource(".Moon+/Cache/Book.fb2.po", False, etag="e")
-    position = mod.parse_position("1703297605115*4@0#99:42.5%")
-    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
-    user = SimpleNamespace(id=3)
-    session = MagicMock()
-
-    def query(model):
-        q = MagicMock()
-        if model is mod.ub.MoonReaderProgress:
-            q.filter.return_value.first.return_value = None
-        elif model is KOSyncProgress:
-            q.filter.return_value.order_by.return_value.first.return_value = None
-        return q
-
-    session.query.side_effect = query
-    with patch.object(mod.ub, "session", session), \
-         patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=False), \
-         patch("cps.progress_syncing.protocols.kosync.get_book_checksums", return_value=[]), \
-         patch("cps.progress_syncing.protocols.kosync.update_book_read_status") as update:
-        result = mod._apply_position(user, resource, position, match)
-
-    assert result == "updated"
-    added = [call.args[0] for call in session.add.call_args_list]
-    moon = next(row for row in added if isinstance(row, mod.ub.MoonReaderProgress))
-    kosync = next(row for row in added if isinstance(row, KOSyncProgress))
-    assert moon.raw_position == position.raw
-    assert moon.percentage == 42.5
-    assert moon.chapter == 4
-    assert kosync.document == "7"
-    assert kosync.progress == position.raw
-    assert kosync.device == "Moon+ Reader"
-    update.assert_called_once_with(user, 7, 42.5)
-    session.commit.assert_called_once()
-
-
-def test_newer_other_device_progress_is_not_overwritten():
-    from cps.services import moonreader_webdav as mod
-    from cps.progress_syncing.models import KOSyncProgress
-    resource = mod.WebDavResource(".Moon+/Cache/Book.fb2.po", False)
-    position = mod.parse_position("1703297605115*4@0#99:42.5%")
-    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
-    user = SimpleNamespace(id=3)
-    newer = SimpleNamespace(
-        timestamp=datetime(2026, 8, 3, tzinfo=timezone.utc),
-        device_id="koreader-phone",
+def test_position_serializer_roundtrips_moon_format():
+    from cps.services.moonreader_locator import parse_position, serialize_position
+    raw = serialize_position(
+        device_id="1234567890123", chapter=6, split_index=0,
+        offset=2768, percentage=2.4468,
     )
-    session = MagicMock()
+    assert raw == "1234567890123*6@0#2768:2.4%"
+    value = parse_position(raw)
+    assert value.device_id == "1234567890123"
+    assert value.chapter == 6
+    assert value.offset == 2768
 
-    def query(model):
-        q = MagicMock()
-        if model is mod.ub.MoonReaderProgress:
-            q.filter.return_value.first.return_value = None
-        elif model is KOSyncProgress:
-            q.filter.return_value.order_by.return_value.first.return_value = newer
-        return q
 
-    session.query.side_effect = query
-    with patch.object(mod.ub, "session", session), \
-         patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=False), \
-         patch("cps.progress_syncing.protocols.kosync.get_book_checksums", return_value=["sha"]), \
-         patch("cps.progress_syncing.protocols.kosync.update_book_read_status") as update:
-        result = mod._apply_position(user, resource, position, match)
+def test_fb2_mapping_uses_moon_chapter_and_character_offset(tmp_path):
+    from cps.services.moonreader_locator import (
+        fb2_chapters, fraction_from_locator, map_book_position,
+    )
+    path = tmp_path / "book.fb2"
+    xml = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
+        '<body><section><title><p>Intro</p></title><p>one two three</p></section>'
+        '<section><title><p>Chapter</p></title><p>before target sentence after</p>'
+        '</section></body></FictionBook>'
+    )
+    path.write_text(xml, encoding="utf-8")
+    chapters = fb2_chapters(str(path))
+    mapped = map_book_position(
+        str(path), "FB2", .7, anchor_text="target sentence after",
+    )
+    assert mapped.chapter == 1
+    assert mapped.split_index == 0
+    assert chapters[1].text[mapped.offset:].startswith("target sentence")
+    assert mapped.matched_anchor is True
+    assert mapped.percentage == pytest.approx(
+        fraction_from_locator(chapters, 1, mapped.offset) * 100,
+    )
 
-    assert result == "stored_only"
-    update.assert_not_called()
-    assert all(not isinstance(call.args[0], KOSyncProgress)
-               for call in session.add.call_args_list)
-    session.commit.assert_called_once()
+
+def test_console_wars_locator_model_matches_moon_percentage_when_fixture_available():
+    from cps.services.moonreader_locator import (
+        fb2_chapters, fraction_from_locator, map_book_position, parse_position,
+    )
+    path = Path(
+        "/root/calibre/Library/Blieik Dzh Kharris/Konsol'nyie voiny (146)/"
+        "Konsol'nyie voiny - Blieik Dzh Kharris.fb2"
+    )
+    if not path.exists():
+        pytest.skip("deployment fixture is not available")
+    chapters = fb2_chapters(str(path))
+    assert chapters[6].text.find("Рад видеть тебя, Накаяма-сан") in range(2760, 2780)
+    assert fraction_from_locator(chapters, 6, 2768) * 100 == pytest.approx(2.4468, abs=.01)
+    mapped = map_book_position(
+        str(path), "FB2", .024,
+        anchor_text="Рад видеть тебя, Накаяма-сан",
+        remote_position=parse_position("1634339204311*6@0#2768:2.4%"),
+    )
+    assert mapped.chapter == 6
+    assert mapped.split_index == 0
+    assert mapped.offset in range(2768, 2775)
+    assert mapped.matched_anchor is True
+
+
+def test_webdav_conditional_put_uses_etag_and_reports_race():
+    from cps.services.moonreader_webdav import MoonReaderError, WebDavClient
+    client = WebDavClient("http://host/books/", "reader", "secret")
+    ok = MagicMock(status_code=204)
+    with patch.object(client.session, "request", return_value=ok) as request:
+        client.put_bytes("Moon/.Moon+/Cache/Book.fb2.po", b"x", etag='"abc"')
+    assert request.call_args.kwargs["headers"]["If-Match"] == '"abc"'
+
+    race = MagicMock(status_code=412)
+    with patch.object(client.session, "request", return_value=race), \
+         pytest.raises(MoonReaderError) as exc:
+        client.put_bytes("Moon/.Moon+/Cache/Book.fb2.po", b"x", etag='"abc"')
+    assert exc.value.code == "write_conflict"
+
+
+def _native(fraction, when, device="cwng-web-test"):
+    return {"pos_frac": fraction, "epoch": when.timestamp(), "device": device}
+
+
+def test_conflict_policy_moon_wins_ties_and_technical_native_zero():
+    from cps.services import moonreader_webdav as mod
+    when = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
+    resource = mod.WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False, modified=when)
+    position = mod.parse_position("1111111111111*6@0#2768:2.4%")
+    assert mod._conflict_direction(resource, position, _native(.8, when), "222") == "from_moon"
+    assert mod._conflict_direction(
+        resource, position, _native(0, when.replace(hour=11)), "222",
+    ) == "from_moon"
+
+
+def test_conflict_policy_newer_calibre_position_writes_to_moon():
+    from cps.services import moonreader_webdav as mod
+    remote = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
+    native = datetime(2026, 8, 4, 10, 5, tzinfo=timezone.utc)
+    resource = mod.WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False, modified=remote)
+    position = mod.parse_position("1111111111111*6@0#2768:2.4%")
+    assert mod._conflict_direction(resource, position, _native(.3, native), "222") == "to_moon"
+
+
+def test_conflict_policy_suppresses_server_echo():
+    from cps.services import moonreader_webdav as mod
+    remote = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
+    resource = mod.WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False, modified=remote)
+    position = mod.parse_position("2222222222222*6@0#2768:2.4%")
+    native = _native(.024, remote.replace(minute=1), "cwng-web-test")
+    assert mod._conflict_direction(resource, position, native, "2222222222222") == "unchanged"
 
 
 def test_native_locator_uses_pdf_page_and_reflowable_cfi():
@@ -260,100 +300,179 @@ def test_native_locator_uses_pdf_page_and_reflowable_cfi():
     assert mod._native_locator(epub, "FB2") == "epubcfi(/6/2!/4/2)"
 
 
-def test_manual_sync_backfills_missing_native_calibre_position():
+def test_existing_moon_file_is_not_overwritten_by_old_web_position_without_anchor():
     from cps.services import moonreader_webdav as mod
     resource = mod.WebDavResource(
-        ".Moon+/Cache/Book.fb2.po", False,
-        modified=datetime(2026, 4, 10, tzinfo=timezone.utc),
+        "Moon/.Moon+/Cache/Book.fb2.po", False, etag='"remote"',
+        modified=datetime(2026, 8, 4, 10, 0, tzinfo=timezone.utc),
     )
-    position = mod.parse_position("1703297605115*4@0#99:42.5%")
-    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
-    user = SimpleNamespace(id=3, name="admin")
-
-    with patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
-         patch("cps.services.calibremcp_client.get_reader_position",
-               return_value={"positions": []}), \
-         patch("cps.services.calibremcp_client.set_reader_position") as save:
-        changed = mod._sync_native_position(user, resource, position, match)
-
-    assert changed is True
-    save.assert_called_once_with(
-        "admin", 7, "FB2", cfi="epubcfi(/6/2!/4/2)", position_fraction=.425,
-        device="moonreader-webdav:3",
-    )
-
-
-def test_manual_sync_replaces_technical_native_zero():
-    from cps.services import moonreader_webdav as mod
-    resource = mod.WebDavResource(
-        ".Moon+/Cache/Book.fb2.po", False,
-        modified=datetime(2026, 4, 10, tzinfo=timezone.utc),
-    )
-    position = mod.parse_position("1703297605115*4@0#99:42.5%")
+    client = MagicMock()
+    client.get_bytes.return_value = b"1111111111111*6@0#2768:2.4%"
+    matcher = MagicMock()
     match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
     user = SimpleNamespace(id=3, name="admin")
     native = {"positions": [{
-        "pos_frac": 0.0,
-        "epoch": datetime(2026, 8, 3, tzinfo=timezone.utc).timestamp(),
+        "pos_frac": .5,
+        "epoch": datetime(2026, 8, 4, 11, 0, tzinfo=timezone.utc).timestamp(),
+        "device": "cwng-web-old",
+        "cfi": "epubcfi(/6/4!/4/2)",
     }]}
-
-    with patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
-         patch("cps.services.calibremcp_client.get_reader_position", return_value=native), \
-         patch("cps.services.calibremcp_client.set_reader_position") as save:
-        changed = mod._sync_native_position(user, resource, position, match)
-
-    assert changed is True
-    assert save.call_args.kwargs["position_fraction"] == .425
-
-
-def test_manual_sync_keeps_newer_nonzero_native_position():
-    from cps.services import moonreader_webdav as mod
-    resource = mod.WebDavResource(
-        ".Moon+/Cache/Book.fb2.po", False,
-        modified=datetime(2026, 4, 10, tzinfo=timezone.utc),
-    )
-    position = mod.parse_position("1703297605115*4@0#99:42.5%")
-    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
-    user = SimpleNamespace(id=3, name="admin")
-    native = {"positions": [{
-        "pos_frac": .67,
-        "epoch": datetime(2026, 8, 3, tzinfo=timezone.utc).timestamp(),
-    }]}
-
-    with patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
-         patch("cps.services.calibremcp_client.get_reader_position", return_value=native), \
-         patch("cps.services.calibremcp_client.set_reader_position") as save:
-        changed = mod._sync_native_position(user, resource, position, match)
-
-    assert changed is False
-    save.assert_not_called()
-
-
-def test_unchanged_moon_file_can_backfill_native_position():
-    from cps.services import moonreader_webdav as mod
-    from cps.progress_syncing.models import KOSyncProgress
-    resource = mod.WebDavResource(".Moon+/Cache/Book.fb2.po", False)
-    position = mod.parse_position("1703297605115*4@0#99:42.5%")
-    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
-    user = SimpleNamespace(id=3, name="admin")
-    existing = SimpleNamespace(moon_timestamp=position.timestamp)
-    own = SimpleNamespace(timestamp=position.timestamp, device_id="moonreader-webdav:3")
+    query = MagicMock()
+    query.filter.return_value.first.return_value = None
     session = MagicMock()
-
-    def query(model):
-        q = MagicMock()
-        if model is mod.ub.MoonReaderProgress:
-            q.filter.return_value.first.return_value = existing
-        elif model is KOSyncProgress:
-            q.filter.return_value.order_by.return_value.first.return_value = own
-        return q
-
-    session.query.side_effect = query
+    session.query.return_value = query
     with patch.object(mod.ub, "session", session), \
-         patch("cps.progress_syncing.protocols.kosync.get_book_checksums", return_value=[]), \
-         patch.object(mod, "_sync_native_position", return_value=True) as native:
-        result = mod._apply_position(user, resource, position, match)
+         patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+         patch.object(mod, "moon_device_id", return_value="2222222222222"), \
+         patch("cps.services.calibremcp_client.get_reader_position", return_value=native), \
+         patch.object(mod, "_export_native") as export:
+        result = mod.reconcile_book(
+            user, client, "Moon/.Moon+/Cache", matcher, match, resource,
+            anchor_text=None,
+        )
+    assert result == "deferred"
+    export.assert_not_called()
 
-    assert result == "updated"
-    native.assert_called_once_with(user, resource, position, match)
-    session.commit.assert_not_called()
+
+def test_server_written_position_with_same_etag_does_not_echo_back():
+    from cps.services import moonreader_webdav as mod
+    resource = mod.WebDavResource(
+        "Moon/.Moon+/Cache/Book.fb2.po", False, etag='"same"',
+        modified=datetime(2026, 8, 4, 10, 0, tzinfo=timezone.utc),
+    )
+    client = MagicMock()
+    client.get_bytes.return_value = b"2222222222222*6@0#2771:2.4%"
+    matcher = MagicMock()
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    user = SimpleNamespace(id=3, name="admin")
+    native_epoch = datetime(2026, 8, 4, 10, 0, tzinfo=timezone.utc).timestamp()
+    native = {"positions": [{
+        "pos_frac": .024468,
+        "epoch": native_epoch,
+        "device": "cwng-web-live",
+        "cfi": "epubcfi(/6/4!/4/2)",
+    }]}
+    tracking = SimpleNamespace(
+        last_direction="to_moon", remote_etag='"same"',
+        last_native_epoch=native_epoch,
+    )
+    query = MagicMock()
+    query.filter.return_value.first.return_value = tracking
+    session = MagicMock()
+    session.query.return_value = query
+    with patch.object(mod.ub, "session", session), \
+         patch.object(mod, "moon_device_id", return_value="2222222222222"), \
+         patch("cps.services.calibremcp_client.get_reader_position", return_value=native), \
+         patch.object(mod, "_record_progress") as record, \
+         patch.object(mod, "_import_remote") as download, \
+         patch.object(mod, "_export_native") as upload:
+        result = mod.reconcile_book(
+            user, client, "Moon/.Moon+/Cache", matcher, match, resource,
+        )
+    assert result == "unchanged"
+    record.assert_called_once()
+    download.assert_not_called()
+    upload.assert_not_called()
+
+
+def test_unsupported_mobi_writeback_is_deferred_instead_of_writing_zero_locator():
+    from cps.services import moonreader_webdav as mod
+    client = MagicMock()
+    matcher = MagicMock()
+    match = mod.BookMatch(74, "MOBI", "Book.mobi", "book_id")
+    user = SimpleNamespace(id=3, name="admin")
+    native = {"positions": [{
+        "pos_frac": .25,
+        "epoch": datetime(2026, 8, 4, 11, 0, tzinfo=timezone.utc).timestamp(),
+        "device": "external-reader",
+        "cfi": "some-mobi-locator",
+    }]}
+    session = MagicMock()
+    with patch.object(mod.ub, "session", session), \
+         patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+         patch.object(mod, "moon_device_id", return_value="2222222222222"), \
+         patch("cps.services.calibremcp_client.get_reader_position", return_value=native), \
+         patch.object(mod, "_export_native") as export:
+        result = mod.reconcile_book(
+            user, client, "Moon/.Moon+/Cache", matcher, match, None,
+        )
+    assert result == "deferred"
+    export.assert_not_called()
+
+
+def test_named_fb2_main_body_is_supported(tmp_path):
+    from cps.services.moonreader_locator import fb2_chapters
+
+    path = tmp_path / "named-body.fb2"
+    path.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
+        '<body name="Main"><section><title><p>Chapter</p></title>'
+        '<p>Readable text</p></section></body></FictionBook>',
+        encoding="utf-8",
+    )
+
+    chapters = fb2_chapters(str(path))
+    assert len(chapters) == 1
+    assert chapters[0].text == "Chapter Readable text"
+
+
+def test_long_html_anchor_maps_to_moon_split_and_infers_device_profile():
+    from cps.services.moonreader_locator import (
+        MoonChapter, infer_split_size, map_fraction_to_moon, normalize_text,
+        parse_position, serialize_position,
+    )
+
+    paragraphs = []
+    for index in range(24):
+        prefix = "TARGET-SENTENCE " if index == 10 else f"paragraph-{index} "
+        paragraphs.append(f"<p>{prefix}{'x' * 19_980}</p>")
+    source = "".join(paragraphs)
+    chapter = MoonChapter(index=0, text=normalize_text(source), source_html=source)
+
+    mapped = map_fraction_to_moon(
+        [chapter], .45, anchor_text="TARGET-SENTENCE", split_size=150_000,
+    )
+    assert mapped.chapter == 0
+    assert mapped.split_index == 1
+    assert mapped.matched_anchor is True
+
+    remote = parse_position(serialize_position(
+        device_id="1234567890123", chapter=mapped.chapter,
+        split_index=mapped.split_index, offset=mapped.offset,
+        percentage=mapped.percentage,
+    ))
+    assert infer_split_size([chapter], remote) == 150_000
+
+
+def test_moon_percentage_is_fallback_when_local_locator_cannot_be_verified():
+    from cps.services import moonreader_webdav as mod
+
+    position = mod.parse_position("1234567890123*8@2#99999:12.3%")
+    matcher = MagicMock()
+    matcher.local_path.return_value = None
+    assert mod._remote_fraction(position, MagicMock(), matcher) == pytest.approx(.123)
+
+
+def test_verified_moon_locator_preserves_sub_decimal_precision(tmp_path):
+    from cps.services import moonreader_webdav as mod
+
+    path = tmp_path / "book.fb2"
+    path.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
+        '<body><section><title><p>One</p></title><p>alpha beta gamma</p>'
+        '</section><section><title><p>Two</p></title><p>delta epsilon zeta'
+        '</p></section></body></FictionBook>',
+        encoding="utf-8",
+    )
+    chapters = mod.chapters_for_book(str(path), "FB2")
+    exact = mod.fraction_from_locator(chapters, 1, 5)
+    position = mod.parse_position(mod.serialize_moon_position(
+        device_id="1234567890123", chapter=1, split_index=0, offset=5,
+        percentage=exact * 100.0,
+    ))
+    matcher = MagicMock()
+    matcher.local_path.return_value = str(path)
+    match = mod.BookMatch(1, "FB2", path.name, "test")
+    assert mod._remote_fraction(position, match, matcher) == pytest.approx(exact)

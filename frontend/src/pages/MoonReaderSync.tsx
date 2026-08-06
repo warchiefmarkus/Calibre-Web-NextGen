@@ -67,7 +67,8 @@ export function MoonReaderSync() {
   const summaryEntries = useMemo(() => [
     [t('Position files'), summary?.files_found ?? 0],
     [t('Matched books'), summary?.matched ?? 0],
-    [t('Updated positions'), summary?.updated ?? 0],
+    [t('Imported from Moon+'), summary?.downloaded ?? 0],
+    [t('Written to Moon+'), summary?.uploaded ?? 0],
     [t('Unchanged'), summary?.unchanged ?? 0],
   ] as const, [summary, t]);
 
@@ -146,7 +147,7 @@ export function MoonReaderSync() {
         <div>
           <h1 className={styles.title}>{t('Moon+ Reader sync')}</h1>
           <p className={styles.subtitle}>
-            {t('Import Moon+ Reader WebDAV positions into your Calibre-Web reading progress.')}
+            {t('Synchronize Moon+ Reader WebDAV positions with Calibre-Web reading progress.')}
           </p>
         </div>
       </div>
@@ -157,7 +158,7 @@ export function MoonReaderSync() {
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
           <span>
             <strong>{t('Enable Moon+ Reader position sync')}</strong>
-            <small>{t('Synchronization is one-way from Moon+ Reader to Calibre-Web for now.')}</small>
+            <small>{t('Positions synchronize both ways between Moon+ Reader and Calibre-Web.')}</small>
           </span>
         </label>
 

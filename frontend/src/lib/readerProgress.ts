@@ -8,6 +8,7 @@ const RETRY_DELAY_MS = 3000;
 export interface PendingReadingPosition {
   bookmark: string;
   positionFraction: number;
+  anchorText?: string;
 }
 
 export function createReaderDeviceId(): string {
@@ -85,6 +86,7 @@ export function useReadingPositionSaver(
         bookmark: pending.bookmark,
         position_fraction: clampReadingFraction(pending.positionFraction),
         device: readerDevice(),
+        position_anchor: pending.anchorText || undefined,
       }, { keepalive });
       if (mountedRef.current) {
         setSaveError(false);
@@ -106,11 +108,12 @@ export function useReadingPositionSaver(
     }
   }, [bookId, format]);
 
-  const schedule = useCallback((bookmark: string, positionFraction: number) => {
+  const schedule = useCallback((bookmark: string, positionFraction: number, anchorText?: string) => {
     setSaveState('pending');
     pendingRef.current = {
       bookmark,
       positionFraction: clampReadingFraction(positionFraction),
+      anchorText: anchorText ? anchorText.replace(/\s+/gu, ' ').trim().slice(0, 1000) : undefined,
     };
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {

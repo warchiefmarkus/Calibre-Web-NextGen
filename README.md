@@ -557,13 +557,31 @@ Moon+ Reader sync** to configure a WebDAV URL, username, password, and optional
 cache path. The password is encrypted with the installation key and is never
 returned to the browser after it is saved.
 
-The initial integration is one-way and manual: **Moon+ Reader → Calibre-Web
-NextGen**. Nothing is imported merely by opening a library or book page. Press
-`Sync now` to run the background task: it imports Moon+ `.po` files, mirrors the
-newer normalized percentage into Calibre's native `last_read_positions`, updates
-read/in-progress status, and preserves the original Moon+ locator separately for
-future exact-position adapters. It does not write Calibre-Web positions back to
-WebDAV yet.
+Synchronization is bidirectional. A manual **Sync now** performs a complete
+reconciliation, and a one-minute background poll detects changes made by Moon+
+or another Calibre reader. Foliate writes enqueue an immediate per-book WebDAV
+reconciliation after the native Calibre position is saved.
+
+Moon+ `.po` files are decoded as `deviceId*chapter@split#offset:percent%` (or
+`deviceId*page:percent%` for PDF). The device id prevents self-echoes; freshness
+comes from the WebDAV ETag/modification time and Calibre's native position epoch.
+Moon+ is the primary reader and wins timestamp ties. Updates use conditional
+WebDAV PUTs so a concurrent Moon save cannot be overwritten.
+
+For FB2 and EPUB, CWNG reproduces Moon's chapter model and its exact HTML
+splitter. Moon chooses a 150,000, 400,000, or 1,000,000-character split size from
+the Android memory class; CWNG infers that profile from an existing `.po` and
+writes a real `chapter@split#offset` locator. On import, the structural locator is
+used when it agrees with Moon's one-decimal percentage and the percentage is the
+safe fallback when a local book or split profile cannot be verified.
+
+Foliate sends visible text with each position update, allowing the WebDAV writer
+to locate the same paragraph rather than converting only from a coarse fraction.
+Older web-reader positions without a text anchor are not allowed to overwrite an
+existing Moon file; they wait for the next real Foliate relocation. Other native
+Calibre devices use a chapter-aware fallback for supported formats. PDF uses the
+stored page locator; unsupported reflowable formats are deferred instead of
+writing a false zero locator.
 
 The cache path may be left empty while configuring the connection, but a folder
 must be selected before synchronization. Use **Find Moon sync files** to perform

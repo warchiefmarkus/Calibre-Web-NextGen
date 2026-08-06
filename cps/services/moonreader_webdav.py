@@ -23,9 +23,16 @@ import xml.etree.ElementTree as ET
 
 import requests
 from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import text
 from sqlalchemy.orm import selectinload
 
 from .. import calibre_db, cli_param, config, config_sql, db, deployment_profile, logger, ub
+from .moonreader_locator import (
+    MoonLocatorError, MoonPosition, chapters_for_book, fraction_from_locator,
+    infer_split_size, map_book_position, moon_split_texts,
+    parse_position as parse_moon_position,
+    serialize_position as serialize_moon_position,
+)
 
 log = logger.create()
 
@@ -39,27 +46,14 @@ MAX_PROPFIND_BYTES = 5 * 1024 * 1024
 MAX_POSITION_BYTES = 64 * 1024
 MAX_CHECKSUM_BOOK_BYTES = 100 * 1024 * 1024
 MAX_SUMMARY_ITEMS = 500
+MOON_WRITE_FORMATS = frozenset({"FB2", "FBZ", "EPUB", "KEPUB", "PDF"})
 _DAV = "{DAV:}"
-_PO_RE = re.compile(
-    r"^\s*(?P<timestamp>\d{10,16})\*(?P<chapter>-?\d+)"
-    r"(?:@(?P<locator>.+))?:(?P<percentage>\d+(?:[.,]\d+)?)%\s*$"
-)
-
 
 class MoonReaderError(Exception):
     def __init__(self, message: str, *, code: str = "moonreader_error", status: int = 400):
         super().__init__(message)
         self.code = code
         self.status = status
-
-
-@dataclass(frozen=True)
-class MoonPosition:
-    raw: str
-    timestamp: datetime
-    chapter: int
-    locator: str
-    percentage: float
 
 
 @dataclass(frozen=True)
@@ -149,36 +143,11 @@ def decrypt_password(value: str | None) -> str:
 
 
 def parse_position(value: bytes | str) -> MoonPosition:
-    if isinstance(value, bytes):
-        if len(value) > MAX_POSITION_BYTES:
-            raise MoonReaderError("Moon+ position file is too large.", code="invalid_position")
-        try:
-            text = value.decode("utf-8-sig")
-        except UnicodeDecodeError as exc:
-            raise MoonReaderError("Moon+ position file is not UTF-8.", code="invalid_position") from exc
-    else:
-        text = str(value)
-    match = _PO_RE.fullmatch(text)
-    if not match:
-        raise MoonReaderError("Moon+ position file has an unsupported format.", code="invalid_position")
-    percentage = float(match.group("percentage").replace(",", "."))
-    if percentage < 0 or percentage > 100:
-        raise MoonReaderError("Moon+ percentage is outside 0-100.", code="invalid_position")
-    raw_timestamp = int(match.group("timestamp"))
-    seconds = raw_timestamp / 1000.0 if raw_timestamp >= 100_000_000_000 else float(raw_timestamp)
     try:
-        timestamp = datetime.fromtimestamp(seconds, tz=timezone.utc)
-    except (OverflowError, OSError, ValueError) as exc:
-        raise MoonReaderError("Moon+ timestamp is invalid.", code="invalid_position") from exc
-    return MoonPosition(
-        raw=text.strip(),
-        timestamp=timestamp,
-        chapter=int(match.group("chapter")),
-        # Reflowable formats include an exact ``@locator``. PDF positions only
-        # contain the page number before ``:``, so retain that as the locator.
-        locator=match.group("locator") or match.group("chapter"),
-        percentage=percentage,
-    )
+        return parse_moon_position(value, max_bytes=MAX_POSITION_BYTES)
+    except MoonLocatorError as exc:
+        raise MoonReaderError(str(exc), code="invalid_position") from exc
+
 
 
 class WebDavClient:
@@ -321,6 +290,35 @@ class WebDavClient:
             return b"".join(chunks)
         finally:
             response.close()
+
+    def put_bytes(self, relative_path: str, value: bytes, *, etag: str | None = None,
+                  create_only: bool = False) -> None:
+        if len(value) > MAX_POSITION_BYTES:
+            raise MoonReaderError("Moon+ position file is too large.", code="invalid_position")
+        headers = {"Content-Type": "text/plain; charset=utf-8"}
+        if etag:
+            headers["If-Match"] = etag
+        elif create_only:
+            headers["If-None-Match"] = "*"
+        response = self._request("PUT", relative_path, headers=headers, data=value)
+        try:
+            if response.status_code == 412:
+                raise MoonReaderError(
+                    "The Moon+ position changed while it was being synchronized.",
+                    code="write_conflict", status=409,
+                )
+            if response.status_code not in {200, 201, 204}:
+                raise MoonReaderError(
+                    f"WebDAV PUT returned HTTP {response.status_code}.",
+                    code="webdav_error", status=502,
+                )
+        finally:
+            response.close()
+
+    def resource_in_collection(self, collection: str, relative_path: str) -> WebDavResource | None:
+        rows = self.propfind(collection, depth=1) or []
+        wanted = normalize_cache_path(relative_path).casefold()
+        return next((row for row in rows if row.path.casefold() == wanted), None)
 
     def sha256(self, relative_path: str, *, limit: int = MAX_CHECKSUM_BOOK_BYTES) -> tuple[str, int]:
         response = self._request("GET", relative_path, stream=True)
@@ -525,6 +523,27 @@ class BookMatcher:
         return BookMatch(row.book_id, row.format, row.filename, "calibre_id")
 
 
+    def for_book(self, book_id: int, fmt: str | None = None) -> BookMatch | None:
+        target = int(book_id)
+        if fmt:
+            row = self._by_id_format.get((target, str(fmt).upper()))
+            if row is not None:
+                return BookMatch(row.book_id, row.format, row.filename, "book_id")
+        rows = [row for (value, _), row in self._by_id_format.items() if value == target]
+        if not rows:
+            return None
+        preferred = sorted(rows, key=lambda row: (
+            {"FB2": 0, "EPUB": 1, "KEPUB": 2, "PDF": 3}.get(str(row.format), 9),
+            row.filename.casefold(),
+        ))[0]
+        return BookMatch(preferred.book_id, preferred.format, preferred.filename, "book_id")
+
+    def local_path(self, match: BookMatch) -> str | None:
+        for candidate, path, _ in self._local_files:
+            if candidate.book_id == match.book_id and candidate.format == match.format:
+                return path
+        return None
+
     def match_checksum(self, digest: str, size: int) -> BookMatch | None:
         matches: list[BookMatch] = []
         for match, path, expected_size in self._local_files:
@@ -613,6 +632,16 @@ def find_cache_locations(*, base_url: str, username: str, password: str) -> dict
         client.close()
 
 
+def moon_device_id(user_id: int) -> str:
+    """Stable numeric device id accepted by Moon+'s self-echo comparison."""
+    key, error = config_sql.get_encryption_key(os.path.dirname(cli_param.settings_path))
+    if error:
+        raise MoonReaderError("Could not access the server encryption key.",
+                              code="encryption_unavailable", status=500)
+    digest = hashlib.sha256(bytes(key) + f":moonreader:{int(user_id)}".encode()).digest()
+    return str(1_000_000_000_000 + int.from_bytes(digest[:8], "big") % 8_000_000_000_000)
+
+
 def _same_or_newer(left: datetime | None, right: datetime | None) -> bool:
     left = _aware(left)
     right = _aware(right)
@@ -631,209 +660,415 @@ def _latest_native_position(payload: Any) -> dict[str, Any] | None:
     return max(rows, key=lambda row: float(row.get("epoch") or 0))
 
 
-def _native_locator(position: MoonPosition, fmt: str) -> str:
-    """Return a non-empty Calibre locator alongside the authoritative fraction.
+def _native_modified(native: dict[str, Any] | None) -> datetime | None:
+    if not native:
+        return None
+    value = float(native.get("epoch") or 0)
+    return datetime.fromtimestamp(value, tz=timezone.utc) if value > 0 else None
 
-    Calibre silently ignores a last-position write whose CFI is null. PDF can
-    carry a real page locator from Moon's page number. Reflowable formats use a
-    harmless start CFI; CWNG restores the exact normalized ``pos_frac`` first.
-    """
+
+def _native_fraction(native: dict[str, Any] | None) -> float:
+    return max(0.0, min(1.0, float((native or {}).get("pos_frac") or 0)))
+
+
+def _native_locator(position: MoonPosition, fmt: str) -> str:
     if str(fmt or "").upper() == "PDF":
         return json.dumps({
-            "type": "pdf-position",
-            "version": 1,
+            "type": "pdf-position", "version": 1,
             "page": max(1, int(position.chapter)),
             "scroll": {"x": 0, "y": 0},
         }, separators=(",", ":"))
     return "epubcfi(/6/2!/4/2)"
 
 
-def _sync_native_position(user, resource: WebDavResource,
-                          position: MoonPosition, match: BookMatch) -> bool:
-    """Mirror a manually imported Moon percentage into Calibre's reader DB.
-
-    The WebDAV job is deliberately the only caller. Merely opening a book or a
-    catalog page never imports Moon data. Existing non-zero Calibre progress is
-    retained when it is newer than the ``.po`` file; a technical zero may be
-    replaced by real Moon progress regardless of its timestamp.
-    """
-    if not deployment_profile.use_calibre_native_reader_data():
-        return False
-
-    from .calibremcp_client import get_reader_position, set_reader_position
-
-    user_name = str(getattr(user, "name", "") or "").strip()
-    if not user_name or not match.format:
-        return False
-    payload = get_reader_position(user_name, match.book_id, match.format)
-    native = _latest_native_position(payload)
-    moon_fraction = max(0.0, min(1.0, float(position.percentage) / 100.0))
-    should_write = native is None
-    if native is not None:
-        native_fraction = max(0.0, min(1.0, float(native.get("pos_frac") or 0)))
-        if abs(native_fraction - moon_fraction) < 1e-6:
-            return False
-        if native_fraction <= 0 < moon_fraction:
-            should_write = True
-        else:
-            native_epoch = float(native.get("epoch") or 0)
-            native_modified = (datetime.fromtimestamp(native_epoch, tz=timezone.utc)
-                               if native_epoch > 0 else None)
-            moon_modified = _aware(resource.modified) or _aware(position.timestamp)
-            should_write = (moon_modified is not None and
-                            (native_modified is None or moon_modified > native_modified))
-    if not should_write:
-        return False
-
-    set_reader_position(
-        user_name, match.book_id, match.format,
-        cfi=_native_locator(position, match.format),
-        position_fraction=moon_fraction,
-        device=f"moonreader-webdav:{int(user.id)}",
-    )
-    return True
+def _pdf_page(native: dict[str, Any] | None) -> int | None:
+    value = (native or {}).get("cfi")
+    if not value:
+        return None
+    try:
+        payload = json.loads(value)
+        if isinstance(payload, dict) and "page" in payload:
+            return int(payload["page"])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return None
 
 
-def _apply_position(user, resource: WebDavResource, position: MoonPosition, match: BookMatch) -> str:
-    existing = (ub.session.query(ub.MoonReaderProgress)
-                .filter(ub.MoonReaderProgress.user_id == int(user.id),
-                        ub.MoonReaderProgress.remote_path == resource.path)
-                .first())
-    moon_changed = not (existing is not None and
-                        _same_or_newer(existing.moon_timestamp, position.timestamp))
+def _remote_fraction(position: MoonPosition, match: BookMatch,
+                     matcher: BookMatcher) -> float:
+    stored = max(0.0, min(1.0, float(position.percentage) / 100.0))
+    path = matcher.local_path(match)
+    if not path or position.split_index is None:
+        return stored
+    try:
+        chapters = chapters_for_book(path, match.format or "")
+        current = next(
+            (item for item in chapters if item.index == position.chapter), None,
+        )
+        if current is None:
+            return stored
+        split_size = infer_split_size(chapters, position)
+        splits = moon_split_texts(current, split_size)
+        if not 0 <= position.split_index < len(splits):
+            return stored
+        exact = fraction_from_locator(
+            chapters, position.chapter, position.offset,
+            split_index=position.split_index, split_size=split_size,
+        )
+        # T.getPercentStr2 stores one decimal. Accept the structural locator
+        # only when it rounds to the payload value; otherwise the local file or
+        # inferred device split profile differs and percentage is safer.
+        if abs((exact * 100.0) - position.percentage) <= 0.051:
+            return exact
+    except (MoonLocatorError, OSError):
+        log.warning(
+            "Could not map Moon locator for book %s; using stored percentage",
+            match.book_id,
+        )
+    return stored
 
-    if moon_changed:
-        if existing is None:
-            existing = ub.MoonReaderProgress(
-                user_id=int(user.id), book_id=match.book_id,
-                remote_path=resource.path, raw_position=position.raw,
-                percentage=position.percentage, moon_timestamp=position.timestamp,
-            )
-            ub.session.add(existing)
-        existing.book_id = match.book_id
-        existing.format = match.format
-        existing.remote_etag = resource.etag
-        existing.remote_modified = resource.modified
-        existing.raw_position = position.raw
-        existing.percentage = position.percentage
-        existing.chapter = position.chapter
-        existing.moon_timestamp = position.timestamp
-        existing.synced_at = datetime.now(timezone.utc)
 
+def _record_progress(user, resource: WebDavResource, position: MoonPosition,
+                     match: BookMatch, *, native_epoch: float | None,
+                     direction: str) -> None:
+    row = (ub.session.query(ub.MoonReaderProgress)
+           .filter(ub.MoonReaderProgress.user_id == int(user.id),
+                   ub.MoonReaderProgress.remote_path == resource.path).first())
+    modified = _aware(resource.modified) or datetime.now(timezone.utc)
+    if row is None:
+        row = ub.MoonReaderProgress(
+            user_id=int(user.id), book_id=match.book_id,
+            remote_path=resource.path, raw_position=position.raw,
+            percentage=position.percentage, moon_timestamp=modified,
+        )
+        ub.session.add(row)
+    row.book_id = match.book_id
+    row.format = match.format
+    row.remote_etag = resource.etag
+    row.remote_modified = resource.modified
+    row.remote_device_id = position.device_id
+    row.raw_position = position.raw
+    row.percentage = position.percentage
+    row.chapter = position.chapter
+    row.split_index = position.split_index
+    row.character_offset = position.offset
+    row.moon_timestamp = modified
+    row.last_native_epoch = native_epoch
+    row.last_direction = direction
+    row.synced_at = datetime.now(timezone.utc)
+
+
+def _update_legacy_progress(user, match: BookMatch, position: MoonPosition,
+                            modified: datetime | None) -> None:
     from ..progress_syncing.models import KOSyncProgress
-    from ..progress_syncing.protocols.kosync import (
-        get_book_checksums,
-        update_book_read_status,
-    )
+    from ..progress_syncing.protocols.kosync import update_book_read_status
 
     device_id = f"moonreader-webdav:{int(user.id)}"
-    document_keys = {str(match.book_id)}
-    # The MCP-managed Calibre schema intentionally has no CWNG checksum table;
-    # its native reader state is keyed by book id. Avoid one noisy failed query
-    # per imported book while retaining checksum compatibility in standard mode.
+    row = (ub.session.query(KOSyncProgress)
+           .filter(KOSyncProgress.user_id == int(user.id),
+                   KOSyncProgress.device_id == device_id,
+                   KOSyncProgress.document == str(match.book_id))
+           .order_by(KOSyncProgress.timestamp.desc()).first())
+    timestamp = _aware(modified) or datetime.now(timezone.utc)
+    if row is None:
+        row = KOSyncProgress(
+            user_id=int(user.id), document=str(match.book_id),
+            progress=position.raw, percentage=position.percentage,
+            device="Moon+ Reader", device_id=device_id, timestamp=timestamp,
+        )
+        ub.session.add(row)
+    else:
+        row.progress = position.raw
+        row.percentage = position.percentage
+        row.device = "Moon+ Reader"
+        row.timestamp = timestamp
+    update_book_read_status(user, match.book_id, position.percentage)
+
+
+def _import_remote(user, resource: WebDavResource, position: MoonPosition,
+                   match: BookMatch, matcher: BookMatcher,
+                   native: dict[str, Any] | None) -> str:
+    from .calibremcp_client import set_reader_position
+
+    fraction = _remote_fraction(position, match, matcher)
+    if deployment_profile.use_calibre_native_reader_data():
+        set_reader_position(
+            str(user.name), match.book_id, match.format or "",
+            cfi=_native_locator(position, match.format or ""),
+            position_fraction=fraction,
+            device=f"moonreader-webdav:{int(user.id)}",
+        )
+    _update_legacy_progress(user, match, position, resource.modified)
+    _record_progress(
+        user, resource, position, match,
+        native_epoch=float((native or {}).get("epoch") or 0) or None,
+        direction="from_moon",
+    )
+    ub.session.commit()
+    return "downloaded"
+
+
+def _remote_path(cache_path: str, match: BookMatch,
+                 existing: Any | None = None) -> str:
+    if existing is not None and existing.remote_path:
+        return normalize_cache_path(existing.remote_path)
+    filename = os.path.basename(match.filename)
+    return normalize_cache_path(f"{cache_path}/{filename}.po")
+
+
+def _export_native(user, client: WebDavClient, cache_path: str,
+                   resource: WebDavResource | None, match: BookMatch,
+                   matcher: BookMatcher, native: dict[str, Any],
+                   *, anchor_text: str | None = None,
+                   remote_position: MoonPosition | None = None) -> str:
+    path = matcher.local_path(match)
+    fraction = _native_fraction(native)
+    try:
+        mapped = map_book_position(
+            path or "", match.format or "", fraction,
+            anchor_text=anchor_text, page=_pdf_page(native),
+            remote_position=remote_position,
+        )
+    except (MoonLocatorError, OSError):
+        mapped = map_book_position("", match.format or "", fraction,
+                                   page=_pdf_page(native))
+    raw = serialize_moon_position(
+        device_id=moon_device_id(int(user.id)), chapter=mapped.chapter,
+        split_index=mapped.split_index, offset=mapped.offset,
+        percentage=mapped.percentage,
+    )
+    existing = (ub.session.query(ub.MoonReaderProgress)
+                .filter(ub.MoonReaderProgress.user_id == int(user.id),
+                        ub.MoonReaderProgress.book_id == match.book_id,
+                        ub.MoonReaderProgress.format == match.format).first())
+    remote_path = _remote_path(cache_path, match, existing)
+    client.put_bytes(
+        remote_path, raw.encode("utf-8"),
+        etag=resource.etag if resource else None,
+        create_only=resource is None,
+    )
+    fresh = client.resource_in_collection(cache_path, remote_path) or WebDavResource(
+        remote_path, False, size=len(raw), modified=datetime.now(timezone.utc))
+    position = parse_position(raw)
+    _record_progress(
+        user, fresh, position, match,
+        native_epoch=float(native.get("epoch") or 0) or None,
+        direction="to_moon",
+    )
+    ub.session.commit()
+    return "uploaded_anchor" if mapped.matched_anchor else "uploaded"
+
+
+def _conflict_direction(resource: WebDavResource | None, position: MoonPosition | None,
+                        native: dict[str, Any] | None, server_device: str) -> str:
+    """Return from_moon/to_moon/unchanged; Moon wins ties and races."""
+    if resource is None or position is None:
+        return "to_moon" if native else "unchanged"
+    if native is None:
+        return "from_moon"
+    remote_fraction = max(0.0, min(1.0, position.percentage / 100.0))
+    native_fraction = _native_fraction(native)
+    same = abs(remote_fraction - native_fraction) < 0.0005
+    native_device = str(native.get("device") or "")
+    if same and (position.device_id == server_device or
+                 native_device.startswith("moonreader-webdav:")):
+        return "unchanged"
+    if native_fraction <= 0 < remote_fraction:
+        return "from_moon"
+    remote_time = _aware(resource.modified)
+    native_time = _native_modified(native)
+    if remote_time is None:
+        return "from_moon"
+    if native_time is None:
+        return "from_moon"
+    # Filesystems and Calibre may round timestamps differently. Moon is the
+    # primary reader, so it wins ties and the two-second uncertainty window.
+    if remote_time.timestamp() >= native_time.timestamp() - 2.0:
+        return "from_moon"
+    return "to_moon"
+
+
+def _match_remote(matcher: BookMatcher, resource: WebDavResource,
+                  client: WebDavClient, root_files: dict[str, WebDavResource]) -> BookMatch | None:
+    match = matcher.match_filename(resource.path) or matcher.match_calibre_export_id(resource.path)
+    if match is not None:
+        return match
+    associated = os.path.basename(resource.path)[:-3]
+    remote_book = root_files.get(associated.casefold())
+    if remote_book is not None and (remote_book.size or 0) <= MAX_CHECKSUM_BOOK_BYTES:
+        digest, size = client.sha256(remote_book.path)
+        return matcher.match_checksum(digest, size)
+    return None
+
+
+def _native_pairs(user_name: str) -> set[tuple[int, str]]:
     if not deployment_profile.use_calibre_native_reader_data():
-        document_keys.update(str(value) for value in get_book_checksums(match.book_id) if value)
-    newest = (ub.session.query(KOSyncProgress)
-              .filter(KOSyncProgress.user_id == int(user.id),
-                      KOSyncProgress.document.in_(tuple(document_keys)))
-              .order_by(KOSyncProgress.timestamp.desc()).first())
-    accepted = (newest is None or getattr(newest, "device_id", None) == device_id or
-                not _same_or_newer(newest.timestamp, position.timestamp))
-    if accepted and moon_changed:
-        moon_progress = (ub.session.query(KOSyncProgress)
-                         .filter(KOSyncProgress.user_id == int(user.id),
-                                 KOSyncProgress.device_id == device_id,
-                                 KOSyncProgress.document == str(match.book_id))
-                         .order_by(KOSyncProgress.timestamp.desc()).first())
-        if moon_progress is None:
-            moon_progress = KOSyncProgress(
-                user_id=int(user.id), document=str(match.book_id),
-                progress=position.raw, percentage=position.percentage,
-                device="Moon+ Reader", device_id=device_id,
-                timestamp=position.timestamp,
+        return set()
+    path = os.path.join(config.config_calibre_dir, "metadata.db")
+    try:
+        import sqlite3
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
+            return {
+                (int(row[0]), str(row[1]).upper())
+                for row in connection.execute(
+                    "SELECT DISTINCT book, format FROM last_read_positions WHERE user = ?",
+                    (user_name,),
+                )
+            }
+    except Exception:
+        log.exception("Could not enumerate native Calibre reading positions")
+        return set()
+
+
+def reconcile_book(user, client: WebDavClient, cache_path: str,
+                   matcher: BookMatcher, match: BookMatch,
+                   resource: WebDavResource | None,
+                   *, anchor_text: str | None = None,
+                   retry_conflict: bool = True) -> str:
+    from .calibremcp_client import get_reader_position
+
+    position = parse_position(client.get_bytes(resource.path)) if resource else None
+    native = _latest_native_position(
+        get_reader_position(str(user.name), match.book_id, match.format or "")
+    ) if deployment_profile.use_calibre_native_reader_data() else None
+    server_device = moon_device_id(int(user.id))
+    tracking = None
+    if resource is not None:
+        tracking = (ub.session.query(ub.MoonReaderProgress)
+                    .filter(ub.MoonReaderProgress.user_id == int(user.id),
+                            ub.MoonReaderProgress.remote_path == resource.path).first())
+    native_epoch = float((native or {}).get("epoch") or 0)
+    own_write_unchanged = bool(
+        position is not None and position.device_id == server_device and
+        tracking is not None and tracking.last_direction == "to_moon" and
+        tracking.remote_etag == resource.etag and
+        native_epoch <= float(tracking.last_native_epoch or 0) + 0.01
+    )
+    direction = "unchanged" if own_write_unchanged else _conflict_direction(
+        resource, position, native, server_device)
+    if direction == "unchanged":
+        if resource and position:
+            _record_progress(
+                user, resource, position, match,
+                native_epoch=float((native or {}).get("epoch") or 0) or None,
+                direction="unchanged",
             )
-            ub.session.add(moon_progress)
-        else:
-            moon_progress.progress = position.raw
-            moon_progress.percentage = position.percentage
-            moon_progress.device = "Moon+ Reader"
-            moon_progress.timestamp = position.timestamp
-        update_book_read_status(user, match.book_id, position.percentage)
+            ub.session.commit()
+        return "unchanged"
+    if direction == "from_moon" and resource and position:
+        return _import_remote(user, resource, position, match, matcher, native)
+    if direction == "to_moon" and native:
+        if str(match.format or "").upper() not in MOON_WRITE_FORMATS:
+            return "deferred"
+        native_device = str(native.get("device") or "")
+        # Older CWNG rows have an exact CFI but no text anchor. A raw Foliate
+        # fraction is not Moon's fraction and can move Moon by thousands of
+        # characters (2.7% Foliate vs 2.4% Moon in Console Wars). Wait for the
+        # next real relocate event, which carries visible text, rather than
+        # damaging an existing Moon file. External Calibre devices have no
+        # anchor channel and therefore retain the structural fraction fallback.
+        if resource is not None and native_device.startswith("cwng-web") and not anchor_text:
+            return "deferred"
+        try:
+            return _export_native(
+                user, client, cache_path, resource, match, matcher, native,
+                anchor_text=anchor_text, remote_position=position,
+            )
+        except MoonReaderError as exc:
+            if exc.code != "write_conflict" or not retry_conflict:
+                raise
+            fresh = client.resource_in_collection(
+                cache_path, resource.path if resource else _remote_path(cache_path, match))
+            return reconcile_book(
+                user, client, cache_path, matcher, match, fresh,
+                anchor_text=anchor_text, retry_conflict=False,
+            )
+    return "unchanged"
 
-    native_updated = _sync_native_position(user, resource, position, match) if accepted else False
-    if moon_changed:
-        ub.session.commit()
-    if native_updated or (accepted and moon_changed):
-        return "updated"
-    return "stored_only" if moon_changed else "unchanged"
 
-
-def sync_positions(user_id: int) -> dict[str, Any]:
+def sync_positions(user_id: int, *, book_id: int | None = None,
+                   fmt: str | None = None, anchor_text: str | None = None,
+                   include_native_only: bool = True) -> dict[str, Any]:
+    """Reconcile Moon WebDAV and Calibre positions in both directions."""
     settings = get_or_create_settings(user_id)
     if not settings.enabled:
         raise MoonReaderError("Moon+ Reader sync is disabled.", code="sync_disabled")
-    if not normalize_cache_path(settings.cache_path or ""):
-        raise MoonReaderError(
-            "Find and select a Moon+ sync folder before synchronizing.",
-            code="cache_path_required",
-        )
-    password = decrypt_password(settings.password_encrypted)
-    client = WebDavClient(settings.base_url, settings.username, password)
+    cache_path = normalize_cache_path(settings.cache_path or "")
+    if not cache_path:
+        raise MoonReaderError("Find and select a Moon+ sync folder before synchronizing.",
+                              code="cache_path_required")
+    client = WebDavClient(settings.base_url, settings.username,
+                          decrypt_password(settings.password_encrypted))
     summary: dict[str, Any] = {
-        "cache_path": None,
-        "cache_found": False,
-        "files_found": 0,
-        "parsed": 0,
-        "matched": 0,
-        "updated": 0,
-        "stored_only": 0,
-        "unchanged": 0,
-        "unmatched": [],
-        "errors": [],
+        "cache_path": cache_path, "cache_found": False, "files_found": 0,
+        "parsed": 0, "matched": 0, "updated": 0, "uploaded": 0,
+        "downloaded": 0, "stored_only": 0, "unchanged": 0, "deferred": 0,
+        "unmatched": [], "errors": [],
     }
     try:
-        cache_path, files, cache_found = client.discover_positions(settings.cache_path or "")
-        summary["cache_path"] = cache_path
-        summary["cache_found"] = cache_found
+        _, files, found = client.discover_positions(cache_path)
+        summary["cache_found"] = found
         summary["files_found"] = len(files)
-        if not files:
-            return summary
-
         matcher = BookMatcher()
         user = ub.session.get(ub.User, int(user_id))
         if user is None:
-            raise MoonReaderError("Moon+ Reader sync user no longer exists.", code="user_not_found", status=404)
+            raise MoonReaderError("Moon+ Reader sync user no longer exists.",
+                                  code="user_not_found", status=404)
         root_files = {os.path.basename(row.path).casefold(): row for row in client.root_files()}
-
+        remote_by_key: dict[tuple[int, str], tuple[WebDavResource, BookMatch]] = {}
         for resource in files:
             try:
-                position = parse_position(client.get_bytes(resource.path))
-                summary["parsed"] += 1
-                match = matcher.match_filename(resource.path)
-                if match is None:
-                    match = matcher.match_calibre_export_id(resource.path)
-                if match is None:
-                    associated = os.path.basename(resource.path)[:-3]
-                    remote_book = root_files.get(associated.casefold())
-                    if remote_book is not None and (remote_book.size or 0) <= MAX_CHECKSUM_BOOK_BYTES:
-                        digest, size = client.sha256(remote_book.path)
-                        match = matcher.match_checksum(digest, size)
+                match = _match_remote(matcher, resource, client, root_files)
                 if match is None:
                     if len(summary["unmatched"]) < MAX_SUMMARY_ITEMS:
                         summary["unmatched"].append(os.path.basename(resource.path))
                     continue
                 summary["matched"] += 1
-                outcome = _apply_position(user, resource, position, match)
-                summary[outcome] += 1
+                remote_by_key[(match.book_id, str(match.format or "").upper())] = (resource, match)
+            except Exception as exc:
+                if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
+                    summary["errors"].append({"file": os.path.basename(resource.path),
+                                              "message": str(exc)})
+
+        keys = set(remote_by_key)
+        if book_id is not None:
+            selected = matcher.for_book(int(book_id), fmt)
+            keys = {(selected.book_id, str(selected.format or "").upper())} if selected else set()
+        elif include_native_only:
+            keys.update(_native_pairs(str(user.name)))
+
+        for key in sorted(keys):
+            resource_match = remote_by_key.get(key)
+            resource = resource_match[0] if resource_match else None
+            match = resource_match[1] if resource_match else matcher.for_book(*key)
+            if match is None:
+                continue
+            try:
+                outcome = reconcile_book(
+                    user, client, cache_path, matcher, match, resource,
+                    anchor_text=anchor_text if book_id == match.book_id else None,
+                )
+                if outcome.startswith("uploaded"):
+                    summary["uploaded"] += 1
+                    summary["updated"] += 1
+                elif outcome == "downloaded":
+                    summary["downloaded"] += 1
+                    summary["updated"] += 1
+                    summary["parsed"] += 1
+                else:
+                    summary[outcome] = summary.get(outcome, 0) + 1
             except MoonReaderError as exc:
                 ub.session.rollback()
                 if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
-                    summary["errors"].append({"file": os.path.basename(resource.path), "message": str(exc)})
-            except Exception as exc:  # one malformed file must not abort the batch
+                    summary["errors"].append({
+                        "file": os.path.basename(resource.path) if resource else match.filename,
+                        "message": str(exc),
+                    })
+            except Exception as exc:
                 ub.session.rollback()
-                log.exception("Moon+ Reader position import failed for %s", resource.path)
+                log.exception("Moon+ reconciliation failed for book %s", match.book_id)
                 if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
-                    summary["errors"].append({"file": os.path.basename(resource.path), "message": str(exc)})
+                    summary["errors"].append({"file": match.filename, "message": str(exc)})
         return summary
     finally:
         client.close()

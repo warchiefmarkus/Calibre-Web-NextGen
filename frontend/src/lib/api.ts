@@ -513,6 +513,9 @@ export interface MoonReaderSyncSummary {
   parsed: number;
   matched: number;
   updated: number;
+  uploaded: number;
+  downloaded: number;
+  deferred: number;
   stored_only: number;
   unchanged: number;
   unmatched: string[];

@@ -934,10 +934,18 @@ class MoonReaderProgress(Base):
     remote_path = Column(String(2048), nullable=False)
     remote_etag = Column(String(512), nullable=True)
     remote_modified = Column(DateTime, nullable=True)
+    remote_device_id = Column(String(128), nullable=True)
     raw_position = Column(Text, nullable=False)
     percentage = Column(Float, nullable=False)
     chapter = Column(Integer, nullable=True)
+    split_index = Column(Integer, nullable=True)
+    character_offset = Column(Integer, nullable=True)
+    # Legacy column kept for schema compatibility. Older builds incorrectly
+    # interpreted Moon's device id as a timestamp; new code stores the actual
+    # WebDAV modification time here and uses remote_modified for conflicts.
     moon_timestamp = Column(DateTime, nullable=False)
+    last_native_epoch = Column(Float, nullable=True)
+    last_direction = Column(String(24), nullable=True)
     synced_at = Column(DateTime, nullable=False,
                        default=lambda: datetime.now(timezone.utc))
 
@@ -3010,6 +3018,30 @@ def migrate_bookmark_format_lowercase(engine, _session):
             log.info("[bookmark-format-migration] merged %d rows; lowercased %d rows", merged, updated)
 
 
+def migrate_moonreader_progress_columns(engine, _session):
+    """Add two-way Moon+ synchronization state to existing app databases."""
+    if not engine.dialect.has_table(engine.connect(), "moonreader_progress"):
+        return
+    columns = {
+        "remote_device_id": "VARCHAR(128)",
+        "split_index": "INTEGER",
+        "character_offset": "INTEGER",
+        "last_native_epoch": "FLOAT",
+        "last_direction": "VARCHAR(24)",
+    }
+    try:
+        with engine.begin() as conn:
+            existing = {row[1] for row in conn.execute(
+                text("PRAGMA table_info(moonreader_progress)"))}
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.execute(text(
+                        f"ALTER TABLE moonreader_progress ADD COLUMN {name} {ddl}"))
+    except Exception as exc:
+        _safe_session_rollback(_session, "moonreader_progress")
+        log.error("[moonreader-progress-migration] failed: %s", exc)
+
+
 def migrate_Database(_session):
     engine = _session.bind
     add_missing_tables(engine, _session)
@@ -3038,6 +3070,7 @@ def migrate_Database(_session):
     migrate_annotation_koreader_identity(engine, _session)
     migrate_book_cover_preview_table(engine, _session)
     migrate_dismissed_duplicate_groups_table(engine, _session)
+    migrate_moonreader_progress_columns(engine, _session)
 
     # Ensure progress syncing tables in app.db (user-related tables).
     # Schema invariant — must not be gated on KOReader sync being enabled.
