@@ -48,6 +48,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          # Changelog integrity compares every canonical-era release tag. A
+          # shallow checkout would silently fall back to only the committed
+          # What's New ledger and exercise less history than normal CI can.
+          fetch-depth: 0
 
       - name: Remove Python bytecode and pycache
         run: |
@@ -72,8 +77,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          python -m pip install -e '.[dev]'
 
       - name: Create test environment structure
         run: |
@@ -273,8 +277,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          python -m pip install -e '.[dev]'
 
       - name: Build Docker image
         uses: docker/build-push-action@v7
@@ -367,6 +370,12 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Reject changelog structure lost by a stale PR branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/check_changelog_diff.py "$BASE_SHA" "$HEAD_SHA"
 
       - name: Detect
         id: detect
@@ -558,10 +567,40 @@ jobs:
           # never big enough is not a gate. pride_and_prejudice.epub is left out
           # deliberately: at 24 MB it dominates ingest time for no extra
           # coverage.
-          for book in alice_in_wonderland christmas_carol metamorphosis; do
+          #
+          # The last two are the #1303 pair: a 2 KB right-to-left spine and its
+          # matched left-to-right control (the control asserts that only RTL
+          # books swap, so it needs a deterministic book of its own).
+          # reader-rtl.spec.ts skips itself when either is missing, so this seed
+          # — and the count check below — is what keeps it a real gate rather
+          # than a silent pass.
+          # This seed intermittently imported 0 of 5, which reds the gate on
+          # diffs that cannot reach ingest at all. The cause is a startup race,
+          # not the copy mechanism: the previous step waits only for the web app
+          # to answer HTTP, but s6 brings cwa-ingest-service up after it, and
+          # inotifywait reports only events that happen once its watches exist.
+          # cwa-ingest-service/run has no startup scan of the folder, so a book
+          # that lands in that gap is never seen -- watches established, no
+          # ingest activity, 0 of 5. Nothing retries it, because from the
+          # service's point of view nothing ever happened.
+          #
+          # So: wait for the watcher, then keep nudging whatever it still
+          # missed. Ingest deletes each file once it has imported it, so a book
+          # still sitting in the folder is by definition one the watcher never
+          # picked up -- renaming it away and back fires a fresh event for it.
+          # That second half is what makes this deterministic rather than a
+          # narrower race: it recovers a lost event whatever the reason for it.
+          echo "Waiting for the ingest watcher to establish its watches..."
+          timeout 180 bash -c 'until docker logs cwn-e2e 2>&1 | grep -q "\[cwa-ingest-service\] Watching folder:"; do sleep 2; done' \
+            || echo "::warning::ingest watcher banner never appeared; relying on the re-nudge below"
+          sleep 5
+          docker exec -u 0 cwn-e2e mkdir -p /tmp/seed
+          for book in alice_in_wonderland christmas_carol metamorphosis test_rtl_vertical test_ltr_horizontal; do
             docker cp "tests/fixtures/sample_books/${book}.epub" \
-              "cwn-e2e:/cwa-book-ingest/${book}.epub"
-            docker exec -u 0 cwn-e2e chown 1000:1000 "/cwa-book-ingest/${book}.epub"
+              "cwn-e2e:/tmp/seed/${book}.epub"
+            docker exec -u 0 cwn-e2e chown 1000:1000 "/tmp/seed/${book}.epub"
+            docker exec -u 0 cwn-e2e mv "/tmp/seed/${book}.epub" \
+              "/cwa-book-ingest/${book}.epub"
           done
           echo "Polling for the imported book via the API..."
           jar=$(mktemp); total=0
@@ -574,11 +613,22 @@ jobs:
             echo "  attempt $i: books total=$total"
             # Wait for ALL of them: breaking at the first import is what left
             # the library at one book while the step reported success.
-            [ "${total:-0}" -ge 3 ] && break
+            [ "${total:-0}" -ge 5 ] && break
+            # Ingest removes each file once it has imported it, so anything
+            # still sitting in the folder is a book the watcher never saw.
+            # Rename it away and back to fire a fresh event. The intermediate
+            # name is deliberately not a book extension, so only the move back
+            # is acted on. Every 30s, so a lost event costs a little time
+            # rather than the whole run.
+            if [ $((i % 6)) -eq 0 ]; then
+              echo "  re-nudging books the watcher has not picked up yet"
+              docker exec -u 0 cwn-e2e sh -c \
+                'for f in /cwa-book-ingest/*.epub; do [ -e "$f" ] || continue; mv "$f" "$f.renudge" && mv "$f.renudge" "$f"; done' || true
+            fi
             sleep 5
           done
-          if [ "${total:-0}" -lt 3 ]; then
-            echo "::error::ingest imported only ${total:-0} of 3 seed books — dumping ingest logs"
+          if [ "${total:-0}" -lt 5 ]; then
+            echo "::error::ingest imported only ${total:-0} of 5 seed books — dumping ingest logs"
             docker logs cwn-e2e 2>&1 | grep -iE 'ingest|convert|import|error|watch' | tail -40 || true
             exit 1
           fi
@@ -733,6 +783,12 @@ jobs:
           path: |
             frontend/e2e/.report
             frontend/e2e/.results
+          # Both paths are dot-directories, and upload-artifact skips hidden
+          # files by default — so this step ran on every failed e2e job and
+          # uploaded nothing ("No files were found with the provided path"),
+          # leaving no HTML report, screenshot, trace or video to debug from.
+          # Without this flag the gate can fail but never say why.
+          include-hidden-files: true
           retention-days: 14
 
       - name: Dump container logs

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import {
   apiGet, apiPost, apiPatch, apiDelete, apiUpload, apiPostForm, ApiError,
   navigateToLogout, noteSessionIdentity,
@@ -88,6 +89,18 @@ export function useUpdateSidebar() {
   });
 }
 
+/** Queries whose response body depends on *who* is asking, and so must not
+ *  survive an identity change that happens without a page load. Today that is
+ *  /about, which withholds component versions from non-admins (#1287).
+ *
+ *  Cancel first, then remove: an in-flight request issued under the previous
+ *  identity would otherwise land after the switch and repopulate the cache with
+ *  the wrong identity's answer. */
+async function dropIdentityScopedQueries(queryClient: QueryClient) {
+  await queryClient.cancelQueries({ queryKey: ['about'] });
+  queryClient.removeQueries({ queryKey: ['about'] });
+}
+
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -103,6 +116,18 @@ export function useLogin() {
       noteSessionIdentity(!!data.role?.anonymous);
       queryClient.setQueryData(['me'], data);
       void queryClient.invalidateQueries({ queryKey: ['me'] });
+      // Signing in here does not reload the page, so anything cached under the
+      // previous identity survives. /about is one of those now — the server
+      // withholds versions from non-admins (#1287), so a guest's empty map
+      // would otherwise stick for staleTime and hide the section from the admin
+      // who just signed in. Logging out is a full navigation, so that direction
+      // clears itself.
+      //
+      // Cancel before dropping, rather than invalidating: invalidation only
+      // refetches *active* queries, so a guest request still in flight when
+      // login lands would resolve afterwards, write its empty map and clear the
+      // stale flag — leaving the admin with a fresh-looking wrong answer.
+      void dropIdentityScopedQueries(queryClient);
     },
   });
 }
@@ -142,6 +167,8 @@ export function useMagicLinkPoll() {
         noteSessionIdentity(!!data.user.role?.anonymous);
         queryClient.setQueryData(['me'], data.user);
         void queryClient.invalidateQueries({ queryKey: ['me'] });
+        // Same in-place identity switch as useLogin — drop the guest's /about.
+        void dropIdentityScopedQueries(queryClient);
       }
     },
   });
@@ -238,16 +265,52 @@ export function useEntityList(plural: string) {
   });
 }
 
+/** The tag a rename collided with, carried on the 409 so the caller can offer
+ *  to merge into it rather than showing a dead end (#973). */
+export interface TagConflict { id: number; name: string; count: number }
+
+export interface TagWriteResult {
+  id: number;
+  name: string;
+  /** Present when the rename was resolved by folding this tag into another. */
+  merged?: boolean;
+  deleted?: boolean;
+  /** How many books moved (merge) or lost the tag (delete). */
+  books?: number;
+}
+
+/** Read the conflicting tag off a failed rename, or null if this wasn't one. */
+export function tagConflictOf(error: unknown): TagConflict | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const conflict = error.detail?.conflict as TagConflict | undefined;
+  return conflict && typeof conflict.id === 'number' ? conflict : null;
+}
+
+function invalidateTagViews(qc: ReturnType<typeof useQueryClient>) {
+  // 'entities' un-suffixed: a merge or delete REMOVES a row from the all-tags
+  // browse list, so that list must refetch too — not just the tag's own page.
+  void qc.invalidateQueries({ queryKey: ['entities'] });
+  void qc.invalidateQueries({ queryKey: ['books'] });
+  void qc.invalidateQueries({ queryKey: ['book'] });
+  void qc.invalidateQueries({ queryKey: ['metadata'] });
+}
+
 export function useRenameTag(id: string | number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => apiPost<{ id: number; name: string }>(`/api/v1/tags/${id}`, { name }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['entities', 'tags'] });
-      void qc.invalidateQueries({ queryKey: ['books'] });
-      void qc.invalidateQueries({ queryKey: ['book'] });
-      void qc.invalidateQueries({ queryKey: ['metadata'] });
-    },
+    // `merge` is only sent when explicitly true — the server refuses anything
+    // else, and a merge cannot be undone.
+    mutationFn: ({ name, merge }: { name: string; merge?: boolean }) =>
+      apiPost<TagWriteResult>(`/api/v1/tags/${id}`, merge === true ? { name, merge: true } : { name }),
+    onSuccess: () => invalidateTagViews(qc),
+  });
+}
+
+export function useDeleteTag(id: string | number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiDelete<TagWriteResult>(`/api/v1/tags/${id}`),
+    onSuccess: () => invalidateTagViews(qc),
   });
 }
 
@@ -1038,6 +1101,16 @@ export interface ReaderBookmark {
 const retryUnlessUnauthorized = (failureCount: number, error: unknown) =>
   !(error instanceof ApiError && error.status === 401) && failureCount < 3;
 
+/** Is re-sending this request capable of changing the answer? (#1318)
+ *
+ *  A 5xx from a write route means the server tried and the transaction did not
+ *  land — typically SQLite contention — so the same request a moment later
+ *  usually succeeds. A 4xx is a verdict on the request itself (unauthenticated,
+ *  CSRF, malformed) and re-sending it unchanged just repeats the answer. A
+ *  network-level failure carries no status at all and is worth another try. */
+export const isWorthResending = (error: unknown) =>
+  !(error instanceof ApiError) || error.status >= 500;
+
 export function useReaderSettings() {
   return useQuery<{ reader: ReaderSettings }>({
     queryKey: ['reader-settings'],
@@ -1166,8 +1239,18 @@ export function useBookmark(bookId: string | number, format = 'epub') {
 
 export function useSaveBookmark(bookId: string | number) {
   return useMutation({
-    mutationFn: (vars: { format: string; bookmark: string; position_fraction?: number; device?: string }) =>
+    mutationFn: (vars: {
+      format: string; bookmark: string; percentage?: number;
+      position_fraction?: number; device?: string; position_anchor?: string;
+    }) =>
       apiPost(`/api/v1/books/${bookId}/bookmark`, vars),
+    // #1318: deliberately NO react-query `retry` here. The route now answers
+    // 5xx when the write did not land, which is worth re-sending — but a
+    // built-in retry re-sends the SAME variables, and the reader fires a save
+    // every 800ms while paging. A retry of the position from three pages ago
+    // can therefore land after the current one and move the user backwards.
+    // The caller retries instead, re-reading the latest position each time
+    // (see Reader.tsx), so what goes out is never stale.
   });
 }
 

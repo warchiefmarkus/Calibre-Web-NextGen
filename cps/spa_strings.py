@@ -977,13 +977,22 @@ _("Shelf name")
 _("Shelf not found.")
 _("Shelves")
 _("Show Discover section")
+_("Show hidden books")
+_("Show Read now and edit buttons")
+_("Clear default")
+_("Could not save the default library filter.")
+_("Could not save title.")
+_("Edit title for {title}")
+_("Default library filter cleared.")
+_("Default library filter saved.")
+_("Date added")
+_("Make this my default library view")
 _("Show Table view")
 _("Show all {count} tags")
 _("Show all {items}")
 _("Show books in language")
 _("Show e-reader previews on each candidate")
 _("Show fewer tags")
-_("Show hidden books")
 _("Show password")
 _("Show surrounding context")
 _("Shuffle picks")
@@ -1134,4 +1143,57 @@ _("{ok} of {total} sources answered")
 _("…or paste an image URL")
 _("← Back to sign in")
 _("← Library")
+_("≤")
+_("≥")
+
+# #866 — SPA-only strings for the shelf page's Kobo-sync notice.
+_("Account settings")
+_("Books that are not on a Kobo-sync shelf are then removed from the device on its next sync. They stay in your library here.")
+_("Could not update your account setting.")
+_("Saving…")
+_("Sync only my selected shelves")
+_("Your Kobo is still set to sync your whole library, so marking this shelf does nothing on its own. Switch your account to shelf-only syncing to make it take effect.")
+
+# #1048 — SPA-only strings for the duplicates page's manual scan trigger and the
+# admin panel's duplicate-detection settings row.
+_("A duplicate scan is already running. This list updates when it finishes.")
+_("A one-time full duplicate scan is needed. Use “Scan for duplicates” above to run it.")
+_("Could not start the duplicate scan.")
+_("Duplicate detection settings")
+_("Duplicate scan started. It runs in the background — this list updates when it finishes.")
+_("Scan for duplicates")
+_("Starting scan…")
+
+# #997 — SPA-only strings for editing custom columns. The column's own name is
+# user data (it comes from the library), so only the surrounding chrome is
+# translatable; "{field} (comma separated)" takes that name as a placeholder.
+_("Custom columns")
+_("Not set")
+_("{field} (comma separated)")
+
+# #1288 — the /upload page's own refusal state, shown when the account lacks the
+# upload role or the admin has switched "Enable Uploads" off. ("Back to library"
+# and "Upload books" are already anchored above.)
+_("Uploading is not available for your account on this server.")
+# #1318 — announced by the web reader when saving the reading position keeps
+# failing. Only reachable once the bookmark route's bounded retries are spent,
+# so it is rare, but it is the one moment the user needs to know their place is
+# not being kept.
+_("Could not save your reading position.")
+# #973 — SPA-only strings for consolidating tags from the Tag view. Renaming a
+# tag onto its near-duplicate is how you de-duplicate, so the collision offers a
+# merge instead of dead-ending, and a tag can now be deleted. Singular/plural are
+# separate msgids because the SPA has no ngettext.
+_("Merge")
+_("Merge into {name}")
+_("Merged into {name}")
+_("Delete")
+_("Delete tag {name}")
+_("Confirm delete tag {name}")
+_("Deleted tag {name}")
+_("Could not delete tag")
+_("\u201c{name}\u201d already exists on {count} book. Merge this tag into it?")
+_("\u201c{name}\u201d already exists on {count} books. Merge this tag into it?")
+_("Delete \u201c{name}\u201d? It is removed from {count} book, which is kept.")
+_("Delete \u201c{name}\u201d? It is removed from {count} books, which are kept.")
 # ==== END AUTOGEN ====

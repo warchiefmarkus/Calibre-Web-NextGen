@@ -24,16 +24,6 @@ for dir in "/app/calibre-web-automated" "/config" "/calibre-library" "/app/calib
   echo "[cwa-init] Directory $dir verified"
 done
 
-# Verify essential files exist
-echo "[cwa-init] Verifying essential files..."
-for file in "/app/CWA_RELEASE"; do
-  if [[ ! -f "$file" ]]; then
-    echo "[cwa-init] WARNING: Expected file $file does not exist"
-  else
-    echo "[cwa-init] File $file verified"
-  fi
-done
-
 echo "[cwa-init] Environment verification complete"
 
 # FROM lscio/docker-calibre-web - init-calibre-web-config.sh
@@ -56,7 +46,16 @@ fi
 mkdir -p /app/calibre-web-automated/cps/cache
 
 # permissions (skip chown on network shares for bind mounts, but still fix /app)
-if [ "${NETWORK_SHARE_MODE,,}" = "true" ] || [ "${NETWORK_SHARE_MODE}" = "1" ] || [ "${NETWORK_SHARE_MODE,,}" = "yes" ] || [ "${NETWORK_SHARE_MODE,,}" = "on" ]; then
+#
+# When the container is started as an arbitrary non-root user (`--user`,
+# `--userns=keep-id`), LSIO's init-adduser is skipped, `abc` keeps its
+# build-time 911:1001, and every chown to it fails with EPERM -- one error per
+# file. Nothing here is fatal, but a screenful of "Operation not permitted"
+# reads like a broken container when it is just a uid we were never going to be
+# able to set. Say it once instead. See #947.
+if [ "$(id -u)" != "0" ]; then
+  echo "[cwa-init] running as uid $(id -u) (not root); skipping chown — files keep their current owner"
+elif [ "${NETWORK_SHARE_MODE,,}" = "true" ] || [ "${NETWORK_SHARE_MODE}" = "1" ] || [ "${NETWORK_SHARE_MODE,,}" = "yes" ] || [ "${NETWORK_SHARE_MODE,,}" = "on" ]; then
   echo "[cwa-init] NETWORK_SHARE_MODE=true detected; skipping initial chown of /config"
   chown -R abc:abc /app/calibre-web-automated/cps/cache
 else
@@ -69,7 +68,7 @@ export CALIBRE_DBPATH=/config
 
 if [[ ! -f /config/app.db ]]; then
   echo "First time run, creating app.db..."
-  cd /app/calibre-web-automated && s6-setuidgid abc python3 /app/calibre-web-automated/cps.py -d > /dev/null 2>&1
+  cd /app/calibre-web-automated && cwa-as-abc python3 /app/calibre-web-automated/cps.py -d > /dev/null 2>&1
   # handle app.db updates for kepubify and ext binary path
   # borrowed from crocodilestick because it's a better solution than what i was doing
   sqlite3 /config/app.db <<EOS
@@ -94,6 +93,52 @@ install -d -o abc -g abc /config/processed_books/fixed_originals
 install -d -o abc -g abc /config/processed_books/duplicate_resolutions
 install -d -o abc -g abc /config/log_archive
 install -d -o abc -g abc /config/.cwa_conversion_tmp
+
+# The metadata dirs moved out of the app tree into /config (#995). They have to be created
+# HERE, at runtime, not in setup-cwa.sh: that script runs at image build time, so on the
+# common bind-mounted /config the user's mount shadows whatever the build put there and
+# the dirs are simply absent. Resolve them the same way cps/constants.py does, honouring
+# the same knobs in the same order, so the writer and the watcher cannot drift apart.
+# Not derived from CALIBRE_DBPATH: it is force-exported to /config above (and again in
+# svc-calibre-web-automated), so the app's CONFIG_DIR is /config regardless of what the
+# operator set. Reading it here would only introduce a way for these to disagree.
+CWA_CHANGE_LOGS_DIR="${CWA_METADATA_CHANGE_LOGS_DIR:-/config/metadata_change_logs}"
+CWA_TEMP_DIR="${CWA_METADATA_TEMP_DIR:-/config/metadata_temp}"
+install -d -o abc -g abc "${CWA_CHANGE_LOGS_DIR}"
+install -d -o abc -g abc "${CWA_TEMP_DIR}"
+
+# Pre-#995 installs kept these inside the app tree, which an upgrade replaces wholesale.
+# Move anything still sitting there so a change log written just before the upgrade is
+# still enforced after it. One-time, idempotent, and -n so an existing file always wins.
+migrate_legacy_metadata_dir () {
+  local old="$1" new="$2"
+  [ -d "$old" ] || return 0
+  [ "$old" = "$new" ] && return 0
+  if find "$old" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+    echo "[cwa-init] Migrating leftover files from ${old} to ${new} (#995)"
+    # Symlinks are skipped rather than moved, and the chown is -h. `chown -R` without -h
+    # follows a symlink and re-owns its *target*, so a link planted in the old dir would
+    # hand root's chown an arbitrary path -- and this runs before anything validates it.
+    find "$old" -mindepth 1 -maxdepth 1 ! -type l -exec mv -n {} "${new}/" \; 2>/dev/null || true
+    chown -Rh abc:abc "${new}" 2>/dev/null || true
+  fi
+  rmdir "$old" 2>/dev/null || true
+}
+
+migrate_legacy_metadata_dir /app/calibre-web-automated/metadata_change_logs "${CWA_CHANGE_LOGS_DIR}"
+
+# metadata_temp is deliberately NOT migrated. It is scratch for `calibredb export`,
+# and get_new_metadata_path() takes opf_files[0] from a walk of the whole directory --
+# so a leftover OPF from a container killed mid-enforcement could be embedded into the
+# *next* book instead of its own. Nothing in there is worth keeping; drop it.
+# Guarded on the paths differing, compared canonically: CWA_METADATA_TEMP_DIR is
+# operator-settable, and a trailing slash or a /./ spelling of the same directory would
+# slip past a string comparison and delete the live dir created just above.
+CWA_LEGACY_TEMP_DIR=/app/calibre-web-automated/metadata_temp
+if [ "$(realpath -m -- "${CWA_LEGACY_TEMP_DIR}" 2>/dev/null || echo "${CWA_LEGACY_TEMP_DIR}")" \
+     != "$(realpath -m -- "${CWA_TEMP_DIR}" 2>/dev/null || echo "${CWA_TEMP_DIR}")" ]; then
+  rm -rf "${CWA_LEGACY_TEMP_DIR}" 2>/dev/null || true
+fi
 
 # Ensure ingest directory exists and is writable (matches dirs.json)
 INGEST_DIR=$(python3 - <<'PY'
@@ -324,16 +369,3 @@ if [ ! -f "$QT_SENTINEL" ]; then
 else
   echo "[cwa-init][qt6] Qt6 compatibility already confirmed; skipping."
 fi
-#------------------------------------------------------------------------------------------------------------------------
-#  Resolve the installed CWA version once at container initialization
-#------------------------------------------------------------------------------------------------------------------------
-
-# Installed version, baked into the image at build time. The *latest
-# published* version is deliberately not probed here any more (fork #1108):
-# a value fetched once at boot is stale for the entire life of the container,
-# and long-lived deployments therefore stopped being told about updates.
-# cps/services/latest_release.py resolves it on demand instead, with caching.
-CWA_INSTALLED_VERSION="$(cat /app/CWA_RELEASE 2>/dev/null || true)"
-[ -n "$CWA_INSTALLED_VERSION" ] || CWA_INSTALLED_VERSION="v0.0.0"
-export CWA_INSTALLED_VERSION
-echo "[cwa-init] Installed version: $CWA_INSTALLED_VERSION"

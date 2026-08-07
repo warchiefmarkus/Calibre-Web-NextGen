@@ -30,10 +30,11 @@ from sqlalchemy.sql.functions import coalesce
 from werkzeug.datastructures import Headers
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from . import constants, logger, isoLanguages, services, helper, spa
+from . import constants, logger, isoLanguages, services, helper, spa, oauth_auto_redirect
 from . import db, ub, config, app
 from . import calibre_db, kobo_sync_status
 from .services.ereader_send import send_includes_own_address
+from .services import reading_position
 from .search import render_search_results, render_adv_search_results
 from .gdriveutils import getFileFromEbooksFolder, do_gdrive_download
 from .helper import check_valid_domain, check_email, check_username, \
@@ -228,7 +229,8 @@ def set_bookmark(book_id, book_format):
                                               ub.Bookmark.book_id == book_id,
                                               ub.Bookmark.format == book_format)).delete()
     if not bookmark_key:
-        ub.session_commit()
+        if not ub.session_commit():
+            return "", 500
         return "", 204
 
     l_bookmark = ub.Bookmark(user_id=current_user.id,
@@ -236,7 +238,33 @@ def set_bookmark(book_id, book_format):
                              format=book_format,
                              bookmark_key=bookmark_key)
     ub.session.merge(l_bookmark)
-    ub.session_commit("Bookmark for user {} in book {} created".format(current_user.id, book_id))
+
+    # #1318: settle the user's own write here, before the optional one below.
+    # This flush IS the bookmark; performed inside the progress helper it landed
+    # under the `except Exception` guard a few lines down and a genuine bookmark
+    # failure got logged as an optional progress-sharing failure — and answered
+    # 201 anyway. Settling first also keeps the bookmark out of the savepoint the
+    # helper opens, so a rollback there cannot take it.
+    if not ub.session_flush():
+        return "", 500
+
+    # #324: the CFI above is opaque and read by nothing but the readers, so a
+    # browser reading session was invisible to the user's other devices. The
+    # percentage the reader already computes IS portable — hand it to the shared
+    # carrier so the Kobo (and the book-detail progress row) pick it up. Absent
+    # for the comic/audio readers, which reuse this route.
+    percentage = reading_position.coerce_percentage(request.form.get("percentage"))
+    if percentage is not None:
+        try:
+            reading_position.record_web_reader_progress(current_user, book_id, percentage)
+        except Exception as e:
+            # Position sharing must never cost the user their bookmark.
+            log.warning("Could not share web reader progress for book %s: %s", book_id, e)
+
+    # The classic reader posts on every page turn, so a client told 201 after a
+    # rolled-back write simply loses the position with no reason to retry.
+    if not ub.session_commit("Bookmark for user {} in book {} created".format(current_user.id, book_id)):
+        return "", 500
     return "", 201
 
 
@@ -2583,21 +2611,24 @@ def handle_login_user(user, remember, message, category):
     flash(message, category=category)
     [limiter.limiter.storage.clear(k.key) for k in limiter.current_limits]
 
-    # Clear login redirect count on successful login
-    flask_session.pop('_login_redirect_count', None)
+    # Clear redirect-loop and automatic OAuth-attempt state on success.
+    flask_session.pop(oauth_auto_redirect.LOGIN_REDIRECT_COUNT_KEY, None)
+    oauth_auto_redirect.clear_auto_redirect_state(flask_session)
 
     return redirect(get_redirect_location(request.form.get('next', None), "web.index"))
 
 
 def render_login(username="", password=""):
     # Detect authentication redirect loops
-    redirect_count = flask_session.get('_login_redirect_count', 0)
-    if redirect_count > 3:
-        flask_session.pop('_login_redirect_count', None)
+    redirect_count = flask_session.get(
+        oauth_auto_redirect.LOGIN_REDIRECT_COUNT_KEY, 0
+    )
+    if redirect_count > oauth_auto_redirect.MAX_LOGIN_REDIRECTS:
+        flask_session.pop(oauth_auto_redirect.LOGIN_REDIRECT_COUNT_KEY, None)
         log.warning("Authentication redirect loop detected from IP: %s", request.remote_addr)
         flash(_("Authentication loop detected. If you're experiencing login issues, please contact your administrator."), category="error")
     else:
-        flask_session['_login_redirect_count'] = redirect_count + 1
+        flask_session[oauth_auto_redirect.LOGIN_REDIRECT_COUNT_KEY] = redirect_count + 1
 
     next_url = request.args.get('next', default=url_for("web.index"), type=str)
     if url_for("web.logout") == next_url:
@@ -2627,7 +2658,39 @@ def render_login(username="", password=""):
 @web.route('/login', methods=['GET'])
 def login():
     if current_user is not None and current_user.is_authenticated:
+        oauth_auto_redirect.clear_auto_redirect_state(flask_session)
         return redirect(url_for('web.index'))
+
+    # Start the sole configured provider before the SPA preference redirect so
+    # Classic- and SPA-preferring browsers behave consistently. ``?local=1``
+    # only suppresses automatic startup; normal SPA-or-Classic routing below
+    # still decides which login surface is shown.
+    #
+    # ``config_disable_standard_login`` is required as well as the login type:
+    # the two are independent settings, and with the local form still enabled
+    # ``login_post`` below goes on accepting local credentials. Auto-starting
+    # in that state would hide a form whose handler still works, and would
+    # leave an admin with no way back in at the canonical URL if the provider
+    # is unreachable.
+    if (config.config_login_type == constants.LOGIN_OAUTH
+            and config.config_disable_standard_login
+            and feature_support['oauth']):
+        oauth_endpoint, next_url = oauth_auto_redirect.auto_redirect_decision(
+            request.args,
+            oauth_bb.oauthblueprints,
+            flask_session,
+        )
+        if oauth_endpoint:
+            values = {
+                oauth_auto_redirect.AUTO_REDIRECT_PARAMETER:
+                    oauth_auto_redirect.AUTO_REDIRECT_VALUE,
+            }
+            if next_url:
+                values["next"] = next_url
+            return redirect(url_for(oauth_endpoint, **values))
+
+    if config.config_login_type != constants.LOGIN_OAUTH:
+        oauth_auto_redirect.clear_auto_redirect_state(flask_session)
 
     # #908: the UI preference is intentionally per-browser, not per-user, so it
     # remains readable after logout. Route an anonymous HTML browser into the
@@ -2640,9 +2703,8 @@ def login():
 
     # Handle OAuth-only authentication mode
     if config.config_login_type == constants.LOGIN_OAUTH:
-        # In OAuth-only mode, show OAuth options but still render login template
-        # This prevents infinite redirects to OAuth providers
         if not feature_support['oauth']:
+            oauth_auto_redirect.clear_auto_redirect_state(flask_session)
             log.error("OAuth authentication is enabled but OAuth support is not available")
             flash(_("OAuth authentication is not properly configured. Please contact administrator."), category="error")
         return render_login()

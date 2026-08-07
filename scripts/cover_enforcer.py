@@ -19,11 +19,35 @@ from datetime import datetime
 from pathlib import Path
 import unicodedata
 
+# s6 launches this as `python3 <app>/scripts/cover_enforcer.py` with an empty PYTHONPATH,
+# so sys.path[0] is scripts/ and the project root that owns the `cps` package is not on
+# the path at all. Put it there before the first cps import, not after: an import that
+# runs earlier in the module body raises ModuleNotFoundError no matter what follows it.
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.abspath(os.path.join(_this_dir, os.pardir))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+try:
+    from cps import constants
+    _CHANGE_LOGS_DIR = constants.CWA_METADATA_CHANGE_LOGS_DIR
+    _METADATA_TEMP_DIR = constants.CWA_METADATA_TEMP_DIR
+except Exception:
+    # cps is the single source for these paths, but this module also has to survive an
+    # environment where the Flask stack it drags in is not importable -- that is what the
+    # inline sanitizer fallback below exists for, and hard-failing here would take it out.
+    # Resolve through the same two knobs, in the same order, as cps/constants.py.
+    _config_root = os.environ.get("CALIBRE_DBPATH", "/config")
+    _CHANGE_LOGS_DIR = os.environ.get(
+        "CWA_METADATA_CHANGE_LOGS_DIR", os.path.join(_config_root, "metadata_change_logs"))
+    _METADATA_TEMP_DIR = os.environ.get(
+        "CWA_METADATA_TEMP_DIR", os.path.join(_config_root, "metadata_temp"))
+
 from cwa_db import CWA_DB
 try:
     from cps.utils.filename_sanitizer import get_valid_filename_shared
 except ModuleNotFoundError:
-    # Add project root (parent of scripts/) to sys.path and retry
+    # Retained as defence for any caller that reaches this module some other way.
     this_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(this_dir, '..'))
     if project_root not in sys.path:
@@ -68,8 +92,8 @@ except Exception:
 
 # Global Variables
 dirs_json = "/app/calibre-web-automated/dirs.json"
-change_logs_dir = "/app/calibre-web-automated/metadata_change_logs"
-metadata_temp_dir = "/app/calibre-web-automated/metadata_temp"
+change_logs_dir = _CHANGE_LOGS_DIR
+metadata_temp_dir = _METADATA_TEMP_DIR
 
 
 # Creates a lock file unless one already exists meaning an instance of the script is
@@ -182,6 +206,11 @@ class Book:
                     # Small initial delay to ensure database writes are flushed
                     time.sleep(0.5)
                 
+                # metadata_temp_dir now lives under /config (#995), which is user-mounted:
+                # on a bind mount it can be absent however carefully the image seeds it.
+                # Creating it here costs nothing and keeps the export from failing on a
+                # fresh volume.
+                os.makedirs(metadata_temp_dir, exist_ok=True)
                 result = subprocess.run(
                     ["calibredb", "export", "--with-library", self.calibre_library, "--to-dir", metadata_temp_dir, self.book_id],
                     env=self.calibre_env, check=False, capture_output=True, text=True, timeout=60
@@ -232,7 +261,11 @@ class Enforcer:
         self.db = CWA_DB()
         self.cwa_settings = self.db.cwa_settings
         self.enforcer_on = self.cwa_settings["auto_metadata_enforcement"]
-        self.supported_formats = ["epub", "azw3"]
+        # kepub is enforced too (fork #1372) — Kobo sync serves the .kepub, so
+        # leaving it out meant metadata edits reached the .epub and metadata.db
+        # but never the file the reader actually opens. Note "book.kepub" does
+        # not end with ".epub", so it needs its own entry here.
+        self.supported_formats = ["epub", "azw3", "kepub"]
 
         self.args = args
         self.calibre_library = self.get_calibre_library()
@@ -266,6 +299,21 @@ class Enforcer:
                 self.unicode_filename = bool(cur.execute('SELECT config_unicode_filename FROM settings;').fetchone()[0])
         except Exception:
             self.unicode_filename = False
+
+    def supported_formats_label(self) -> str:
+        """Render supported_formats for humans, e.g. 'EPUB, AZW3 & KEPUB'.
+
+        The messages telling a user which formats get in-file enforcement are
+        built from the list itself rather than restating it. Three of them still
+        read 'EPUB and AZW3' once kepub was added (fork #1372), so the enforcer
+        was naming a format it had just started supporting as unsupported.
+        """
+        names = [fmt.upper() for fmt in self.supported_formats]
+        if not names:
+            return "no"
+        if len(names) == 1:
+            return names[0]
+        return f"{', '.join(names[:-1])} & {names[-1]}"
 
     def _ascii_transliterate(self, s: str) -> str:
         """Transliterate non-English characters to ASCII when configured.
@@ -435,7 +483,7 @@ class Enforcer:
     def get_book_dir_from_log(self, log_info: dict) -> str:
         """Resolve the on-disk book directory prioritizing ones that contain supported files.
         Order of preference: DB path -> any (id)-suffix dirs -> reconstructed ASCII/raw (based on config).
-        Within each, prefer the one that actually contains EPUB/AZW3. When config_unicode_filename is True,
+        Within each, prefer the one that actually contains a supported format (self.supported_formats). When config_unicode_filename is True,
         prefer the ASCII path over a diacritic sibling if both exist."""
         book_id = str(log_info['book_id']).strip()
 
@@ -590,26 +638,44 @@ class Enforcer:
                 # Add small delay to ensure any file locks are released
                 time.sleep(0.5)
                 
-                try:
+                # kepub carries Kobo reading positions in its koboSpan ids, and
+                # ebook-polish re-segments those (measured 7016 -> ~13.5k spans
+                # on calibre 9.1, with and without -U) because calibre re-applies
+                # its own KEPUB spans over kepubify's. That would shift every
+                # bookmark in an already-synced book, so kepub gets a
+                # metadata-only write instead, which leaves content untouched.
+                # Match on the filename, not just the suffix: kepubify's DEFAULT
+                # output is "<name>.kepub.epub", and Path(...).suffix reports that
+                # as "epub", which would send an already-kepubified file down the
+                # polish path this branch exists to avoid. Our own ingest passes
+                # --calibre so library files are normally ".kepub", but a file
+                # kepubified outside CWNG keeps the default shape.
+                lower_name = os.path.basename(file).lower()
+                if lower_name.endswith(".kepub") or lower_name.endswith(".kepub.epub"):
+                    tool = 'ebook-meta'
+                    cmd = [tool, file, '--from-opf', book.new_metadata_path]
                     if Path(book.cover_path).exists():
-                        result = subprocess.run(
-                            ['ebook-polish', '-c', book.cover_path, '-o', book.new_metadata_path, '-U', file, file],
-                            capture_output=True, text=True, timeout=120, check=False
-                        )
+                        cmd += ['--cover', book.cover_path]
+                else:
+                    tool = 'ebook-polish'
+                    if Path(book.cover_path).exists():
+                        cmd = [tool, '-c', book.cover_path, '-o', book.new_metadata_path, '-U', file, file]
                     else:
-                        result = subprocess.run(
-                            ['ebook-polish', '-o', book.new_metadata_path, '-U', file, file],
-                            capture_output=True, text=True, timeout=120, check=False
-                        )
-                    
+                        cmd = [tool, '-o', book.new_metadata_path, '-U', file, file]
+
+                try:
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=120, check=False
+                    )
+
                     if result.returncode != 0:
-                        print(f"[cover-metadata-enforcer] Warning: ebook-polish returned {result.returncode} for {file}", flush=True)
+                        print(f"[cover-metadata-enforcer] Warning: {tool} returned {result.returncode} for {file}", flush=True)
                         if result.stderr:
                             print(f"[cover-metadata-enforcer] Error output: {result.stderr.strip()}", flush=True)
                 except subprocess.TimeoutExpired:
-                    print(f"[cover-metadata-enforcer] Error: ebook-polish timed out for {file}", flush=True)
+                    print(f"[cover-metadata-enforcer] Error: {tool} timed out for {file}", flush=True)
                 except Exception as e:
-                    print(f"[cover-metadata-enforcer] Error running ebook-polish for {file}: {e}", flush=True)
+                    print(f"[cover-metadata-enforcer] Error running {tool} for {file}: {e}", flush=True)
                 
                 self.empty_metadata_temp()
                 print(f"[cover-metadata-enforcer]: DONE: '{book.title_author}.{book.file_format}': Cover & Metadata updated", flush=True)
@@ -657,8 +723,8 @@ class Enforcer:
         )
         print(
             f"[cover-metadata-enforcer] INFO: Metadata embedding into the "
-            f"{book.file_format.upper()} book file was skipped; only EPUB and "
-            "AZW3 support in-file enforcement.",
+            f"{book.file_format.upper()} book file was skipped; only "
+            f"{self.supported_formats_label()} support in-file enforcement.",
             flush=True,
         )
         return [book]
@@ -700,12 +766,27 @@ class Enforcer:
             for file in supported_files:
                 book_dirs.append(os.path.dirname(file))
 
+            # One book dir holds one entry per supported format, and enforce_cover()
+            # already enforces every supported file in the dir it is handed. Without
+            # this dedup the whole book is re-enforced once per format: an .epub
+            # beside its .kepub -- the normal layout once Kobo sync is on -- took
+            # four file rewrites instead of two, ran the checksum recalculation
+            # twice per file, and wrote a duplicate enforcement-log row. Adding
+            # kepub (#1372) is what moved that from an .azw3 edge case to the
+            # common one. Order-preserving so the log still reads library-order.
+            book_dirs = list(dict.fromkeys(book_dirs))
+
             print(f"[cover-metadata-enforcer]: {len(book_dirs)} books detected in Library")
             print(f"[cover-metadata-enforcer]: Enforcing covers for {len(supported_files)} supported file(s) in {self.calibre_library} ...")
 
             successful_enforcements = len(supported_files)
 
-            for book_dir in book_dirs:
+            # Per-book progress line printed BEFORE each book is enforced: the Web UI's
+            # status poller parses the LAST "n/n" in the log (extract_progress), so this
+            # is what drives the progress bar. flush=True keeps the log file live while
+            # stdout is redirected to it (block-buffered otherwise).
+            for index, book_dir in enumerate(book_dirs, start=1):
+                print(f"[cover-metadata-enforcer]: Enforcing book {index}/{len(book_dirs)} ...", flush=True)
                 try:
                     book_objects = self.enforce_cover(book_dir)
                     if book_objects:
@@ -915,13 +996,15 @@ def main():
         print('[cover-metadata-enforcer]: Enforcing metadata and covers for all books in library...')
         n_enforced, completion_time, n_supported_files = enforcer.enforce_all_covers()
         if n_enforced == False:
-            print(f"\n[cover-metadata-enforcer]: No supported ebook files found in library (only EPUB & AZW3 formats are currently supported)")
+            print(f"\n[cover-metadata-enforcer]: No supported ebook files found in library (only {enforcer.supported_formats_label()} formats are currently supported)")
         elif n_enforced == n_supported_files:
             print(f"\n[cover-metadata-enforcer]: SUCCESS: All covers & metadata successfully updated for all {n_enforced} supported ebooks in the library in {completion_time:.2f} seconds!")
         elif n_enforced == 0:
             print("\n[cover-metadata-enforcer]: FAILURE: Supported files found but none we're successfully enforced. See the log above for details.")
         elif n_enforced < n_supported_files:
             print(f"\n[cover-metadata-enforcer]: PARTIAL SUCCESS: Out of {n_supported_files} supported files detected, {n_enforced} were successfully enforced. See log above for details")
+        # End marker the Web UI (is_cover_enforcer_finished / status poller) detects a completed run by
+        print(f"NextGen Cover & Metadata Enforcement Service - Run Ended: {datetime.now()}", flush=True)
     elif args.log is None and args.dir is not None and args.all is False and args.list is False and args.history is False:
         ### dir passed, no log, not all, no flags
         if args.dir[-1] == '/':

@@ -20,7 +20,7 @@ def request_username():
 def main():
     app = create_app()
 
-    from .cwa_functions import switch_theme, library_refresh, convert_library, epub_fixer, cwa_stats, cwa_check_status, cwa_settings, cwa_logs, profile_pictures, cwa_internal
+    from .cwa_functions import switch_theme, library_refresh, convert_library, epub_fixer, cover_enforcer_ui, cwa_stats, cwa_check_status, cwa_settings, cwa_logs, profile_pictures, cwa_internal
     from .web import web
     from .opds import opds
     from .admin import admi
@@ -78,6 +78,7 @@ def main():
         app.register_blueprint(library_refresh)
         app.register_blueprint(convert_library)
         app.register_blueprint(epub_fixer)
+        app.register_blueprint(cover_enforcer_ui)
         app.register_blueprint(cwa_internal)
 
     # Stock CW
@@ -120,6 +121,16 @@ def main():
     if not deployment_profile.is_mcp_managed_library():
         from .services import annotation_sync
         annotation_sync.enable_background_dispatch()
+
+    # Upgrades receive the default-on preference through the settings-table
+    # migration without an admin save, so give that path its one-time trigger.
+    # This is a convenience job: failure must never prevent HTTP startup.
+    try:
+        from .tasks.kepub_backfill import enqueue_startup_kepub_backfill
+        enqueue_startup_kepub_backfill()
+    except Exception as ex:
+        from . import logger
+        logger.create().error_or_exception(f"Could not queue startup KEPUB backfill: {ex}")
 
     success = web_server.start()
     sys.exit(0 if success else 1)

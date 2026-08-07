@@ -1120,6 +1120,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [panel, setPanel] = useState<ReaderPanel>(null);
   const [title, setTitle] = useState('');
   const [bookLanguage, setBookLanguage] = useState('');
+  const [bookRtl, setBookRtl] = useState(false);
   const [toc, setToc] = useState<Array<TocItem & { depth: number }>>([]);
   const [sectionFractions, setSectionFractions] = useState<number[]>([]);
   const [location, setLocation] = useState<FoliateLocation>({ fraction: 0 });
@@ -1530,10 +1531,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, [navigate, showTranslationPage, t]);
 
   const navigateReader = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
-    const direction = action === 'prev' || action === 'left' ? 'prev' : 'next';
+    const direction = action === 'prev' || action === 'next'
+      ? action
+      : action === 'left'
+        ? (bookRtl ? 'next' : 'prev')
+        : (bookRtl ? 'prev' : 'next');
     if (navigateTranslation(direction)) return;
     void navigate(action);
-  }, [navigate, navigateTranslation]);
+  }, [bookRtl, navigate, navigateTranslation]);
 
   const navigateReaderOrClosePanel = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
     if (panel) {
@@ -1924,6 +1929,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setReady(false);
     setError(null);
     setBookLanguage('');
+    setBookRtl(false);
     const initialSettings = settingsQuery.data.reader;
     settingsRef.current = initialSettings;
     setSettings(initialSettings);
@@ -2029,6 +2035,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         await view.open(new File([data], fileName(formatName), { type: MIME[formatName] ?? '' }));
         if (cancelled) return;
         applySettings(initialSettings);
+        setBookRtl(view.book?.dir === 'rtl');
         setBookLanguage((current) => normalizeLanguageCode(view.book?.metadata?.language) || current);
         setTitle(formatLanguageMap(view.book?.metadata?.title) || bookQuery.data?.title || t('Untitled'));
         setToc(flattenToc(view.book?.toc ?? []));
@@ -2309,6 +2316,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
   const progress = Math.max(0, Math.min(1, location.fraction ?? 0));
   const percent = formatReadingProgress(progress * 100);
+  const leftPageLabel = bookRtl ? t('Next page') : t('Previous page');
+  const rightPageLabel = bookRtl ? t('Previous page') : t('Next page');
   const translationRequested = !!settings?.translationEnabled
     && settings.translationView === 'translated'
     && !!settings.translationProfileId;
@@ -2570,7 +2579,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
               }`}
                 data-reader-wheel-page-zone
                 onClick={(event) => { navigateReaderOrClosePanel('left'); event.currentTarget.blur(); }}
-                title={t('Previous page')} aria-label={t('Previous page')}>
+                title={leftPageLabel} aria-label={leftPageLabel}>
                 <ChevronLeft size={30} aria-hidden="true" />
               </button>
               <button className={`${styles.tapZone} ${styles.tapZoneRight} ${
@@ -2578,7 +2587,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
               }`}
                 data-reader-wheel-page-zone
                 onClick={(event) => { navigateReaderOrClosePanel('right'); event.currentTarget.blur(); }}
-                title={t('Next page')} aria-label={t('Next page')}>
+                title={rightPageLabel} aria-label={rightPageLabel}>
                 <ChevronRight size={30} aria-hidden="true" />
               </button>
             </>

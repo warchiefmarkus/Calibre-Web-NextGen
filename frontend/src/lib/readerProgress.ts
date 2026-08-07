@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiPost } from './api';
+import { apiPost, ApiError } from './api';
 
 const LS_DEVICE = 'cwng.reader.device';
 const DEFAULT_DELAY_MS = 800;
-const RETRY_DELAY_MS = 3000;
+const RETRY_DELAY_MS = 2000;
+const MAX_SAVE_RETRIES = 3;
 
 export interface PendingReadingPosition {
   bookmark: string;
@@ -68,10 +69,17 @@ export function useReadingPositionSaver(
   const pendingRef = useRef<PendingReadingPosition | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const coalescedRef = useRef(false);
+  const retryCountRef = useRef(0);
   const [saveError, setSaveError] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
 
   const flush = useCallback(async (keepalive = false): Promise<void> => {
+    if (inFlightRef.current) {
+      coalescedRef.current = true;
+      return;
+    }
     const pending = pendingRef.current;
     if (!pending) return;
     pendingRef.current = null;
@@ -79,36 +87,57 @@ export function useReadingPositionSaver(
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    inFlightRef.current = true;
     if (mountedRef.current) setSaveState('saving');
     try {
+      const fraction = clampReadingFraction(pending.positionFraction);
       await apiPost(`/api/v1/books/${bookId}/bookmark`, {
         format,
         bookmark: pending.bookmark,
-        position_fraction: clampReadingFraction(pending.positionFraction),
+        // Native Calibre/Moon+ uses the normalized fraction; upstream's
+        // Kobo/KOReader progress bridge consumes the same sample as 0-100%.
+        position_fraction: fraction,
+        percentage: fraction * 100,
         device: readerDevice(),
         position_anchor: pending.anchorText || undefined,
       }, { keepalive });
+      retryCountRef.current = 0;
       if (mountedRef.current) {
         setSaveError(false);
         setSaveState('saved');
       }
-    } catch {
-      // Preserve the newest unsaved value. A newer scroll/page-turn always wins.
+    } catch (error) {
+      // Preserve only the failed value when no newer relocation arrived while
+      // this request was in flight. A newer position always wins.
       if (pendingRef.current === null) pendingRef.current = pending;
+      const retryable = !(error instanceof ApiError) || error.status >= 500;
       if (mountedRef.current) {
         setSaveError(true);
         setSaveState('error');
+      }
+      if (retryable && retryCountRef.current < MAX_SAVE_RETRIES && mountedRef.current) {
+        retryCountRef.current += 1;
+        const retryDelay = Math.min(RETRY_DELAY_MS * 2 ** (retryCountRef.current - 1), 8000);
         if (timerRef.current === null) {
           timerRef.current = setTimeout(() => {
             timerRef.current = null;
             void flush(false);
-          }, RETRY_DELAY_MS);
+          }, retryDelay);
         }
+      }
+    } finally {
+      inFlightRef.current = false;
+      if (coalescedRef.current) {
+        coalescedRef.current = false;
+        // Read pendingRef again: it may now contain a newer relocation than the
+        // request that just settled.
+        void flush(false);
       }
     }
   }, [bookId, format]);
 
   const schedule = useCallback((bookmark: string, positionFraction: number, anchorText?: string) => {
+    retryCountRef.current = 0;
     setSaveState('pending');
     pendingRef.current = {
       bookmark,

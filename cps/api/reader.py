@@ -16,6 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from . import api_v1
 from .. import calibre_db, deployment_profile, logger, ub
 from ..cw_login import current_user
+from ..services import reading_position
 from ..services.calibremcp_client import (
     CalibreMCPClientError,
     get_reader_position,
@@ -125,12 +126,16 @@ def save_bookmark(book_id):
     bookmark_key = data.get("bookmark") or ""
     if deployment_profile.use_calibre_native_reader_data():
         try:
+            raw_fraction = data.get("position_fraction")
+            if raw_fraction is None:
+                percentage = reading_position.coerce_percentage(data.get("percentage"))
+                raw_fraction = (percentage / 100.0) if percentage is not None else 0
             set_reader_position(
                 _cwng_user_name(),
                 book_id,
                 fmt,
                 cfi=bookmark_key or None,
-                position_fraction=float(data.get("position_fraction") or 0),
+                position_fraction=float(raw_fraction or 0),
                 device=str(data.get("device") or "cwng-web"),
             )
         except (CalibreMCPClientError, TypeError, ValueError) as exc:
@@ -158,7 +163,27 @@ def save_bookmark(book_id):
             format=fmt,
             bookmark_key=bookmark_key,
         ))
-    ub.session_commit("Bookmark for user {} in book {} via api".format(current_user.id, book_id))
+        # #1318: settle the required write before the optional one, so a bookmark
+        # failure is not reported in the vocabulary of a progress-sharing failure
+        # (and so the savepoint below cannot roll the bookmark back with it).
+        if not ub.session_flush():
+            return "", 500
+
+        # #324: share the portable half of the position (the percentage) with the
+        # user's other devices. Mirrors the legacy route so both readers behave
+        # the same. Only on a save — an empty bookmark is a clear.
+        percentage = reading_position.coerce_percentage(data.get("percentage"))
+        if percentage is not None:
+            try:
+                reading_position.record_web_reader_progress(current_user, book_id, percentage)
+            except Exception as e:
+                # Position sharing must never cost the user their bookmark.
+                log.warning("Could not share web reader progress for book %s: %s", book_id, e)
+
+    # The SPA debounces one of these every 800ms; answering 204 on a rolled-back
+    # write drops the position silently and tells the client not to retry.
+    if not ub.session_commit("Bookmark for user {} in book {} via api".format(current_user.id, book_id)):
+        return "", 500
     return "", 204
 
 

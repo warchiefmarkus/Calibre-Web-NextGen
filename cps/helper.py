@@ -16,6 +16,7 @@ import regex
 import shutil
 import socket
 import platform
+from functools import partial
 from datetime import datetime, timedelta, timezone
 import requests
 import unidecode
@@ -42,7 +43,7 @@ except ImportError as e:
     advocate = requests
     UnacceptableAddressException = MissingSchema = BaseException
 
-from . import calibre_db, cli_param
+from . import calibre_db, cli_param, constants
 from .string_helper import strip_whitespaces
 from .tasks.convert import TaskConvert
 from . import logger, config, db, ub, fs, deployment_profile
@@ -51,6 +52,7 @@ from .constants import (STATIC_DIR as _STATIC_DIR, CACHE_TYPE_THUMBNAILS, THUMBN
                         SUPPORTED_CALIBRE_BINARIES, EXTENSIONS_CONVERT_FROM, EXTENSIONS_CONVERT_TO)
 from .subproc_wrapper import process_wait, process_open
 from .services.file_move import copy_with_metadata_fallback
+from .services import parallel
 
 # Track books with pending thumbnail generation to prevent duplicate tasks
 _pending_thumbnail_books = set()
@@ -94,14 +96,6 @@ def mark_book_modified(book, *, set_dirty=True, unsync=False):
         kobo_sync_status.remove_synced_book(book.id, all=True)
 
 
-# Where the metadata/cover enforcer (scripts/cover_enforcer.py, driven by the
-# metadata-change-detector s6 service) watches for change logs. Env-overridable
-# for tests.
-CWA_METADATA_CHANGE_LOGS_DIR = os.environ.get(
-    "CWA_METADATA_CHANGE_LOGS_DIR",
-    "/app/calibre-web-automated/metadata_change_logs")
-
-
 def log_metadata_change(book, changed=None):
     """Queue a CWA metadata/cover *file-level* enforcement for ``book`` (#707).
 
@@ -135,10 +129,10 @@ def log_metadata_change(book, changed=None):
         'timestamp': datetime.now().isoformat(),
     }
     try:
-        os.makedirs(CWA_METADATA_CHANGE_LOGS_DIR, exist_ok=True)
+        os.makedirs(constants.CWA_METADATA_CHANGE_LOGS_DIR, exist_ok=True)
         now = datetime.now()
         log_path = os.path.join(
-            CWA_METADATA_CHANGE_LOGS_DIR,
+            constants.CWA_METADATA_CHANGE_LOGS_DIR,
             f'{now.strftime("%Y%m%d%H%M%S")}-{book.id}.json')
         with open(log_path, 'w', encoding='utf-8') as f:
             json.dump(payload, f, indent=4, ensure_ascii=False)
@@ -335,7 +329,7 @@ def get_convert_options(book):
 
 # Convert existing book entry to new format
 def convert_book_format(book_id, calibre_path, old_book_format, new_book_format, user_id,
-                        ereader_mail=None, subject=None, blocking=False):
+                        ereader_mail=None, subject=None, blocking=False, timeout=120):
     book = calibre_db.get_book(book_id)
     data = calibre_db.get_book_format(book.id, old_book_format)
     if not data:
@@ -372,7 +366,12 @@ def convert_book_format(book_id, calibre_path, old_book_format, new_book_format,
     task = TaskConvert(file_path, book.id, txt, settings, ereader_mail, user_id)
     WorkerThread.add(user_id, task)
     if blocking:
-        finished = task.done_event.wait(timeout=120)
+        # Only the context-free Event wait crosses onto the bounded native
+        # thread pool. url_for(), translations, DB access, and task creation
+        # above must remain on the request greenlet: Flask contextvars do not
+        # propagate through gevent.threadpool.ThreadPool.
+        from .services.parallel import run_blocking
+        finished = run_blocking(lambda: task.done_event.wait(timeout=timeout))
         if not finished:
             return _("Conversion timed out for book id: %(book)d", book=book_id)
         if task.stat != STAT_FINISH_SUCCESS:
@@ -703,11 +702,17 @@ def reset_reading_position(session, user_id, book_id):
     # column (fork #634/#509). Clearing the percentage above is not enough: the
     # "Currently reading" badge/shelf reads that tri-state, so leaving it at
     # IN_PROGRESS keeps the marker on after "mark unread". This bit the reporter
-    # on a custom-read-column install, where the unread toggle flips only the
-    # custom column and never touched ub.ReadBook at all. Fold the marker back to
-    # UNREAD here so "unread" is a genuine reset everywhere. FINISHED is left
-    # alone (only IN_PROGRESS is filtered), and a device that still holds a
-    # position re-establishes it on its next sync — the device owns its state.
+    # on a custom-read-column install, where the unread toggle flipped only the
+    # custom column. Fold the marker back to UNREAD here so "unread" is a
+    # genuine reset everywhere, and a device that still holds a position
+    # re-establishes it on its next sync — the device owns its state.
+    #
+    # FINISHED is deliberately left alone (only IN_PROGRESS is filtered): this
+    # function resets a *position*, and both callers set the read status
+    # themselves around it — the default branch before, the custom-column branch
+    # after via ``mirror_read_status_to_readbook`` (#1343). Filtering FINISHED
+    # here too would make a position reset silently un-read a book for any
+    # future caller that only wanted the percentage cleared.
     read_row = session.query(ub.ReadBook).filter(
         ub.ReadBook.user_id == uid,
         ub.ReadBook.book_id == book_id,
@@ -782,6 +787,47 @@ def _get_kosync_checksums_for_book(book_id):
         return []
 
 
+def mirror_read_status_to_readbook(session, user_id, book_id, finished):
+    """Mirror a custom-read-column toggle into ``ub.ReadBook.read_status`` (#1343).
+
+    When an admin designates a Calibre custom column as the read marker, the
+    detail page reads read-status from *that* column — but ``ub.ReadBook`` is
+    not thereby unused. KOReader/Kobo sync and the web reader write the
+    tri-state there unconditionally (``kosync.update_book_read_status``), the
+    "Currently reading" marker reads it (``book_is_in_progress``), and since
+    #1340 the web reader refuses to share a position for a book whose row says
+    FINISHED. Leaving the column and the row to disagree therefore produced two
+    bugs at once: "mark read" protected nothing because no FINISHED row existed,
+    and "mark unread" could not clear a FINISHED row the browser had written —
+    wedging every later reader save with no way back through the UI.
+
+    So the column is the display carrier, and this keeps the sync carrier in
+    step with it. Both directions matter: FINISHED on set is what makes the
+    guard fire, UNREAD on clear is the escape hatch that keeps it temporary.
+
+    ``kosync._mark_custom_read_column`` is the same mirror in the other
+    direction (a device completion reaching the column). That one is
+    deliberately sticky — a sync must not un-read a book — whereas this one
+    follows the toggle both ways, because here the user is the one asking.
+
+    Only ``read_status`` is touched. ``times_started_reading`` and the position
+    rows belong to ``reset_reading_position``, which the caller runs on clear.
+
+    Marking unread when no row exists writes nothing: absent already means
+    unread, and inventing a row per never-read book is just churn.
+    """
+    uid = int(user_id)
+    row = session.query(ub.ReadBook).filter(
+        ub.ReadBook.user_id == uid,
+        ub.ReadBook.book_id == book_id).first()
+    if row is None:
+        if not finished:
+            return
+        row = ub.ReadBook(user_id=uid, book_id=book_id)
+        session.add(row)
+    row.read_status = ub.ReadBook.STATUS_FINISHED if finished else ub.ReadBook.STATUS_UNREAD
+
+
 def edit_book_read_status(book_id, read_status=None):
     if not config.config_read_column:
         book = ub.session.query(ub.ReadBook).filter(and_(ub.ReadBook.user_id == int(current_user.id),
@@ -795,8 +841,16 @@ def edit_book_read_status(book_id, read_status=None):
             else:
                 book.read_status = ub.ReadBook.STATUS_FINISHED if read_status else ub.ReadBook.STATUS_UNREAD
         else:
+            # The same inversion the custom-column branch had: this used to set
+            # FINISHED unconditionally, so an explicit "mark unread" for a book
+            # with no row yet marked it READ. Reachable from the API
+            # (`cps/api/books.py`), bulk edit (`cps/editbooks.py`) and anywhere
+            # else that passes read_status=False. A bare toggle (None) on an
+            # absent row still means "mark read".
             read_book = ub.ReadBook(user_id=current_user.id, book_id=book_id)
-            read_book.read_status = ub.ReadBook.STATUS_FINISHED
+            read_book.read_status = (ub.ReadBook.STATUS_FINISHED
+                                     if read_status is None or read_status
+                                     else ub.ReadBook.STATUS_UNREAD)
             book = read_book
         now_unread = book.read_status == ub.ReadBook.STATUS_UNREAD
         if not book.kobo_reading_state:
@@ -823,10 +877,18 @@ def edit_book_read_status(book_id, read_status=None):
                 calibre_db.session.commit()
                 now_unread = not book_read_status[0].value
             else:
+                # ``value=read_status or 1`` marked the book READ for an
+                # explicit ``read_status=False`` — asking to un-read a book that
+                # had no column row yet did the opposite of what was asked, and
+                # would now push that same inversion into ub.ReadBook below.
+                # Absent means unread, so an explicit request is honoured and a
+                # bare toggle (None) still means "mark read".
+                new_value = True if read_status is None else bool(read_status)
                 cc_class = db.cc_classes[config.config_read_column]
-                new_cc = cc_class(value=read_status or 1, book=book_id)
+                new_cc = cc_class(value=new_value, book=book_id)
                 calibre_db.session.add(new_cc)
                 calibre_db.session.commit()
+                now_unread = not new_value
         except (KeyError, AttributeError, IndexError):
             log.error(
                 "Custom Column No.{} does not exist in calibre database".format(config.config_read_column))
@@ -839,7 +901,14 @@ def edit_book_read_status(book_id, read_status=None):
         # marking unread there also clears the ghost "% read".
         if now_unread:
             reset_reading_position(ub.session, current_user.id, book_id)
-            ub.session_commit("Reading progress reset for book {}".format(book_id))
+        # #1343: the custom column is the *display* carrier; ub.ReadBook is the
+        # *sync* carrier that KOReader/Kobo and the web reader write regardless
+        # of it. Left unmirrored the two disagree, and since #1340 that
+        # disagreement is user-visible in both directions — see
+        # mirror_read_status_to_readbook. Runs after the reset above so that
+        # keeps owning the position rows and its own accounting.
+        mirror_read_status_to_readbook(ub.session, current_user.id, book_id, not now_unread)
+        ub.session_commit("Read status updated for book {}".format(book_id))
     return ""
 
 
@@ -1995,7 +2064,13 @@ def do_kepubify_metadata_replace(book, file_path):
     tmp_dir = get_temp_dir()
     temp_file_name = str(uuid4())
     # open zipfile and replace metadata block in content.opf
-    updateEpub(file_path, os.path.join(tmp_dir, temp_file_name + ".kepub"), cf_name, content)
+    parallel.run_blocking(partial(
+        updateEpub,
+        file_path,
+        os.path.join(tmp_dir, temp_file_name + ".kepub"),
+        cf_name,
+        content,
+    ))
     return tmp_dir, temp_file_name
 
 
@@ -2122,16 +2197,28 @@ def get_download_link(book_id, book_format, client):
         abort(404)
 
     data1 = calibre_db.get_book_format(book.id, book_format.upper())
-    if not data1 and book_format == "kepub" and config.config_kepubifypath:
+    if (not data1 and book_format == "kepub" and config.config_kepubifypath
+            and config.config_kobo_prefer_kepub):
         data1 = calibre_db.get_book_format(book.id, "EPUB")
         if data1:
-            log.info("KEPUB not found for book %d; converting on demand", book.id)
-            err = convert_book_format(book.id, config.get_book_path(), 'EPUB', 'KEPUB', None, blocking=True)
-            if not err:
-                data1 = calibre_db.get_book_format(book.id, "KEPUB")
-            else:
-                log.error("On-demand KEPUB conversion failed for book %d: %s", book.id, err)
+            # The worker is single-threaded, so an on-demand conversion cannot
+            # start until the composite startup backfill has finished. Serve
+            # EPUB immediately instead of waiting 25 seconds and enqueuing a
+            # duplicate conversion behind it.
+            from .tasks.kepub_backfill import is_kepub_backfill_pending
+            if is_kepub_backfill_pending():
+                log.info("KEPUB backfill is in flight for book %d; serving EPUB", book.id)
                 book_format = "epub"
+            else:
+                log.info("KEPUB not found for book %d; converting on demand", book.id)
+                err = convert_book_format(
+                    book.id, config.get_book_path(), 'EPUB', 'KEPUB', None,
+                    blocking=True, timeout=25)
+                if not err:
+                    data1 = calibre_db.get_book_format(book.id, "KEPUB")
+                else:
+                    log.error("On-demand KEPUB conversion failed for book %d: %s", book.id, err)
+                    book_format = "epub"
     if not data1:
         log.error("Requested format %s for book id %s not found in database", book_format.upper(), book_id)
         abort(404)
