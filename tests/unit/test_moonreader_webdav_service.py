@@ -281,6 +281,63 @@ def test_conflict_policy_newer_calibre_position_writes_to_moon():
     assert mod._conflict_direction(resource, position, _native(.3, native), "222") == "to_moon"
 
 
+def test_unseen_moon_zero_does_not_erase_nonzero_native_position():
+    from cps.services import moonreader_webdav as mod
+    native_time = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
+    remote_time = datetime(2026, 8, 4, 11, tzinfo=timezone.utc)
+    resource = mod.WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False, modified=remote_time)
+    position = mod.parse_position("1111111111111*0@0#0:0.0%")
+
+    assert mod._conflict_direction(
+        resource, position, _native(.42, native_time), "2222222222222", None,
+    ) == "to_moon"
+
+
+def test_zero_over_server_seed_is_bootstrap_not_authoritative_reset():
+    from cps.services import moonreader_webdav as mod
+    native_time = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
+    remote_time = datetime(2026, 8, 4, 11, tzinfo=timezone.utc)
+    resource = mod.WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False, modified=remote_time)
+    position = mod.parse_position("1111111111111*0@0#0:0.0%")
+    tracking = SimpleNamespace(
+        percentage=42.0, remote_device_id="2222222222222", last_direction="unchanged",
+    )
+
+    assert mod._conflict_direction(
+        resource, position, _native(.42, native_time), "2222222222222", tracking,
+    ) == "to_moon"
+
+
+def test_legacy_unknown_tracking_zero_does_not_erase_nonzero_native():
+    from cps.services import moonreader_webdav as mod
+    native_time = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
+    remote_time = datetime(2026, 8, 4, 11, tzinfo=timezone.utc)
+    resource = mod.WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False, modified=remote_time)
+    position = mod.parse_position("1111111111111*0@0#0:0.0%")
+    tracking = SimpleNamespace(
+        percentage=42.0, remote_device_id=None, last_direction=None,
+    )
+
+    assert mod._conflict_direction(
+        resource, position, _native(.42, native_time), "2222222222222", tracking,
+    ) == "to_moon"
+
+
+def test_known_moon_origin_can_intentionally_reset_to_zero():
+    from cps.services import moonreader_webdav as mod
+    native_time = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
+    remote_time = datetime(2026, 8, 4, 11, tzinfo=timezone.utc)
+    resource = mod.WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False, modified=remote_time)
+    position = mod.parse_position("1111111111111*0@0#0:0.0%")
+    tracking = SimpleNamespace(
+        percentage=42.0, remote_device_id="1111111111111", last_direction="from_moon",
+    )
+
+    assert mod._conflict_direction(
+        resource, position, _native(.42, native_time), "2222222222222", tracking,
+    ) == "from_moon"
+
+
 def test_conflict_policy_suppresses_server_echo():
     from cps.services import moonreader_webdav as mod
     remote = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
@@ -288,6 +345,60 @@ def test_conflict_policy_suppresses_server_echo():
     position = mod.parse_position("2222222222222*6@0#2768:2.4%")
     native = _native(.024, remote.replace(minute=1), "cwng-web-test")
     assert mod._conflict_direction(resource, position, native, "2222222222222") == "unchanged"
+
+
+def test_native_pairs_use_calibre_reader_namespace(tmp_path, monkeypatch):
+    import sqlite3
+    from cps.services import moonreader_webdav as mod
+
+    db_path = tmp_path / "metadata.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "CREATE TABLE last_read_positions (user TEXT, book INTEGER, format TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO last_read_positions(user, book, format) VALUES (?, ?, ?)",
+            ("cwng-admin", 7, "fb2"),
+        )
+        connection.execute(
+            "INSERT INTO last_read_positions(user, book, format) VALUES (?, ?, ?)",
+            ("somebody-else", 8, "epub"),
+        )
+    monkeypatch.delenv("CWNG_NATIVE_READER_USERNAME", raising=False)
+    monkeypatch.delenv("CWNG_NATIVE_READER_USERNAME_TEMPLATE", raising=False)
+    monkeypatch.setattr(mod.config, "config_calibre_dir", str(tmp_path), raising=False)
+    monkeypatch.setattr(
+        mod.deployment_profile, "use_calibre_native_reader_data", lambda: True,
+    )
+
+    assert mod._native_pairs("admin") == {(7, "FB2")}
+
+
+def test_missing_remote_position_is_created_from_native_calibre_state():
+    from cps.services import moonreader_webdav as mod
+
+    client = MagicMock()
+    matcher = MagicMock()
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "book_id")
+    user = SimpleNamespace(id=3, name="admin")
+    native = {"positions": [{
+        "pos_frac": .42,
+        "epoch": datetime(2026, 8, 4, 11, tzinfo=timezone.utc).timestamp(),
+        "device": "cwng-web-live",
+        "cfi": "epubcfi(/6/4!/4/2)",
+    }]}
+    with patch.object(
+        mod.deployment_profile, "use_calibre_native_reader_data", return_value=True,
+    ), patch.object(mod, "moon_device_id", return_value="2222222222222"), patch(
+        "cps.services.calibremcp_client.get_reader_position", return_value=native,
+    ), patch.object(mod, "_export_native", return_value="uploaded") as export:
+        result = mod.reconcile_book(
+            user, client, "Moon/.Moon+/Cache", matcher, match, None,
+        )
+
+    assert result == "uploaded"
+    export.assert_called_once()
+    assert export.call_args.args[3] is None
 
 
 def test_native_locator_uses_pdf_page_and_reflowable_cfi():

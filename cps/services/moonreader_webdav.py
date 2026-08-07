@@ -860,14 +860,41 @@ def _export_native(user, client: WebDavClient, cache_path: str,
 
 
 def _conflict_direction(resource: WebDavResource | None, position: MoonPosition | None,
-                        native: dict[str, Any] | None, server_device: str) -> str:
-    """Return from_moon/to_moon/unchanged; Moon wins ties and races."""
+                        native: dict[str, Any] | None, server_device: str,
+                        tracking: Any | None = None) -> str:
+    """Return from_moon/to_moon/unchanged; Moon wins real ties and races.
+
+    A newly observed Moon+ file at exactly 0% is special. Moon creates that
+    bootstrap locator when a book is opened for the first time, before WebDAV
+    has necessarily supplied an existing position. Its fresh mtime therefore
+    does *not* prove that the user intentionally reset a non-zero Calibre
+    position. For an unseen file (or one previously seeded by this server), a
+    non-zero native position wins over that technical zero. Once we have
+    accepted a genuine Moon-origin state for the file, a later 0% can still be
+    an intentional reset and falls through to the normal timestamp policy.
+    """
     if resource is None or position is None:
         return "to_moon" if native else "unchanged"
     if native is None:
         return "from_moon"
     remote_fraction = max(0.0, min(1.0, position.percentage / 100.0))
     native_fraction = _native_fraction(native)
+    if remote_fraction <= 0 < native_fraction:
+        tracked_fraction = max(
+            0.0,
+            min(1.0, float(getattr(tracking, "percentage", 0) or 0) / 100.0),
+        )
+        tracked_device = str(getattr(tracking, "remote_device_id", "") or "")
+        # Legacy tracking rows did not retain Moon's device id. Prefer the
+        # non-zero native state over a destructive zero until a real Moon-origin
+        # device has been observed for this path.
+        bootstrap_or_server_seed = (
+            tracking is None
+            or (tracked_fraction > 0 and not tracked_device)
+            or (tracked_fraction > 0 and tracked_device == server_device)
+        )
+        if bootstrap_or_server_seed:
+            return "to_moon"
     same = abs(remote_fraction - native_fraction) < 0.0005
     native_device = str(native.get("device") or "")
     if same and (position.device_id == server_device or
@@ -904,6 +931,16 @@ def _match_remote(matcher: BookMatcher, resource: WebDavResource,
 def _native_pairs(user_name: str) -> set[tuple[int, str]]:
     if not deployment_profile.use_calibre_native_reader_data():
         return set()
+    # Keep bulk enumeration in the exact same Calibre reader namespace used by
+    # the catalog progress adapter and CalibreMCP. CWNG's visible user may be
+    # ``admin`` while Calibre stores the native row as ``cwng-admin``. Querying
+    # by the visible name silently drops every native-only position and prevents
+    # proactive Moon+ .po creation.
+    from .reading_progress import _native_reader_username
+
+    native_user = _native_reader_username(user_name)
+    if not native_user:
+        return set()
     path = os.path.join(config.config_calibre_dir, "metadata.db")
     try:
         import sqlite3
@@ -912,7 +949,7 @@ def _native_pairs(user_name: str) -> set[tuple[int, str]]:
                 (int(row[0]), str(row[1]).upper())
                 for row in connection.execute(
                     "SELECT DISTINCT book, format FROM last_read_positions WHERE user = ?",
-                    (user_name,),
+                    (native_user,),
                 )
             }
     except Exception:
@@ -945,7 +982,7 @@ def reconcile_book(user, client: WebDavClient, cache_path: str,
         native_epoch <= float(tracking.last_native_epoch or 0) + 0.01
     )
     direction = "unchanged" if own_write_unchanged else _conflict_direction(
-        resource, position, native, server_device)
+        resource, position, native, server_device, tracking)
     if direction == "unchanged":
         if resource and position:
             _record_progress(
