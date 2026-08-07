@@ -374,6 +374,30 @@ def test_native_pairs_use_calibre_reader_namespace(tmp_path, monkeypatch):
     assert mod._native_pairs("admin") == {(7, "FB2")}
 
 
+def test_remote_path_ignores_tracking_from_an_obsolete_cache_folder():
+    from cps.services import moonreader_webdav as mod
+
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "book_id")
+    legacy = SimpleNamespace(remote_path=".Moon+/Cache/Old-name.fb2.po")
+
+    assert mod._remote_path("Moon/.Moon+/Cache", match, legacy) == (
+        "Moon/.Moon+/Cache/Book.fb2.po"
+    )
+
+
+def test_remote_path_reuses_tracking_inside_selected_cache_folder():
+    from cps.services import moonreader_webdav as mod
+
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "book_id")
+    current = SimpleNamespace(
+        remote_path="Moon/.Moon+/Cache/Moon-native-name.fb2.po",
+    )
+
+    assert mod._remote_path("Moon/.Moon+/Cache", match, current) == (
+        "Moon/.Moon+/Cache/Moon-native-name.fb2.po"
+    )
+
+
 def test_missing_remote_position_is_created_from_native_calibre_state():
     from cps.services import moonreader_webdav as mod
 

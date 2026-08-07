@@ -810,10 +810,18 @@ def _import_remote(user, resource: WebDavResource, position: MoonPosition,
 
 def _remote_path(cache_path: str, match: BookMatch,
                  existing: Any | None = None) -> str:
+    selected_cache = normalize_cache_path(cache_path)
     if existing is not None and existing.remote_path:
-        return normalize_cache_path(existing.remote_path)
+        tracked_path = normalize_cache_path(existing.remote_path)
+        tracked_parent = normalize_cache_path(os.path.dirname(tracked_path))
+        # Tracking survives cache-folder changes. Never resurrect an obsolete
+        # WebDAV path (for example legacy `.Moon+/Cache`) after the user selected
+        # `Moon/.Moon+/Cache`; SFTPGo correctly rejects a PUT when that old
+        # parent no longer exists.
+        if tracked_parent.casefold() == selected_cache.casefold():
+            return tracked_path
     filename = os.path.basename(match.filename)
-    return normalize_cache_path(f"{cache_path}/{filename}.po")
+    return normalize_cache_path(f"{selected_cache}/{filename}.po")
 
 
 def _export_native(user, client: WebDavClient, cache_path: str,
