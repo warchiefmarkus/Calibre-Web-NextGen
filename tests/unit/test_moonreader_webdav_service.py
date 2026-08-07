@@ -435,6 +435,47 @@ def test_native_locator_uses_pdf_page_and_reflowable_cfi():
     assert mod._native_locator(epub, "FB2") == "epubcfi(/6/2!/4/2)"
 
 
+def test_export_existing_duplicate_writes_the_resource_being_reconciled():
+    from cps.services import moonreader_webdav as mod
+
+    resource = mod.WebDavResource(
+        "Moon/.Moon+/Cache/target-name.fb2.po", False,
+        etag='"target-etag"', modified=datetime.now(timezone.utc),
+    )
+    other_tracking = SimpleNamespace(
+        remote_path="Moon/.Moon+/Cache/other-name.fb2.po",
+    )
+    query = MagicMock()
+    query.filter.return_value.first.return_value = other_tracking
+    session = MagicMock()
+    session.query.return_value = query
+    client = MagicMock()
+    client.resource_in_collection.return_value = resource
+    matcher = MagicMock()
+    matcher.local_path.return_value = None
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    user = SimpleNamespace(id=3, name="admin")
+    native = {
+        "pos_frac": .42,
+        "epoch": datetime(2026, 8, 4, 11, tzinfo=timezone.utc).timestamp(),
+    }
+    mapped = SimpleNamespace(
+        chapter=4, split_index=0, offset=123, percentage=42.0,
+        matched_anchor=False,
+    )
+
+    with patch.object(mod.ub, "session", session),          patch.object(mod, "moon_device_id", return_value="2222222222222"),          patch.object(mod, "map_book_position", return_value=mapped),          patch.object(mod, "_record_progress"):
+        result = mod._export_native(
+            user, client, "Moon/.Moon+/Cache", resource, match, matcher, native,
+        )
+
+    assert result == "uploaded"
+    args, kwargs = client.put_bytes.call_args
+    assert args[0] == resource.path
+    assert kwargs["etag"] == '"target-etag"'
+    assert kwargs["create_only"] is False
+
+
 def test_first_open_zero_is_repaired_from_cwng_web_without_anchor():
     from cps.services import moonreader_webdav as mod
 

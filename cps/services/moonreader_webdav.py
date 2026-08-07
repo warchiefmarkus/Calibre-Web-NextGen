@@ -845,11 +845,17 @@ def _export_native(user, client: WebDavClient, cache_path: str,
         split_index=mapped.split_index, offset=mapped.offset,
         percentage=mapped.percentage,
     )
-    existing = (ub.session.query(ub.MoonReaderProgress)
-                .filter(ub.MoonReaderProgress.user_id == int(user.id),
-                        ub.MoonReaderProgress.book_id == match.book_id,
-                        ub.MoonReaderProgress.format == match.format).first())
-    remote_path = _remote_path(cache_path, match, existing)
+    if resource is not None:
+        # Reconciliation is path-specific. When multiple Moon files match the
+        # same book, never redirect this write through an arbitrary tracking row
+        # for a sibling filename.
+        remote_path = normalize_cache_path(resource.path)
+    else:
+        existing = (ub.session.query(ub.MoonReaderProgress)
+                    .filter(ub.MoonReaderProgress.user_id == int(user.id),
+                            ub.MoonReaderProgress.book_id == match.book_id,
+                            ub.MoonReaderProgress.format == match.format).first())
+        remote_path = _remote_path(cache_path, match, existing)
     client.put_bytes(
         remote_path, raw.encode("utf-8"),
         etag=resource.etag if resource else None,
