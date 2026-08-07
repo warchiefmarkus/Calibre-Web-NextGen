@@ -2351,17 +2351,26 @@ def get_status():
 
 # ################################### Profile Pictures ###################################################
 
+
+def _user_profiles_json_path():
+    """Profile-picture store beside app.db for Docker and bare-metal installs."""
+    return os.path.join(constants.CONFIG_DIR, "user_profiles.json")
+
+
 @profile_pictures.route("/user_profiles.json")
 @user_login_required
 def user_profiles_json():
+    json_path = _user_profiles_json_path()
     try:
-        json_path = "/config/user_profiles.json"
-        with open(json_path, "r") as file:
+        with open(json_path, "r", encoding="utf-8") as file:
             data = json.load(file)
-        return jsonify(data)
-    except Exception as e:
-        log.error(f"Error reading user_profiles.json: {str(e)}")
+    except FileNotFoundError:
+        # No custom avatars is a normal initial state, not a server error.
+        return jsonify({})
+    except (OSError, ValueError) as exc:
+        log.error("Error reading user_profiles.json at %s: %s", json_path, exc)
         return jsonify({}), 500
+    return jsonify(data if isinstance(data, dict) else {})
 
 @profile_pictures.route("/me/profile-picture", methods=["GET", "POST"])
 @user_login_required
@@ -2431,17 +2440,21 @@ def set_profile_picture():
             return redirect(url_for('profile_pictures.set_profile_picture'))
 
         try:
-            # Path to the JSON file
-            json_path = "/config/user_profiles.json"
-            log.debug(f"Opening JSON file at: {json_path}")
+            # Store beside app.db so both container (/config) and bare-metal
+            # (CALIBRE_DBPATH) deployments use the same writable state root.
+            json_path = _user_profiles_json_path()
+            log.debug("Opening JSON file at: %s", json_path)
 
-            # Read the existing data from the JSON file and update it
-            with open(json_path, "r+") as file:
-                user_data = json.load(file)
-                user_data[username] = image_data  # Add new or update existing entry
-                file.seek(0)  # Move to the start of the file for writing
-                json.dump(user_data, file, indent=4)  # Write back the updated data
-                file.truncate()  # Ensure there is no leftover content
+            try:
+                with open(json_path, "r", encoding="utf-8") as file:
+                    user_data = json.load(file)
+            except FileNotFoundError:
+                user_data = {}
+            if not isinstance(user_data, dict):
+                user_data = {}
+            user_data[username] = image_data
+            with open(json_path, "w", encoding="utf-8") as file:
+                json.dump(user_data, file, indent=4)
 
             # Success feedback and logging
             flash(_("Profile picture updated successfully."), category="success")

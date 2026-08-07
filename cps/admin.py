@@ -32,7 +32,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError, OperationalError, InvalidRequestError
 from sqlalchemy.sql.expression import func, or_, text
 
-from . import constants, converter, logger, helper, services, cli_param, apply_https_runtime_config
+from . import constants, converter, deployment_profile, logger, helper, services, cli_param, apply_https_runtime_config
 from . import user_book_data
 from . import db, calibre_db, ub, web_server, config, updater_thread, gdriveutils, \
     kobo_sync_status, schedule
@@ -58,7 +58,9 @@ feature_support = {
     'updater': constants.UPDATER_AVAILABLE,
     'gmail': bool(services.gmail),
     'scheduler': schedule.use_APScheduler,
-    'gdrive': gdrive_support
+    'gdrive': gdrive_support,
+    'koreader': deployment_profile.enable_koreader(),
+    'library_automation': deployment_profile.enable_library_automation(),
 }
 
 try:

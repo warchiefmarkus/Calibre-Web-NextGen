@@ -506,7 +506,7 @@
         </div>
       </div>
       {%endif%}
-      {%if message[0] == "duplicate_scan_setup" and not config.get("MCP_MANAGED_LIBRARY", False) %}
+      {%if message[0] == "duplicate_scan_setup" and not mcp_managed_library %}
       <div class="row-fluid text-center">
         <div id="flash_info" class="alert alert-info alert-cwa">
           {{ message[1] }} <a href="{{ url_for('duplicates.show_duplicates') }}">{{ _('Open Duplicates') }}</a>
@@ -873,7 +873,7 @@
       window.addEventListener('DOMContentLoaded', updateFilterHeaderFixed);
       window.addEventListener('resize', updateFilterHeaderFixed);
       </script>
-    {% if current_user.is_authenticated and (current_user.role_admin() or current_user.role_edit()) and not config.get("MCP_MANAGED_LIBRARY", False) %}
+    {% if current_user.is_authenticated and (current_user.role_admin() or current_user.role_edit()) and not mcp_managed_library %}
     <!-- Duplicate Notification Modal -->
     <div id="duplicate-notification-backdrop" class="duplicate-notification-backdrop"></div>
     <div id="duplicate-notification-modal" class="duplicate-notification-modal" tabindex="-1" role="dialog" aria-labelledby="duplicate-notification-title">

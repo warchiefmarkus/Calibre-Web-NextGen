@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Auth endpoints for /api/v1 — reuse the existing cw_login session + CSRF."""
 import json
+import os
 from datetime import datetime
 
 from flask import jsonify, request, url_for
@@ -145,7 +146,7 @@ def _server_features():
 # the whole map via /profile_pictures/user_profiles.json and looks the name up
 # client-side; the SPA gets only the current user's picture on /me instead, so
 # it never downloads every user's avatar. Path is kept in sync with that writer.
-_USER_PROFILES_JSON = "/config/user_profiles.json"
+_USER_PROFILES_JSON = os.path.join(constants.CONFIG_DIR, "user_profiles.json")
 
 
 def _user_avatar(name):

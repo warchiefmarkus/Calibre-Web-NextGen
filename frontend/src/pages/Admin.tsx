@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'wouter';
-import { Shield, Trash2, Mail, UserPlus, ChevronRight, Settings, Database, Server, Clock, FileText, Sliders, BarChart3, Files, Lock, RefreshCw, KeyRound } from 'lucide-react';
+import { Shield, Trash2, Mail, UserPlus, ChevronRight, Settings, Database, Server, Clock, FileText, Sliders, BarChart3, Files, Lock, RefreshCw, KeyRound, Cloud } from 'lucide-react';
 import { useEffect } from 'react';
 import {
   useAdminUsers, useUpdateAdminUser, useDeleteAdminUser, useCreateAdminUser, useMe,
@@ -28,6 +28,7 @@ const SERVER_SETTINGS: { href: string; label: string; icon: typeof Settings; spa
   { href: '/admin/dbconfig', label: 'Database & library path', icon: Database },
   { href: '/admin/scheduledtasks', label: 'Scheduled tasks', icon: Clock },
   { href: '/cwa-settings', label: 'CWA settings (ingest/convert)', icon: Server },
+  { href: '/account/moonreader', label: 'Moon+ Reader sync', icon: Cloud, spa: true },
   { href: '/cwa-stats-show', label: 'Statistics dashboard', icon: BarChart3 },
   { href: '/admin/logfile', label: 'Logs', icon: FileText },
   // #1048 — this row used to link to /duplicates, i.e. the exact page the

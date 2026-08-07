@@ -153,6 +153,10 @@ def _log_magic_shelf_counts(user_id, total_shelves, visible_shelves,
 
 def create_app():
     app.config["MCP_MANAGED_LIBRARY"] = deployment_profile.is_mcp_managed_library()
+    # Classic templates sometimes receive the SQL-backed `config` object, which
+    # shadows Flask's default `config` Jinja global. Expose the deployment flag
+    # under a dedicated name so every layout render uses the same safe value.
+    app.jinja_env.globals["mcp_managed_library"] = app.config["MCP_MANAGED_LIBRARY"]
     if csrf:
         csrf.init_app(app)
 
