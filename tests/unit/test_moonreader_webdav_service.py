@@ -435,6 +435,39 @@ def test_native_locator_uses_pdf_page_and_reflowable_cfi():
     assert mod._native_locator(epub, "FB2") == "epubcfi(/6/2!/4/2)"
 
 
+def test_first_open_zero_is_repaired_from_cwng_web_without_anchor():
+    from cps.services import moonreader_webdav as mod
+
+    resource = mod.WebDavResource(
+        "Moon/.Moon+/Cache/Book.fb2.po", False, etag='"zero"',
+        modified=datetime(2026, 8, 7, 20, 7, tzinfo=timezone.utc),
+    )
+    client = MagicMock()
+    client.get_bytes.return_value = b"1111111111111*0@0#0:0.0%"
+    matcher = MagicMock()
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    user = SimpleNamespace(id=3, name="admin")
+    native = {"positions": [{
+        "pos_frac": .42,
+        "epoch": datetime(2026, 8, 4, 11, 0, tzinfo=timezone.utc).timestamp(),
+        "device": "cwng-web-existing",
+        "cfi": "epubcfi(/6/4!/4/2)",
+    }]}
+    query = MagicMock()
+    query.filter.return_value.first.return_value = None
+    session = MagicMock()
+    session.query.return_value = query
+    with patch.object(mod.ub, "session", session),          patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True),          patch.object(mod, "moon_device_id", return_value="2222222222222"),          patch("cps.services.calibremcp_client.get_reader_position", return_value=native),          patch.object(mod, "_export_native", return_value="uploaded") as export:
+        result = mod.reconcile_book(
+            user, client, "Moon/.Moon+/Cache", matcher, match, resource,
+            anchor_text=None,
+        )
+
+    assert result == "uploaded"
+    export.assert_called_once()
+    assert export.call_args.kwargs["remote_position"].percentage == 0.0
+
+
 def test_existing_moon_file_is_not_overwritten_by_old_web_position_without_anchor():
     from cps.services import moonreader_webdav as mod
     resource = mod.WebDavResource(
@@ -550,6 +583,47 @@ def test_named_fb2_main_body_is_supported(tmp_path):
     chapters = fb2_chapters(str(path))
     assert len(chapters) == 1
     assert chapters[0].text == "Chapter Readable text"
+
+
+def test_sync_reconciles_all_remote_files_matching_same_book_oldest_first():
+    from cps.services import moonreader_webdav as mod
+
+    older = mod.WebDavResource(
+        "Moon/.Moon+/Cache/old-name.fb2.po", False,
+        modified=datetime(2026, 8, 5, 10, tzinfo=timezone.utc),
+    )
+    newer = mod.WebDavResource(
+        "Moon/.Moon+/Cache/new-name.fb2.po", False,
+        modified=datetime(2026, 8, 7, 10, tzinfo=timezone.utc),
+    )
+    settings = SimpleNamespace(
+        enabled=True, cache_path="Moon/.Moon+/Cache",
+        base_url="http://host/books/", username="reader",
+        password_encrypted="encrypted",
+    )
+    user = SimpleNamespace(id=1, name="admin")
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    client = MagicMock()
+    client.discover_positions.return_value = (
+        "Moon/.Moon+/Cache", [newer, older], True,
+    )
+    client.root_files.return_value = []
+    matcher = MagicMock()
+    session = MagicMock()
+    session.get.return_value = user
+    order = []
+
+    def reconcile(_user, _client, _cache, _matcher, _match, resource, **_kwargs):
+        order.append(resource.path)
+        return "unchanged"
+
+    with patch.object(mod, "get_or_create_settings", return_value=settings),          patch.object(mod, "decrypt_password", return_value="secret"),          patch.object(mod, "WebDavClient", return_value=client),          patch.object(mod, "BookMatcher", return_value=matcher),          patch.object(mod, "_match_remote", return_value=match),          patch.object(mod, "reconcile_book", side_effect=reconcile),          patch.object(mod.ub, "session", session):
+        summary = mod.sync_positions(1, include_native_only=False)
+
+    assert order == [older.path, newer.path]
+    assert summary["matched"] == 2
+    assert summary["unchanged"] == 2
+    client.close.assert_called_once()
 
 
 def test_long_html_anchor_maps_to_moon_split_and_infers_device_profile():

@@ -867,6 +867,30 @@ def _export_native(user, client: WebDavClient, cache_path: str,
     return "uploaded_anchor" if mapped.matched_anchor else "uploaded"
 
 
+def _is_bootstrap_zero(position: MoonPosition | None,
+                       native: dict[str, Any] | None,
+                       server_device: str, tracking: Any | None = None) -> bool:
+    if position is None or native is None:
+        return False
+    remote_fraction = max(0.0, min(1.0, position.percentage / 100.0))
+    native_fraction = _native_fraction(native)
+    if not (remote_fraction <= 0 < native_fraction):
+        return False
+    tracked_fraction = max(
+        0.0,
+        min(1.0, float(getattr(tracking, "percentage", 0) or 0) / 100.0),
+    )
+    tracked_device = str(getattr(tracking, "remote_device_id", "") or "")
+    # Legacy tracking rows did not retain Moon's device id. Prefer the non-zero
+    # native state over a destructive zero until a real Moon-origin device has
+    # been observed for this path.
+    return bool(
+        tracking is None
+        or (tracked_fraction > 0 and not tracked_device)
+        or (tracked_fraction > 0 and tracked_device == server_device)
+    )
+
+
 def _conflict_direction(resource: WebDavResource | None, position: MoonPosition | None,
                         native: dict[str, Any] | None, server_device: str,
                         tracking: Any | None = None) -> str:
@@ -887,22 +911,8 @@ def _conflict_direction(resource: WebDavResource | None, position: MoonPosition 
         return "from_moon"
     remote_fraction = max(0.0, min(1.0, position.percentage / 100.0))
     native_fraction = _native_fraction(native)
-    if remote_fraction <= 0 < native_fraction:
-        tracked_fraction = max(
-            0.0,
-            min(1.0, float(getattr(tracking, "percentage", 0) or 0) / 100.0),
-        )
-        tracked_device = str(getattr(tracking, "remote_device_id", "") or "")
-        # Legacy tracking rows did not retain Moon's device id. Prefer the
-        # non-zero native state over a destructive zero until a real Moon-origin
-        # device has been observed for this path.
-        bootstrap_or_server_seed = (
-            tracking is None
-            or (tracked_fraction > 0 and not tracked_device)
-            or (tracked_fraction > 0 and tracked_device == server_device)
-        )
-        if bootstrap_or_server_seed:
-            return "to_moon"
+    if _is_bootstrap_zero(position, native, server_device, tracking):
+        return "to_moon"
     same = abs(remote_fraction - native_fraction) < 0.0005
     native_device = str(native.get("device") or "")
     if same and (position.device_id == server_device or
@@ -1012,7 +1022,11 @@ def reconcile_book(user, client: WebDavClient, cache_path: str,
         # next real relocate event, which carries visible text, rather than
         # damaging an existing Moon file. External Calibre devices have no
         # anchor channel and therefore retain the structural fraction fallback.
-        if resource is not None and native_device.startswith("cwng-web") and not anchor_text:
+        bootstrap_zero = _is_bootstrap_zero(
+            position, native, server_device, tracking,
+        )
+        if (resource is not None and native_device.startswith("cwng-web")
+                and not anchor_text and not bootstrap_zero):
             return "deferred"
         try:
             return _export_native(
@@ -1060,7 +1074,9 @@ def sync_positions(user_id: int, *, book_id: int | None = None,
             raise MoonReaderError("Moon+ Reader sync user no longer exists.",
                                   code="user_not_found", status=404)
         root_files = {os.path.basename(row.path).casefold(): row for row in client.root_files()}
-        remote_by_key: dict[tuple[int, str], tuple[WebDavResource, BookMatch]] = {}
+        remote_by_key: dict[
+            tuple[int, str], list[tuple[WebDavResource, BookMatch]]
+        ] = {}
         for resource in files:
             try:
                 match = _match_remote(matcher, resource, client, root_files)
@@ -1069,7 +1085,8 @@ def sync_positions(user_id: int, *, book_id: int | None = None,
                         summary["unmatched"].append(os.path.basename(resource.path))
                     continue
                 summary["matched"] += 1
-                remote_by_key[(match.book_id, str(match.format or "").upper())] = (resource, match)
+                key = (match.book_id, str(match.format or "").upper())
+                remote_by_key.setdefault(key, []).append((resource, match))
             except Exception as exc:
                 if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
                     summary["errors"].append({"file": os.path.basename(resource.path),
@@ -1083,37 +1100,54 @@ def sync_positions(user_id: int, *, book_id: int | None = None,
             keys.update(_native_pairs(str(user.name)))
 
         for key in sorted(keys):
-            resource_match = remote_by_key.get(key)
-            resource = resource_match[0] if resource_match else None
-            match = resource_match[1] if resource_match else matcher.for_book(*key)
-            if match is None:
-                continue
-            try:
-                outcome = reconcile_book(
-                    user, client, cache_path, matcher, match, resource,
-                    anchor_text=anchor_text if book_id == match.book_id else None,
+            resource_matches = remote_by_key.get(key) or []
+            if resource_matches:
+                # A book can legitimately acquire multiple Moon position files
+                # after filename/export changes. Reconcile every candidate, from
+                # oldest to newest, so a fresh real Moon update gets the final
+                # say while a fresh first-open 0% is repaired by the bootstrap
+                # policy instead of being silently skipped by dict overwrite.
+                work = sorted(
+                    resource_matches,
+                    key=lambda item: (
+                        _aware(item[0].modified).timestamp()
+                        if _aware(item[0].modified) is not None else float("-inf"),
+                        item[0].path.casefold(),
+                    ),
                 )
-                if outcome.startswith("uploaded"):
-                    summary["uploaded"] += 1
-                    summary["updated"] += 1
-                elif outcome == "downloaded":
-                    summary["downloaded"] += 1
-                    summary["updated"] += 1
-                    summary["parsed"] += 1
-                else:
-                    summary[outcome] = summary.get(outcome, 0) + 1
-            except MoonReaderError as exc:
-                ub.session.rollback()
-                if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
-                    summary["errors"].append({
-                        "file": os.path.basename(resource.path) if resource else match.filename,
-                        "message": str(exc),
-                    })
-            except Exception as exc:
-                ub.session.rollback()
-                log.exception("Moon+ reconciliation failed for book %s", match.book_id)
-                if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
-                    summary["errors"].append({"file": match.filename, "message": str(exc)})
+            else:
+                match = matcher.for_book(*key)
+                work = [(None, match)] if match is not None else []
+
+            for resource, match in work:
+                if match is None:
+                    continue
+                try:
+                    outcome = reconcile_book(
+                        user, client, cache_path, matcher, match, resource,
+                        anchor_text=anchor_text if book_id == match.book_id else None,
+                    )
+                    if outcome.startswith("uploaded"):
+                        summary["uploaded"] += 1
+                        summary["updated"] += 1
+                    elif outcome == "downloaded":
+                        summary["downloaded"] += 1
+                        summary["updated"] += 1
+                        summary["parsed"] += 1
+                    else:
+                        summary[outcome] = summary.get(outcome, 0) + 1
+                except MoonReaderError as exc:
+                    ub.session.rollback()
+                    if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
+                        summary["errors"].append({
+                            "file": os.path.basename(resource.path) if resource else match.filename,
+                            "message": str(exc),
+                        })
+                except Exception as exc:
+                    ub.session.rollback()
+                    log.exception("Moon+ reconciliation failed for book %s", match.book_id)
+                    if len(summary["errors"]) < MAX_SUMMARY_ITEMS:
+                        summary["errors"].append({"file": match.filename, "message": str(exc)})
         return summary
     finally:
         client.close()
