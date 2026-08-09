@@ -169,6 +169,22 @@ def discover_moonreader_caches():
         return _err("discovery_failed", "Could not search the WebDAV server for Moon+ sync folders.", 502)
 
 
+@api_v1.route("/books/<int:book_id>/moonreader/sync")
+def get_book_moonreader_sync_status(book_id):
+    """Return whether bidirectional Moon+/Calibre reconciliation is still queued/running."""
+    guard = _guard()
+    if guard:
+        return guard
+    if not calibre_db.get_filtered_book(
+        book_id, allow_show_archived=True, allow_show_hidden=True
+    ):
+        return _err("not_found", "Book not found", 404)
+    return jsonify({
+        "book_id": int(book_id),
+        "pending": moonreader_sync_pending(int(current_user.id), int(book_id)),
+    })
+
+
 @api_v1.route("/books/<int:book_id>/moonreader/sync", methods=["POST"])
 def start_book_moonreader_sync(book_id):
     """Queue bidirectional Moon+/Calibre reconciliation for one visible book."""

@@ -40,6 +40,9 @@ def test_discovered_paths_are_disabled_while_a_custom_path_is_entered():
 def test_moonreader_sync_status_polls_and_surfaces_summary():
     assert "status === 'queued' || status === 'running'" in QUERIES
     assert "'/api/v1/account/moonreader/sync'" in QUERIES
+    assert "`/api/v1/books/${bookId}/moonreader/sync`" in QUERIES
+    assert "if (!status.pending)" in QUERIES
+    assert "queryKey: ['book', String(bookId)]" in QUERIES
     assert "Syncing positions…" in PAGE
     assert "summary?.matched" in PAGE
     assert "summary?.downloaded" in PAGE

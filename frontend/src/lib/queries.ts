@@ -1371,11 +1371,24 @@ export function useStartMoonReaderSync() {
 export function useStartBookMoonReaderSync(bookId: string | number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => apiPost<{ book_id: number; queued: boolean; pending: boolean }>(
-      `/api/v1/books/${bookId}/moonreader/sync`,
-    ),
+    mutationFn: async () => {
+      const result = await apiPost<{ book_id: number; queued: boolean; pending: boolean }>(
+        `/api/v1/books/${bookId}/moonreader/sync`,
+      );
+      if (!result.queued && !result.pending) return result;
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        const status = await apiGet<{ book_id: number; pending: boolean }>(
+          `/api/v1/books/${bookId}/moonreader/sync`,
+        );
+        if (!status.pending) return { ...result, pending: false };
+      }
+      return result;
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['book', String(bookId)] });
+      void qc.invalidateQueries({ queryKey: ['bookmark', String(bookId)] });
       void qc.invalidateQueries({ queryKey: ['moonreader-settings'] });
     },
   });

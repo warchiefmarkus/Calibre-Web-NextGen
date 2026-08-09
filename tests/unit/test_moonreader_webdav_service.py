@@ -441,6 +441,34 @@ def test_missing_remote_position_is_created_from_native_calibre_state():
     assert export.call_args.args[3] is None
 
 
+def test_import_remote_records_epoch_of_persisted_moon_native_row():
+    from cps.services import moonreader_webdav as mod
+    user = SimpleNamespace(id=3, name="admin")
+    resource = mod.WebDavResource(
+        "Moon/.Moon+/Cache/Book.fb2.po", False,
+        modified=datetime(2026, 8, 4, 10, 0, tzinfo=timezone.utc),
+    )
+    position = mod.parse_position("1111111111111*6@0#2768:2.4%")
+    match = mod.BookMatch(7, "FB2", "Book.fb2", "filename")
+    matcher = MagicMock()
+    session = MagicMock()
+    persisted_epoch = datetime(2026, 8, 4, 10, 0, 5, tzinfo=timezone.utc).timestamp()
+    result = {"positions": [{
+        "device": "moonreader-webdav:3", "epoch": persisted_epoch,
+        "pos_frac": .024, "cfi": "moonreader-webdav:raw",
+    }]}
+    with patch.object(mod.ub, "session", session), \
+         patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+         patch.object(mod, "_remote_fraction", return_value=.024), \
+         patch("cps.services.calibremcp_client.set_reader_position", return_value=result), \
+         patch.object(mod, "_update_legacy_progress"), \
+         patch.object(mod, "_record_progress") as record:
+        assert mod._import_remote(user, resource, position, match, matcher, None) == "downloaded"
+    assert record.call_args.kwargs["native_epoch"] == persisted_epoch
+    assert record.call_args.kwargs["direction"] == "from_moon"
+    session.commit.assert_called_once()
+
+
 def test_native_locator_uses_pdf_page_and_self_describing_moon_carrier():
     from cps.services import moonreader_webdav as mod
     pdf = mod.parse_position("1703297605115*28:9.4%")

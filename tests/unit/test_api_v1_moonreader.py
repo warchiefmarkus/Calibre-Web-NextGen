@@ -89,6 +89,17 @@ def test_discovery_uses_current_form_credentials_without_saving_password():
     discover.assert_called_once_with(base_url=row.base_url, username="reader", password="typed")
 
 
+def test_book_sync_status_reports_pending_worker():
+    from cps.api import moonreader as mod
+    with _ctx("/api/v1/books/146/moonreader/sync"), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=146)), \
+         patch.object(mod, "moonreader_sync_pending", return_value=True) as pending:
+        response = inspect.unwrap(mod.get_book_moonreader_sync_status)(146)
+    assert json.loads(response.get_data()) == {"book_id": 146, "pending": True}
+    pending.assert_called_once_with(1, 146)
+
+
 def test_sync_requires_enabled_connection_and_queues_hidden_task():
     from cps.api import moonreader as mod
     row = _row(cache_path="Moon/.Moon+/Cache")

@@ -830,17 +830,27 @@ def _import_remote(user, resource: WebDavResource, position: MoonPosition,
     from .calibremcp_client import set_reader_position
 
     fraction = _remote_fraction(position, match, matcher)
+    mirrored_native_epoch = None
     if deployment_profile.use_calibre_native_reader_data():
-        set_reader_position(
+        device_id = f"moonreader-webdav:{int(user.id)}"
+        result = set_reader_position(
             str(user.name), match.book_id, match.format or "",
             cfi=_native_locator(position, match.format or ""),
             position_fraction=fraction,
-            device=f"moonreader-webdav:{int(user.id)}",
+            device=device_id,
         )
+        mirrored = [
+            item for item in (result.get("positions", []) if isinstance(result, dict) else [])
+            if isinstance(item, dict) and str(item.get("device") or "") == device_id
+        ]
+        if mirrored:
+            mirrored_native_epoch = max(
+                float(item.get("epoch") or 0) for item in mirrored
+            ) or None
     _update_legacy_progress(user, match, position, resource.modified)
     _record_progress(
         user, resource, position, match,
-        native_epoch=float((native or {}).get("epoch") or 0) or None,
+        native_epoch=mirrored_native_epoch or float((native or {}).get("epoch") or 0) or None,
         direction="from_moon",
     )
     ub.session.commit()
