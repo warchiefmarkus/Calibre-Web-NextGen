@@ -86,3 +86,13 @@ def test_foliate_does_not_persist_programmatic_restore_without_user_movement():
     assert "doc.addEventListener('pointerdown', armMovement" not in reader
     assert "doc.addEventListener('touchstart', armMovement" not in reader
     assert "doc.addEventListener('keydown', armMovement);" in reader
+
+
+def test_foliate_uses_canonical_text_progress_but_restores_own_position_by_cfi():
+    reader = (ROOT / "frontend/src/pages/Reader.tsx").read_text(encoding="utf-8")
+    progress = (ROOT / "frontend/src/lib/readerProgress.ts").read_text(encoding="utf-8")
+    assert "const savedFoliateCfi = savedLocator?.startsWith('epubcfi(')" in reader
+    assert "const fallbackLocation = savedFoliateCfi" in reader
+    assert "savedPositionFraction ?? positionQuery.data?.position_fraction" in reader
+    assert "const canonical = Number(saved?.position_fraction);" in progress
+    assert "setSavedPositionFraction(clampReadingFraction(canonical))" in progress

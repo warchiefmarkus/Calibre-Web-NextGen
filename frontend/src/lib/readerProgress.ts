@@ -74,6 +74,7 @@ export function useReadingPositionSaver(
   const retryCountRef = useRef(0);
   const [saveError, setSaveError] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
+  const [savedPositionFraction, setSavedPositionFraction] = useState<number | null>(null);
 
   const flush = useCallback(async (keepalive = false): Promise<void> => {
     if (inFlightRef.current) {
@@ -91,16 +92,21 @@ export function useReadingPositionSaver(
     if (mountedRef.current) setSaveState('saving');
     try {
       const fraction = clampReadingFraction(pending.positionFraction);
-      await apiPost(`/api/v1/books/${bookId}/bookmark`, {
+      const saved = await apiPost<{ position_fraction?: number }>(`/api/v1/books/${bookId}/bookmark`, {
         format,
         bookmark: pending.bookmark,
-        // Native Calibre/Moon+ uses the normalized fraction; upstream's
-        // Kobo/KOReader progress bridge consumes the same sample as 0-100%.
+        // This is Foliate's renderer fraction. The managed backend canonicalizes
+        // reflowable positions from position_anchor onto Moon's text scale before
+        // persisting pos_frac, while preserving bookmark as the exact Foliate CFI.
         position_fraction: fraction,
         percentage: fraction * 100,
         device: readerDevice(),
         position_anchor: pending.anchorText || undefined,
       }, { keepalive });
+      const canonical = Number(saved?.position_fraction);
+      if (Number.isFinite(canonical) && mountedRef.current) {
+        setSavedPositionFraction(clampReadingFraction(canonical));
+      }
       retryCountRef.current = 0;
       if (mountedRef.current) {
         setSaveError(false);
@@ -167,5 +173,9 @@ export function useReadingPositionSaver(
     };
   }, [flush]);
 
-  return { schedule, flush, saveError, saveState };
+  useEffect(() => {
+    setSavedPositionFraction(null);
+  }, [bookId, format]);
+
+  return { schedule, flush, saveError, saveState, savedPositionFraction };
 }

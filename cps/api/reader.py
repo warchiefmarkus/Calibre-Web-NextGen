@@ -153,12 +153,24 @@ def save_bookmark(book_id):
             if raw_fraction is None:
                 percentage = reading_position.coerce_percentage(data.get("percentage"))
                 raw_fraction = (percentage / 100.0) if percentage is not None else 0
+            renderer_fraction = max(0.0, min(1.0, float(raw_fraction or 0)))
+            canonical_fraction = renderer_fraction
+            anchor_text = data.get("position_anchor")
+            try:
+                from ..services.moonreader_webdav import canonical_fraction_from_anchor
+                canonical_fraction = canonical_fraction_from_anchor(
+                    int(current_user.id), book_id, fmt, renderer_fraction, anchor_text,
+                )
+            except Exception:
+                # Exact CFI persistence must still work when text canonicalization
+                # is unavailable. The raw renderer fraction is only a fallback.
+                log.exception("Could not canonicalize reader progress for book %s", book_id)
             set_reader_position(
                 _cwng_user_name(),
                 book_id,
                 fmt,
                 cfi=bookmark_key or None,
-                position_fraction=float(raw_fraction or 0),
+                position_fraction=canonical_fraction,
                 device=str(data.get("device") or "cwng-web"),
             )
         except (CalibreMCPClientError, TypeError, ValueError) as exc:
@@ -168,14 +180,17 @@ def save_bookmark(book_id):
             from ..tasks.moonreader_sync import queue_moonreader_book_sync
             queue_moonreader_book_sync(
                 int(current_user.id), book_id, fmt,
-                anchor_text=data.get("position_anchor"),
+                anchor_text=anchor_text,
                 username=_cwng_user_name() or "System",
             )
         except Exception:
             # Reader position persistence is authoritative and must not fail just
             # because the optional WebDAV bridge is temporarily unavailable.
             log.exception("Could not queue Moon+ writeback for book %s", book_id)
-        return "", 204
+        return jsonify({
+            "position_fraction": canonical_fraction,
+            "renderer_fraction": renderer_fraction,
+        })
 
     # Replace-on-write: one bookmark per (user, book, format), like the legacy route.
     ub.session.query(ub.Bookmark).filter(_bookmark_filter(book_id, fmt)).delete()

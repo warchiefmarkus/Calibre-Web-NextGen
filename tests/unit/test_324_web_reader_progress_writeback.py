@@ -279,8 +279,10 @@ def test_clients_sync_the_unrounded_percentage():
         "Foliate reader must pass its unrounded relocation fraction to the saver"
     assert "percentage: fraction * 100" in progress, \
         "the shared saver must convert the exact fraction without display rounding"
-    assert "formatReadingProgress(progress * 100)" in tsx, \
+    assert "formatReadingProgress(canonicalProgress * 100)" in tsx, \
         "rounding/formatting must remain a display concern"
+    assert "savedPositionFraction ?? positionQuery.data?.position_fraction" in tsx, \
+        "managed Foliate must display the unrounded canonical text fraction returned by the server"
 
 
 @pytest.mark.unit

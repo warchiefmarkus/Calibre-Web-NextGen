@@ -277,11 +277,18 @@ def test_native_reader_save_queues_moon_writeback_with_text_anchor():
     with _ctx("/api/v1/books/5/bookmark", method="POST", body=body):
         with patch.object(mod, "current_user", user), _visible_book(mod), \
              patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+             patch("cps.services.moonreader_webdav.canonical_fraction_from_anchor", return_value=.02447) as canonical, \
              patch.object(mod, "set_reader_position") as save, \
              patch("cps.tasks.moonreader_sync.queue_moonreader_book_sync") as queue:
             resp = inspect.unwrap(mod.save_bookmark)(5)
-    assert resp[1] == 204
-    save.assert_called_once()
+    body_out = json.loads(resp.get_data())
+    assert body_out["position_fraction"] == pytest.approx(.02447)
+    assert body_out["renderer_fraction"] == pytest.approx(.0265)
+    canonical.assert_called_once_with(
+        1, 5, "fb2", .0265, "Рад видеть тебя, Накаяма-сан",
+    )
+    assert save.call_args.kwargs["position_fraction"] == pytest.approx(.02447)
+    assert save.call_args.kwargs["cfi"] == "epubcfi(/6/14!/4/2)"
     queue.assert_called_once_with(
         1, 5, "fb2", anchor_text="Рад видеть тебя, Накаяма-сан", username="admin",
     )

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from email.utils import parsedate_to_datetime
 import hashlib
 import heapq
@@ -29,7 +30,7 @@ from sqlalchemy.orm import selectinload
 from .. import calibre_db, cli_param, config, config_sql, db, deployment_profile, logger, ub
 from .moonreader_locator import (
     MoonLocatorError, MoonPosition, chapters_for_book, fraction_from_locator,
-    anchor_from_locator, infer_split_size, map_book_position, moon_split_texts,
+    anchor_from_locator, infer_split_size, map_book_position, map_fraction_to_moon, moon_split_texts,
     parse_position as parse_moon_position,
     serialize_position as serialize_moon_position,
 )
@@ -686,6 +687,76 @@ def _native_locator(position: MoonPosition, fmt: str) -> str:
     return f"moonreader-webdav:{position.raw}"
 
 
+def _local_book_format_path(book_id: int, fmt: str) -> str | None:
+    normalized = str(fmt or "").upper()
+    book = (calibre_db.session.query(db.Books)
+            .options(selectinload(db.Books.data))
+            .filter(db.Books.id == int(book_id)).first())
+    if book is None:
+        return None
+    for item in book.data or []:
+        if str(item.format or "").upper() != normalized:
+            continue
+        extension = str(item.format or "").lower()
+        name = str(item.name or "")
+        filename = name if name.casefold().endswith(f".{extension}") else f"{name}.{extension}"
+        return os.path.join(config.config_calibre_dir, book.path, filename)
+    return None
+
+
+@lru_cache(maxsize=8)
+def _cached_chapters(path: str, fmt: str, mtime_ns: int, size: int):
+    # mtime/size are deliberately part of the cache key so an externally
+    # replaced Calibre book cannot keep stale canonical progress geometry.
+    del mtime_ns, size
+    return tuple(chapters_for_book(path, fmt))
+
+
+def _canonical_chapters(path: str, fmt: str):
+    stat = os.stat(path)
+    return _cached_chapters(path, str(fmt or "").upper(), stat.st_mtime_ns, stat.st_size)
+
+
+def canonical_fraction_from_anchor(
+    user_id: int, book_id: int, fmt: str, fraction: float, anchor_text: str | None,
+) -> float:
+    """Convert Foliate renderer progress to the canonical Moon/text scale."""
+    fallback = max(0.0, min(1.0, float(fraction or 0)))
+    normalized_format = str(fmt or "").upper()
+    anchor = " ".join(str(anchor_text or "").split())[:1000]
+    if normalized_format not in {"FB2", "FBZ", "EPUB", "KEPUB"} or not anchor:
+        return fallback
+    try:
+        path = _local_book_format_path(int(book_id), normalized_format)
+        if not path:
+            return fallback
+        chapters = _canonical_chapters(path, normalized_format)
+        tracking = (ub.session.query(ub.MoonReaderProgress)
+                    .filter(ub.MoonReaderProgress.user_id == int(user_id),
+                            ub.MoonReaderProgress.book_id == int(book_id),
+                            ub.MoonReaderProgress.format == normalized_format)
+                    .order_by(ub.MoonReaderProgress.remote_modified.desc(),
+                              ub.MoonReaderProgress.synced_at.desc()).first())
+        remote_position = None
+        if tracking is not None and tracking.raw_position:
+            try:
+                remote_position = parse_position(tracking.raw_position)
+            except MoonReaderError:
+                remote_position = None
+        split_size = infer_split_size(list(chapters), remote_position)
+        mapped = map_fraction_to_moon(
+            list(chapters), fallback, anchor_text=anchor, split_size=split_size,
+        )
+        if mapped.matched_anchor:
+            return max(0.0, min(1.0, float(mapped.percentage) / 100.0))
+    except (MoonLocatorError, OSError, TypeError, ValueError):
+        log.warning(
+            "Could not canonicalize Foliate progress for book %s; using renderer fraction",
+            book_id, exc_info=True,
+        )
+    return fallback
+
+
 def moon_position_anchor(user_id: int, book_id: int, fmt: str) -> dict[str, Any] | None:
     """Resolve the newest tracked Moon locator to text for Foliate restore."""
     normalized_format = str(fmt or "").upper()
@@ -970,9 +1041,14 @@ def _conflict_direction(resource: WebDavResource | None, position: MoonPosition 
         return "to_moon"
     same = abs(remote_fraction - native_fraction) < 0.0005
     native_device = str(native.get("device") or "")
-    if same and (position.device_id == server_device or
-                 native_device.startswith("moonreader-webdav:")):
+    if same and native_device.startswith("moonreader-webdav:"):
         return "unchanged"
+    # Do not suppress a newer web relocation merely because the remote .po was
+    # written by this server and Moon's display percentage rounds to the same
+    # tenth. Exact chapter@split#offset can still have moved (3.702% -> 3.711%
+    # both serialize as 3.7%). Own-write echoes are handled above by the
+    # tracking etag/native-epoch guard; real newer web movement falls through
+    # to the timestamp policy and can update the exact Moon locator.
     if native_fraction <= 0 < remote_fraction:
         return "from_moon"
     remote_time = _aware(resource.modified)

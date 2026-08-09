@@ -168,7 +168,8 @@ def test_catalog_and_detail_render_progress_badges():
     assert 'coverReadHint' not in detail
     reader = (ROOT / "frontend/src/pages/Reader.tsx").read_text(encoding="utf-8")
     progress_lib = (ROOT / "frontend/src/lib/readerProgress.ts").read_text(encoding="utf-8")
-    assert "formatReadingProgress(progress * 100)" in reader
+    assert "formatReadingProgress(canonicalProgress * 100)" in reader
+    assert "savedPositionFraction ?? positionQuery.data?.position_fraction" in reader
     assert "Math.round(progress * 100)" not in reader
     assert "Math.round(value * 10) / 10" in progress_lib
     assert '<BookOpen size={20} />' not in detail

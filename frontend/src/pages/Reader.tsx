@@ -1123,7 +1123,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const createBookmark = useCreateReaderBookmark(id, fmt);
   const deleteBookmark = useDeleteReaderBookmark(id, fmt);
 
-  const { schedule: schedulePosition, saveError } = useReadingPositionSaver(id, fmt, 450);
+  const { schedule: schedulePosition, saveError, savedPositionFraction } = useReadingPositionSaver(id, fmt, 450);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -2129,9 +2129,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         const moonAnchor = positionQuery.data?.position_source === 'moonreader'
           ? positionQuery.data?.position_anchor?.trim()
           : '';
-        const fallbackLocation = savedFraction > 0
-          ? { fraction: Math.min(1, Math.max(0, savedFraction)) }
-          : savedLocator || undefined;
+        const savedFoliateCfi = savedLocator?.startsWith('epubcfi(') ? savedLocator : undefined;
+        const fallbackLocation = savedFoliateCfi
+          ?? (savedFraction > 0 ? { fraction: Math.min(1, Math.max(0, savedFraction)) } : undefined);
 
         if (moonAnchor) {
           // Moon's percentage and Foliate's section-size fraction are different
@@ -2407,7 +2407,11 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   };
 
   const progress = Math.max(0, Math.min(1, location.fraction ?? 0));
-  const percent = formatReadingProgress(progress * 100);
+  const serverProgress = Number(savedPositionFraction ?? positionQuery.data?.position_fraction);
+  const canonicalProgress = Number.isFinite(serverProgress)
+    ? Math.max(0, Math.min(1, serverProgress))
+    : progress;
+  const percent = formatReadingProgress(canonicalProgress * 100);
   const leftPageLabel = bookRtl ? t('Next page') : t('Previous page');
   const rightPageLabel = bookRtl ? t('Previous page') : t('Next page');
   const translationRequested = !!settings?.translationEnabled

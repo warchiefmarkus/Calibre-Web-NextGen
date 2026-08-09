@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-3.0-or-later
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -218,6 +218,33 @@ def test_fb2_mapping_uses_moon_chapter_and_character_offset(tmp_path):
     )
 
 
+
+def test_canonical_fraction_from_anchor_ignores_foliate_renderer_fraction(tmp_path):
+    from cps.services import moonreader_webdav as mod
+    path = tmp_path / "book.fb2"
+    path.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
+        '<body><section><p>alpha alpha alpha</p></section>'
+        '<section><p>before exact target sentence after after after</p></section>'
+        '</body></FictionBook>',
+        encoding="utf-8",
+    )
+    query = MagicMock()
+    query.filter.return_value.order_by.return_value.first.return_value = None
+    session = MagicMock()
+    session.query.return_value = query
+    with patch.object(mod, "_local_book_format_path", return_value=str(path)), \
+         patch.object(mod.ub, "session", session):
+        canonical = mod.canonical_fraction_from_anchor(
+            1, 7, "FB2", .95, "exact target sentence after",
+        )
+    expected = mod.map_book_position(
+        str(path), "FB2", .95, anchor_text="exact target sentence after",
+    ).percentage / 100.0
+    assert canonical == pytest.approx(expected)
+    assert canonical != pytest.approx(.95)
+
 def test_console_wars_locator_model_matches_moon_percentage_when_fixture_available():
     from cps.services.moonreader_locator import (
         fb2_chapters, fraction_from_locator, map_book_position, parse_position,
@@ -354,13 +381,13 @@ def test_known_moon_origin_can_intentionally_reset_to_zero():
     ) == "from_moon"
 
 
-def test_conflict_policy_suppresses_server_echo():
+def test_server_device_without_tracking_uses_timestamp_instead_of_rounded_percent():
     from cps.services import moonreader_webdav as mod
     remote = datetime(2026, 8, 4, 10, tzinfo=timezone.utc)
     resource = mod.WebDavResource("Moon/.Moon+/Cache/Book.fb2.po", False, modified=remote)
     position = mod.parse_position("2222222222222*6@0#2768:2.4%")
     native = _native(.024, remote.replace(minute=1), "cwng-web-test")
-    assert mod._conflict_direction(resource, position, native, "2222222222222") == "unchanged"
+    assert mod._conflict_direction(resource, position, native, "2222222222222") == "to_moon"
 
 
 def test_native_pairs_use_calibre_reader_namespace(tmp_path, monkeypatch):
@@ -629,6 +656,25 @@ def test_server_written_position_with_same_etag_does_not_echo_back():
     download.assert_not_called()
     upload.assert_not_called()
 
+
+
+def test_newer_web_anchor_is_not_suppressed_by_same_rounded_server_percentage():
+    from cps.services import moonreader_webdav as mod
+    remote_time = datetime(2026, 8, 4, 10, 0, tzinfo=timezone.utc)
+    resource = mod.WebDavResource(
+        "Moon/.Moon+/Cache/Book.fb2.po", False, etag='"remote"', modified=remote_time,
+    )
+    position = mod.parse_position("2222222222222*7@0#2850:3.7%")
+    native = {
+        "pos_frac": .0371136747,
+        "epoch": (remote_time + timedelta(seconds=10)).timestamp(),
+        "device": "cwng-web-live",
+        "cfi": "epubcfi(/6/14!/4/2)",
+    }
+    tracking = SimpleNamespace(last_native_epoch=native["epoch"] - 20)
+    assert mod._conflict_direction(
+        resource, position, native, "2222222222222", tracking,
+    ) == "to_moon"
 
 def test_unsupported_mobi_writeback_is_deferred_instead_of_writing_zero_locator():
     from cps.services import moonreader_webdav as mod
