@@ -671,17 +671,19 @@ def _native_fraction(native: dict[str, Any] | None) -> float:
     return max(0.0, min(1.0, float((native or {}).get("pos_frac") or 0)))
 
 
-def _native_locator(position: MoonPosition, fmt: str) -> str | None:
+def _native_locator(position: MoonPosition, fmt: str) -> str:
     if str(fmt or "").upper() == "PDF":
         return json.dumps({
             "type": "pdf-position", "version": 1,
             "page": max(1, int(position.chapter)),
             "scroll": {"x": 0, "y": 0},
         }, separators=(",", ":"))
-    # A Moon chapter/split/offset is not an EPUB CFI.  Supplying a fabricated
-    # CFI makes other readers jump to the wrong text.  Reflowable readers use
-    # the Moon text anchor exposed by the bookmark API instead.
-    return None
+    # Calibre's last_read_positions.cfi is NOT NULL and its HTTP endpoint
+    # silently ignores null/empty CFI writes.  A Moon chapter/split/offset is
+    # not an EPUB CFI, so keep a self-describing non-CFI carrier instead of
+    # fabricating a wrong epubcfi(...).  Our reader recognizes the Moon device
+    # and restores the exact location from the tracked text anchor.
+    return f"moonreader-webdav:{position.raw}"
 
 
 def moon_position_anchor(user_id: int, book_id: int, fmt: str) -> dict[str, Any] | None:

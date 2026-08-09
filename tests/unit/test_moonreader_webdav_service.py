@@ -441,14 +441,16 @@ def test_missing_remote_position_is_created_from_native_calibre_state():
     assert export.call_args.args[3] is None
 
 
-def test_native_locator_uses_pdf_page_and_does_not_fabricate_reflowable_cfi():
+def test_native_locator_uses_pdf_page_and_self_describing_moon_carrier():
     from cps.services import moonreader_webdav as mod
     pdf = mod.parse_position("1703297605115*28:9.4%")
     epub = mod.parse_position("1703297605115*4@0#99:42.5%")
     assert mod._native_locator(pdf, "PDF") == (
         '{"type":"pdf-position","version":1,"page":28,"scroll":{"x":0,"y":0}}'
     )
-    assert mod._native_locator(epub, "FB2") is None
+    assert mod._native_locator(epub, "FB2") == (
+        "moonreader-webdav:1703297605115*4@0#99:42.5%"
+    )
 
 
 def test_export_existing_duplicate_writes_the_resource_being_reconciled():
