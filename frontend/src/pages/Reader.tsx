@@ -2048,10 +2048,17 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       doc.addEventListener('contextmenu', () => scheduleSelectionRead(false, 120));
       doc.addEventListener('selectionchange', () => scheduleSelectionRead(false, 80));
       const armMovement = () => { readingMovementRef.current = true; };
-      doc.addEventListener('pointerdown', armMovement, { passive: true });
-      doc.addEventListener('touchstart', armMovement, { passive: true });
+      const armPointerDrag = (event: PointerEvent) => {
+        if (event.pointerType === 'touch' || event.buttons !== 0) armMovement();
+      };
+      const armLinkNavigation = (event: MouseEvent) => {
+        if (event.target instanceof Element && event.target.closest('a[href]')) armMovement();
+      };
+      doc.addEventListener('pointermove', armPointerDrag, { passive: true });
+      doc.addEventListener('touchmove', armMovement, { passive: true });
       doc.addEventListener('wheel', armMovement, { passive: true });
       doc.addEventListener('keydown', armMovement);
+      doc.addEventListener('click', armLinkNavigation, { capture: true, passive: true });
       doc.addEventListener('keydown', onReaderKeyDown);
       doc.addEventListener('wheel', handleReaderWheel, { passive: false });
     };

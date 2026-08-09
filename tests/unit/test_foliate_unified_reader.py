@@ -81,4 +81,8 @@ def test_foliate_does_not_persist_programmatic_restore_without_user_movement():
     assert "const markReadingMovement = useCallback" in reader
     assert "markReadingMovement();" in reader
     assert "doc.addEventListener('wheel', armMovement" in reader
+    assert "doc.addEventListener('touchmove', armMovement" in reader
+    assert "doc.addEventListener('pointermove', armPointerDrag" in reader
+    assert "doc.addEventListener('pointerdown', armMovement" not in reader
+    assert "doc.addEventListener('touchstart', armMovement" not in reader
     assert "doc.addEventListener('keydown', armMovement);" in reader
