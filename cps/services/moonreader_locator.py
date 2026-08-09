@@ -399,6 +399,31 @@ def fraction_from_locator(
     return max(0.0, min(1.0, position / _chapter_total(chapters)))
 
 
+def anchor_from_locator(
+    chapters: list[MoonChapter], position: MoonPosition, *, max_length: int = 180,
+) -> str | None:
+    """Return visible text beginning at an exact Moon reflowable locator.
+
+    Moon and Foliate use different progress fractions.  This anchor lets the
+    browser resolve Moon's chapter/split/character locator against Foliate's
+    own DOM and produce a native CFI without pretending the percentages share
+    the same coordinate system.
+    """
+    if not chapters or position.split_index is None:
+        return None
+    current = next((item for item in chapters if item.index == position.chapter), None)
+    if current is None:
+        return None
+    split_size = infer_split_size(chapters, position)
+    splits = moon_split_texts(current, split_size)
+    if not 0 <= int(position.split_index) < len(splits):
+        return None
+    text = splits[int(position.split_index)]
+    start = max(0, min(len(text), int(position.offset)))
+    anchor = normalize_text(text[start:start + max(32, int(max_length))]).strip()
+    return anchor or None
+
+
 def infer_split_size(chapters: list[MoonChapter], position: MoonPosition | None) -> int:
     if not chapters or position is None or position.split_index is None:
         return DEFAULT_MOON_SPLIT_SIZE

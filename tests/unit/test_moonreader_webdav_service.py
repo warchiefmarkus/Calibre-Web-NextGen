@@ -242,6 +242,22 @@ def test_console_wars_locator_model_matches_moon_percentage_when_fixture_availab
     assert mapped.matched_anchor is True
 
 
+def test_console_wars_moon_anchor_distinguishes_26_percent_from_foliate_24_percent():
+    from cps.services.moonreader_locator import anchor_from_locator, fb2_chapters, parse_position
+    path = Path(
+        "/root/calibre/Library/Blieik Dzh Kharris/Konsol'nyie voiny (146)/"
+        "Konsol'nyie voiny - Blieik Dzh Kharris.fb2"
+    )
+    if not path.exists():
+        pytest.skip("deployment fixture is not available")
+    chapters = fb2_chapters(str(path))
+    moon = parse_position("1634339204311*6@0#4653:2.6%")
+    anchor = anchor_from_locator(chapters, moon)
+    assert anchor is not None
+    assert anchor.startswith("И тут, прямо посреди семейного отпуска")
+    assert not anchor.startswith("врасплох, и поэтому любой дискомфорт")
+
+
 def test_webdav_conditional_put_uses_etag_and_reports_race():
     from cps.services.moonreader_webdav import MoonReaderError, WebDavClient
     client = WebDavClient("http://host/books/", "reader", "secret")
@@ -425,14 +441,14 @@ def test_missing_remote_position_is_created_from_native_calibre_state():
     assert export.call_args.args[3] is None
 
 
-def test_native_locator_uses_pdf_page_and_reflowable_cfi():
+def test_native_locator_uses_pdf_page_and_does_not_fabricate_reflowable_cfi():
     from cps.services import moonreader_webdav as mod
     pdf = mod.parse_position("1703297605115*28:9.4%")
     epub = mod.parse_position("1703297605115*4@0#99:42.5%")
     assert mod._native_locator(pdf, "PDF") == (
         '{"type":"pdf-position","version":1,"page":28,"scroll":{"x":0,"y":0}}'
     )
-    assert mod._native_locator(epub, "FB2") == "epubcfi(/6/2!/4/2)"
+    assert mod._native_locator(epub, "FB2") is None
 
 
 def test_export_existing_duplicate_writes_the_resource_being_reconciled():

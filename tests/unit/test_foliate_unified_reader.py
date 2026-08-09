@@ -59,3 +59,15 @@ def test_foliate_position_saver_sends_visible_text_anchor_for_moon_mapping():
     assert "detail.range?.toString()" in reader
     assert "schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText" in reader
     assert "position_anchor: pending.anchorText || undefined" in progress
+
+
+def test_foliate_restores_moon_position_by_text_anchor_not_moon_percentage_fraction():
+    reader = (ROOT / "frontend/src/pages/Reader.tsx").read_text(encoding="utf-8")
+    queries = (ROOT / "frontend/src/lib/queries.ts").read_text(encoding="utf-8")
+    assert "position_source?: 'moonreader' | 'calibre_web'" in queries
+    assert "position_anchor?: string | null" in queries
+    assert "findMoonAnchorCfi" in reader
+    assert "view, moonAnchor, positionQuery.data?.position_chapter" in reader
+    assert "if (moonCfi) await view.goTo(moonCfi)" in reader
+    assert "detail.cfi && !restoringInitialPosition" in reader
+    assert "await view.init({ showTextStart: true })" in reader

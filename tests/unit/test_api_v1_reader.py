@@ -69,7 +69,36 @@ def test_native_bookmark_uses_moon_fraction_over_newer_zero_initialization():
         "bookmark": None,
         "position_fraction": 0.285,
         "position_source": "moonreader",
+        "position_anchor": None,
+        "position_chapter": None,
+        "position_percentage": 28.5,
     }
+
+
+@pytest.mark.unit
+def test_native_moon_position_exposes_text_anchor_instead_of_fake_cfi():
+    from cps.api import reader as mod
+    user = SimpleNamespace(is_authenticated=True, is_anonymous=False, id=1, name="admin")
+    native_payload = {"positions": [{
+        "cfi": "epubcfi(/6/2!/4/2)", "pos_frac": .026026,
+        "epoch": 1786313589.0, "device": "moonreader-webdav:1",
+    }]}
+    anchor = {"text": "И тут, прямо посреди семейного отпуска Калински",
+              "chapter": 6, "percentage": 2.6}
+    with _ctx("/api/v1/books/5/bookmark?format=fb2"):
+        with patch.object(mod, "current_user", user), _visible_book(mod), \
+             patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+             patch.object(mod, "get_reader_position", return_value=native_payload), \
+             patch.object(mod, "reading_progress_summary_map", return_value={}), \
+             patch("cps.services.moonreader_webdav.moon_position_anchor", return_value=anchor):
+            resp = inspect.unwrap(mod.get_bookmark)(5)
+    body = json.loads(resp.get_data())
+    assert body["bookmark"] is None
+    assert body["position_source"] == "moonreader"
+    assert body["position_anchor"].startswith("И тут, прямо посреди")
+    assert body["position_chapter"] == 6
+    assert body["position_percentage"] == 2.6
+    assert body["position_fraction"] == pytest.approx(.026026)
 
 
 @pytest.mark.unit

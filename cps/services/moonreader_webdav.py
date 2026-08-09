@@ -29,7 +29,7 @@ from sqlalchemy.orm import selectinload
 from .. import calibre_db, cli_param, config, config_sql, db, deployment_profile, logger, ub
 from .moonreader_locator import (
     MoonLocatorError, MoonPosition, chapters_for_book, fraction_from_locator,
-    infer_split_size, map_book_position, moon_split_texts,
+    anchor_from_locator, infer_split_size, map_book_position, moon_split_texts,
     parse_position as parse_moon_position,
     serialize_position as serialize_moon_position,
 )
@@ -671,14 +671,51 @@ def _native_fraction(native: dict[str, Any] | None) -> float:
     return max(0.0, min(1.0, float((native or {}).get("pos_frac") or 0)))
 
 
-def _native_locator(position: MoonPosition, fmt: str) -> str:
+def _native_locator(position: MoonPosition, fmt: str) -> str | None:
     if str(fmt or "").upper() == "PDF":
         return json.dumps({
             "type": "pdf-position", "version": 1,
             "page": max(1, int(position.chapter)),
             "scroll": {"x": 0, "y": 0},
         }, separators=(",", ":"))
-    return "epubcfi(/6/2!/4/2)"
+    # A Moon chapter/split/offset is not an EPUB CFI.  Supplying a fabricated
+    # CFI makes other readers jump to the wrong text.  Reflowable readers use
+    # the Moon text anchor exposed by the bookmark API instead.
+    return None
+
+
+def moon_position_anchor(user_id: int, book_id: int, fmt: str) -> dict[str, Any] | None:
+    """Resolve the newest tracked Moon locator to text for Foliate restore."""
+    normalized_format = str(fmt or "").upper()
+    if normalized_format not in {"FB2", "FBZ", "EPUB", "KEPUB"}:
+        return None
+    row = (ub.session.query(ub.MoonReaderProgress)
+           .filter(ub.MoonReaderProgress.user_id == int(user_id),
+                   ub.MoonReaderProgress.book_id == int(book_id),
+                   ub.MoonReaderProgress.format == normalized_format)
+           .order_by(ub.MoonReaderProgress.remote_modified.desc(),
+                     ub.MoonReaderProgress.synced_at.desc()).first())
+    if row is None:
+        return None
+    try:
+        position = parse_position(row.raw_position)
+        matcher = BookMatcher()
+        match = matcher.for_book(int(book_id), normalized_format)
+        path = matcher.local_path(match) if match is not None else None
+        if not path:
+            return None
+        chapters = chapters_for_book(path, normalized_format)
+        anchor = anchor_from_locator(chapters, position)
+        if not anchor:
+            return None
+        return {
+            "text": anchor,
+            "chapter": int(position.chapter),
+            "percentage": float(position.percentage),
+        }
+    except (MoonLocatorError, OSError, TypeError, ValueError):
+        log.warning("Could not build Moon text anchor for book %s", book_id, exc_info=True)
+        return None
 
 
 def _pdf_page(native: dict[str, Any] | None) -> int | None:

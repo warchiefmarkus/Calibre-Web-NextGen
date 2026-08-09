@@ -93,11 +93,34 @@ def get_bookmark(book_id):
             ub.session, int(current_user.id), [book_id],
             user_name=_cwng_user_name(),
         ).get(book_id)
-        if summary and summary.get("source") == "moonreader":
+        native_device = str((native or {}).get("device") or "")
+        moon_origin = native_device.startswith("moonreader-webdav:")
+        if moon_origin or (summary and summary.get("source") == "moonreader"):
+            anchor = None
+            try:
+                from ..services.moonreader_webdav import moon_position_anchor
+                anchor = moon_position_anchor(int(current_user.id), book_id, fmt)
+            except Exception:
+                log.warning(
+                    "Could not resolve Moon+ restore anchor for book %s",
+                    book_id, exc_info=True,
+                )
+            native_fraction = float((native or {}).get("pos_frac") or 0)
+            summary_fraction = (
+                float(summary.get("percentage") or 0) / 100.0 if summary else 0.0
+            )
+            fraction = native_fraction if native_fraction > 0 else summary_fraction
             return jsonify({
-                "bookmark": None,
-                "position_fraction": float(summary.get("percentage") or 0) / 100.0,
+                "bookmark": native.get("cfi") if native and fmt == "pdf" else None,
+                "position_fraction": fraction,
                 "position_source": "moonreader",
+                "position_anchor": anchor.get("text") if anchor else None,
+                "position_chapter": anchor.get("chapter") if anchor else None,
+                "position_percentage": (
+                    anchor.get("percentage") if anchor else
+                    float(summary.get("percentage") or 0) if summary else
+                    fraction * 100.0
+                ),
             })
         if native_error is not None:
             return _err("reader_backend_error", str(native_error), native_error.status_code)

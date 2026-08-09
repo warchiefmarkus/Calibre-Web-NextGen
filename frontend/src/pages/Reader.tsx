@@ -257,6 +257,51 @@ function chatGptSelectedTextUrl(text: string): string {
   return `https://chatgpt.com/?q=${encodeURIComponent(text.trim())}`;
 }
 
+function moonAnchorCandidates(value: string): string[] {
+  const normalized = value.replace(/\s+/gu, ' ').trim();
+  if (!normalized) return [];
+  const candidates = [120, 80, 48, 32]
+    .filter((length) => normalized.length >= length)
+    .map((length) => normalized.slice(0, length).trim());
+  if (!candidates.includes(normalized)) candidates.unshift(normalized);
+  return [...new Set(candidates)].filter((item) => item.length >= 24);
+}
+
+async function findMoonAnchorCfi(
+  view: FoliateView, anchor: string, chapter?: number | null,
+): Promise<string | null> {
+  const candidates = moonAnchorCandidates(anchor);
+  const hinted = Number.isInteger(chapter) && Number(chapter) >= 0 ? Number(chapter) : null;
+  const scan = async (query: string, index?: number): Promise<string | null> => {
+    try {
+      for await (const raw of view.search({
+        query, index, matchCase: false, matchDiacritics: false,
+      })) {
+        if (raw === 'done') break;
+        const item = raw as { cfi?: string; subitems?: Array<{ cfi: string }> };
+        const cfi = item.cfi ?? item.subitems?.[0]?.cfi;
+        if (cfi) return cfi;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      view.clearSearch();
+    }
+  };
+  if (hinted !== null) {
+    for (const query of candidates) {
+      const cfi = await scan(query, hinted);
+      if (cfi) return cfi;
+    }
+  }
+  for (const query of candidates.slice(-2)) {
+    const cfi = await scan(query);
+    if (cfi) return cfi;
+  }
+  return null;
+}
+
 function normalizeLanguageCode(value: unknown): string {
   const raw = Array.isArray(value) ? value[0] : value;
   if (typeof raw !== 'string') return '';
@@ -1921,6 +1966,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   useEffect(() => {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
     let cancelled = false;
+    let restoringInitialPosition = true;
     const host = hostRef.current;
     const view = document.createElement('foliate-view') as FoliateView;
     view.className = styles.foliateView;
@@ -1951,7 +1997,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       dismissSelection();
       currentRef.current = detail;
       setLocation(detail);
-      if (detail.cfi) {
+      if (detail.cfi && !restoringInitialPosition) {
         const anchorText = detail.range?.toString().replace(/\s+/gu, ' ').trim().slice(0, 1000);
         schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText || undefined);
       }
@@ -2058,11 +2104,31 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         const savedLocator = positionQuery.data?.bookmark;
         const legacyFb2Fraction = fmt === 'fb2' ? parseFb2ScrollBookmark(savedLocator) : null;
         const savedFraction = Number(positionQuery.data?.position_fraction ?? legacyFb2Fraction ?? 0);
-        const lastLocation = savedFraction > 0
+        const moonAnchor = positionQuery.data?.position_source === 'moonreader'
+          ? positionQuery.data?.position_anchor?.trim()
+          : '';
+        const fallbackLocation = savedFraction > 0
           ? { fraction: Math.min(1, Math.max(0, savedFraction)) }
           : savedLocator || undefined;
-        await view.init({ lastLocation, showTextStart: true });
+
+        if (moonAnchor) {
+          // Moon's percentage and Foliate's section-size fraction are different
+          // coordinate systems. Initialize without that fraction, resolve the
+          // Moon chapter/offset by visible text in Foliate's own DOM, then go to
+          // the resulting native CFI. Suppress relocate writes during restore so
+          // merely opening the book cannot push Foliate's fraction back to Moon.
+          await view.init({ showTextStart: true });
+          const moonCfi = await findMoonAnchorCfi(
+            view, moonAnchor, positionQuery.data?.position_chapter,
+          );
+          if (moonCfi) await view.goTo(moonCfi);
+          else if (savedFraction > 0) await view.goToFraction(Math.min(1, Math.max(0, savedFraction)));
+          else if (savedLocator) await view.goTo(savedLocator);
+        } else {
+          await view.init({ lastLocation: fallbackLocation, showTextStart: true });
+        }
         if (cancelled) return;
+        restoringInitialPosition = false;
         redrawAnnotations();
         setReady(true);
       } catch (cause) {
@@ -2085,7 +2151,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (viewRef.current === view) viewRef.current = null;
     };
   }, [applySettings, bookQuery.data?.title, fmt, id, positionQuery.data?.bookmark,
-    positionQuery.data?.position_fraction, positionQuery.isFetched, selectedFormat,
+    positionQuery.data?.position_fraction, positionQuery.data?.position_source,
+    positionQuery.data?.position_anchor, positionQuery.data?.position_chapter,
+    positionQuery.isFetched, selectedFormat,
     settingsQuery.data, schedulePosition, dismissSelection, handleReaderWheel,
     restoreInlineTranslations, t]);
   function onReaderKeyDown(event: KeyboardEvent) {

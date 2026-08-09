@@ -1227,10 +1227,19 @@ export function translateReaderPage(
   );
 }
 
+export type ReaderPosition = {
+  bookmark: string | null;
+  position_fraction?: number;
+  position_source?: 'moonreader' | 'calibre_web' | null;
+  position_anchor?: string | null;
+  position_chapter?: number | null;
+  position_percentage?: number | null;
+};
+
 export function useBookmark(bookId: string | number, format = 'epub') {
-  return useQuery<{ bookmark: string | null; position_fraction?: number }>({
+  return useQuery<ReaderPosition>({
     queryKey: ['bookmark', String(bookId), format],
-    queryFn: () => apiGet<{ bookmark: string | null; position_fraction?: number }>(
+    queryFn: () => apiGet<ReaderPosition>(
       `/api/v1/books/${bookId}/bookmark?format=${encodeURIComponent(format)}`),
     staleTime: 0,
     retry: retryUnlessUnauthorized,
