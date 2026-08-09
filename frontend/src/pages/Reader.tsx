@@ -1131,6 +1131,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const searchRunRef = useRef(0);
   const annotationsRef = useRef<Map<string, FoliateAnnotation>>(new Map());
   const currentRef = useRef<FoliateLocation>({ fraction: 0 });
+  // Foliate emits relocate events during initial layout, anchor restore, font reflow,
+  // and teardown. Persist only after an explicit user reading/navigation action.
+  const readingMovementRef = useRef(false);
   const settingsRef = useRef<ReaderSettings | null>(null);
   const wheelDeltaRef = useRef(0);
   const wheelDirectionRef = useRef(0);
@@ -1575,7 +1578,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     return true;
   }, [navigate, showTranslationPage, t]);
 
+  const markReadingMovement = useCallback(() => {
+    readingMovementRef.current = true;
+  }, []);
+
   const navigateReader = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
+    markReadingMovement();
     const direction = action === 'prev' || action === 'next'
       ? action
       : action === 'left'
@@ -1583,7 +1591,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         : (bookRtl ? 'prev' : 'next');
     if (navigateTranslation(direction)) return;
     void navigate(action);
-  }, [bookRtl, navigate, navigateTranslation]);
+  }, [bookRtl, markReadingMovement, navigate, navigateTranslation]);
 
   const navigateReaderOrClosePanel = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
     if (panel) {
@@ -1599,6 +1607,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (!allowsWheelPageTurn(event.target) || event.deltaY === 0) return;
+    markReadingMovement();
 
     if (currentSettings.flow === 'scrolled') {
       const overlay = translationOverlayRef.current;
@@ -1645,7 +1654,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     wheelDirectionRef.current = 0;
     wheelLockUntilRef.current = now + READER_WHEEL_COOLDOWN_MS;
     navigateReader(action);
-  }, [navigateReader]);
+  }, [markReadingMovement, navigateReader]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -1967,6 +1976,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
     let cancelled = false;
     let restoringInitialPosition = true;
+    readingMovementRef.current = false;
     const host = hostRef.current;
     const view = document.createElement('foliate-view') as FoliateView;
     view.className = styles.foliateView;
@@ -1997,7 +2007,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       dismissSelection();
       currentRef.current = detail;
       setLocation(detail);
-      if (detail.cfi && !restoringInitialPosition) {
+      if (detail.cfi && !restoringInitialPosition && readingMovementRef.current) {
         const anchorText = detail.range?.toString().replace(/\s+/gu, ' ').trim().slice(0, 1000);
         schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText || undefined);
       }
@@ -2037,6 +2047,11 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       doc.addEventListener('touchend', () => scheduleSelectionRead(false, 120), { passive: true });
       doc.addEventListener('contextmenu', () => scheduleSelectionRead(false, 120));
       doc.addEventListener('selectionchange', () => scheduleSelectionRead(false, 80));
+      const armMovement = () => { readingMovementRef.current = true; };
+      doc.addEventListener('pointerdown', armMovement, { passive: true });
+      doc.addEventListener('touchstart', armMovement, { passive: true });
+      doc.addEventListener('wheel', armMovement, { passive: true });
+      doc.addEventListener('keydown', armMovement);
       doc.addEventListener('keydown', onReaderKeyDown);
       doc.addEventListener('wheel', handleReaderWheel, { passive: false });
     };
@@ -2129,6 +2144,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         }
         if (cancelled) return;
         restoringInitialPosition = false;
+        readingMovementRef.current = false;
         redrawAnnotations();
         setReady(true);
       } catch (cause) {
@@ -2352,6 +2368,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   };
 
   const openReaderBookmark = (bookmark: ReaderBookmark) => {
+    markReadingMovement();
     restoreInlineTranslations();
     void viewRef.current?.goTo(bookmark.locator);
     setPanel(null);
@@ -2517,13 +2534,13 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         )}
         {panel && <ReaderSidePanel
           panel={panel} onClose={() => setPanel(null)} toc={toc}
-          onNavigate={(target) => { restoreInlineTranslations(); dismissSelection(); void viewRef.current?.goTo(target); setPanel(null); }}
+          onNavigate={(target) => { markReadingMovement(); restoreInlineTranslations(); dismissSelection(); void viewRef.current?.goTo(target); setPanel(null); }}
           searchText={searchText} setSearchText={setSearchText} runSearch={() => void runSearch()}
           searching={searching} searchProgress={searchProgress} searchResults={searchResults}
           bookmarks={bookmarks} openBookmark={openReaderBookmark}
           deleteBookmark={(bookmarkId) => deleteBookmark.mutate(bookmarkId)}
           annotations={annotations}
-          showAnnotation={(annotation) => { restoreInlineTranslations(); void viewRef.current?.showAnnotation(annotation); setPanel(null); }}
+          showAnnotation={(annotation) => { markReadingMovement(); restoreInlineTranslations(); void viewRef.current?.showAnnotation(annotation); setPanel(null); }}
           removeAnnotation={(annotation) => void removeAnnotation(annotation)}
           updateAnnotationNote={(annotation) => void updateAnnotationNote(annotation)}
           settings={settings} updateSettings={updateSettings}
@@ -2681,6 +2698,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             aria-label={t('Reading progress')}
             onChange={(event) => {
               const fraction = Number(event.target.value) / 1000;
+              markReadingMovement();
               restoreInlineTranslations();
               dismissSelection();
               setLocation((current) => ({ ...current, fraction }));

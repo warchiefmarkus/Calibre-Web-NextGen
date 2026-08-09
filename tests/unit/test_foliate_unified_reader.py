@@ -71,3 +71,14 @@ def test_foliate_restores_moon_position_by_text_anchor_not_moon_percentage_fract
     assert "if (moonCfi) await view.goTo(moonCfi)" in reader
     assert "detail.cfi && !restoringInitialPosition" in reader
     assert "await view.init({ showTextStart: true })" in reader
+
+
+def test_foliate_does_not_persist_programmatic_restore_without_user_movement():
+    reader = (ROOT / "frontend/src/pages/Reader.tsx").read_text(encoding="utf-8")
+    assert "const readingMovementRef = useRef(false);" in reader
+    assert "detail.cfi && !restoringInitialPosition && readingMovementRef.current" in reader
+    assert reader.count("readingMovementRef.current = false;") >= 2
+    assert "const markReadingMovement = useCallback" in reader
+    assert "markReadingMovement();" in reader
+    assert "doc.addEventListener('wheel', armMovement" in reader
+    assert "doc.addEventListener('keydown', armMovement);" in reader
