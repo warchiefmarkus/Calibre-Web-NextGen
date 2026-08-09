@@ -1359,6 +1359,20 @@ export function useStartMoonReaderSync() {
   });
 }
 
+export function useStartBookMoonReaderSync(bookId: string | number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<{ book_id: number; queued: boolean; pending: boolean }>(
+      `/api/v1/books/${bookId}/moonreader/sync`,
+    ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['book', String(bookId)] });
+      void qc.invalidateQueries({ queryKey: ['moonreader-settings'] });
+    },
+  });
+}
+
+
 export function useChangePassword() {
   return useMutation({
     mutationFn: (vars: { current_password: string; new_password: string }) =>

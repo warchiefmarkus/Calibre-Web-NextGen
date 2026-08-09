@@ -11,6 +11,8 @@ API = (ROOT / "frontend/src/lib/api.ts").read_text(encoding="utf-8")
 ROUTES = (ROOT / "frontend/src/lib/routes.ts").read_text(encoding="utf-8")
 APP = (ROOT / "frontend/src/App.tsx").read_text(encoding="utf-8")
 ACCOUNT = (ROOT / "frontend/src/pages/Account.tsx").read_text(encoding="utf-8")
+BOOK_DETAIL = (ROOT / "frontend/src/pages/BookDetail.tsx").read_text(encoding="utf-8")
+BOOK_DETAIL_CSS = (ROOT / "frontend/src/pages/BookDetail.module.css").read_text(encoding="utf-8")
 
 
 def test_moonreader_settings_page_is_routed_and_linked():
@@ -53,3 +55,15 @@ def test_moonreader_folder_discovery_requires_an_explicit_selection():
     assert 'type="radio" name="moon-cache-location"' in PAGE
     assert "!cachePath.trim()" in PAGE
     assert "select one discovered Moon+ folder" in PAGE
+
+
+def test_book_detail_has_square_bidirectional_moon_sync_action_after_chatgpt():
+    chatgpt = BOOK_DETAIL.index('data-testid="chatgpt-similar-books"')
+    moon = BOOK_DETAIL.index('data-testid="moonreader-book-sync"')
+    assert moon > chatgpt
+    assert 'useStartBookMoonReaderSync(id)' in BOOK_DETAIL
+    assert '<Cloud size={19}' in BOOK_DETAIL
+    assert '<RefreshCw size={10}' in BOOK_DETAIL
+    assert '`/api/v1/books/${bookId}/moonreader/sync`' in QUERIES
+    assert 'width: 38px;' in BOOK_DETAIL_CSS
+    assert 'height: 38px;' in BOOK_DETAIL_CSS

@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import { Link, useParams, useLocation } from 'wouter';
-import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, Trash2, RefreshCw } from 'lucide-react';
+import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, Trash2, RefreshCw, Cloud } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faOpenai } from '@fortawesome/free-brands-svg-icons';
 import {
   useBook, useToggleRead, useToggleFavorite, useToggleArchived, useToggleHidden,
   useSendToEreader, useMe, useAccount, useUpdateMetadata, useDeleteBook, useReloadMetadata,
   useBookOcrStatus, useStartBookOcr, useExternalBookRatings,
-  useRefreshExternalBookRatings,
+  useRefreshExternalBookRatings, useStartBookMoonReaderSync,
 } from '../lib/queries';
 import { MetadataTypeahead } from '../components/MetadataTypeahead';
 import { Pill } from '../components/Pill';
@@ -336,6 +336,7 @@ export function BookDetail() {
   const sendToEreader = useSendToEreader(id);
   const deleteBook = useDeleteBook(id);
   const reloadMetadata = useReloadMetadata(id);
+  const moonBookSync = useStartBookMoonReaderSync(id);
   const [, navigate] = useLocation();
   const me = useMe().data;
   // The send-to-e-reader button only renders when mail is configured + the user
@@ -526,6 +527,28 @@ export function BookDetail() {
               <FontAwesomeIcon icon={faOpenai} className={styles.chatGptIcon} aria-hidden="true" />
               ChatGPT
             </a>
+
+            <button
+              type="button"
+              className={styles.moonSyncBtn}
+              onClick={() => moonBookSync.mutate()}
+              disabled={moonBookSync.isPending}
+              title={moonBookSync.isError
+                ? (moonBookSync.error instanceof ApiError ? moonBookSync.error.message : t('Moon+ Reader operation failed.'))
+                : t('Moon+ Reader sync')}
+              aria-label={t('Moon+ Reader sync')}
+              aria-busy={moonBookSync.isPending}
+              data-testid="moonreader-book-sync"
+            >
+              {moonBookSync.isPending ? (
+                <Spinner size={16} />
+              ) : (
+                <span className={styles.moonSyncIcon} aria-hidden="true">
+                  <Cloud size={19} strokeWidth={1.9} />
+                  <RefreshCw size={10} strokeWidth={2.4} className={styles.moonSyncArrows} />
+                </span>
+              )}
+            </button>
 
             <button
               className={book.read ? styles.readToggleActive : styles.readToggleGhost}

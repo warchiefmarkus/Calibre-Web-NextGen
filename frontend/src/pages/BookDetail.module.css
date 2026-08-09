@@ -553,6 +553,49 @@
   flex: 0 0 auto;
 }
 
+.moonSyncBtn {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.moonSyncBtn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.moonSyncBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.moonSyncIcon {
+  position: relative;
+  width: 21px;
+  height: 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.moonSyncArrows {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
 /* Destructive whole-book delete (fork #803). Same shape as .downloadBtn, danger-tinted. */
 .actionDanger {
   display: inline-flex;

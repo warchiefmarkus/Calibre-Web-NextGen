@@ -726,3 +726,36 @@ def test_verified_moon_locator_preserves_sub_decimal_precision(tmp_path):
     matcher.local_path.return_value = str(path)
     match = mod.BookMatch(1, "FB2", path.name, "test")
     assert mod._remote_fraction(position, match, matcher) == pytest.approx(exact)
+
+
+def test_book_scoped_sync_without_format_reconciles_all_native_formats():
+    from cps.services import moonreader_webdav as mod
+
+    settings = SimpleNamespace(
+        enabled=True, base_url="http://host/books/", username="reader",
+        password_encrypted="encrypted", cache_path="Moon/.Moon+/Cache",
+    )
+    user = SimpleNamespace(id=3, name="admin")
+    client = MagicMock()
+    client.discover_positions.return_value = ("Moon/.Moon+/Cache", [], True)
+    client.root_files.return_value = []
+    matcher = MagicMock()
+    matcher.for_book.side_effect = lambda book_id, fmt=None: mod.BookMatch(
+        int(book_id), str(fmt).upper() if fmt else "FB2", f"Book.{str(fmt or 'fb2').lower()}", "book_id",
+    )
+    session = MagicMock()
+    session.get.return_value = user
+    with patch.object(mod, "get_or_create_settings", return_value=settings), \
+         patch.object(mod, "decrypt_password", return_value="secret"), \
+         patch.object(mod, "WebDavClient", return_value=client), \
+         patch.object(mod, "BookMatcher", return_value=matcher), \
+         patch.object(mod.ub, "session", session), \
+         patch.object(mod, "_native_pairs", return_value={(7, "FB2"), (7, "EPUB"), (8, "PDF")}), \
+         patch.object(mod, "reconcile_book", return_value="unchanged") as reconcile:
+        summary = mod.sync_positions(3, book_id=7, fmt=None, include_native_only=True)
+
+    assert summary["unchanged"] == 2
+    assert {(call.args[4].book_id, call.args[4].format) for call in reconcile.call_args_list} == {
+        (7, "FB2"), (7, "EPUB"),
+    }
+    client.close.assert_called_once()

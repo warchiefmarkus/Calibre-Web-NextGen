@@ -1099,9 +1099,16 @@ def sync_positions(user_id: int, *, book_id: int | None = None,
                                               "message": str(exc)})
 
         keys = set(remote_by_key)
-        if book_id is not None:
+        if book_id is not None and fmt:
             selected = matcher.for_book(int(book_id), fmt)
             keys = {(selected.book_id, str(selected.format or "").upper())} if selected else set()
+        elif book_id is not None:
+            target_book = int(book_id)
+            keys = {key for key in keys if key[0] == target_book}
+            if include_native_only:
+                keys.update(
+                    key for key in _native_pairs(str(user.name)) if key[0] == target_book
+                )
         elif include_native_only:
             keys.update(_native_pairs(str(user.name)))
 

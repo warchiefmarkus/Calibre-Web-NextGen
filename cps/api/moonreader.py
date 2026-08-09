@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from flask import jsonify, request
 
 from . import api_v1
-from .. import logger, ub
+from .. import calibre_db, logger, ub
 from ..cw_login import current_user
 from ..services.moonreader_webdav import (
     MoonReaderError,
@@ -19,7 +19,9 @@ from ..services.moonreader_webdav import (
     serialize_settings,
     test_connection,
 )
-from ..tasks.moonreader_sync import moonreader_sync_pending, queue_moonreader_sync
+from ..tasks.moonreader_sync import (
+    moonreader_sync_pending, queue_moonreader_book_sync, queue_moonreader_sync,
+)
 
 log = logger.create()
 
@@ -165,6 +167,43 @@ def discover_moonreader_caches():
     except Exception:
         log.exception("Moon+ Reader cache discovery failed")
         return _err("discovery_failed", "Could not search the WebDAV server for Moon+ sync folders.", 502)
+
+
+@api_v1.route("/books/<int:book_id>/moonreader/sync", methods=["POST"])
+def start_book_moonreader_sync(book_id):
+    """Queue bidirectional Moon+/Calibre reconciliation for one visible book."""
+    guard = _guard()
+    if guard:
+        return guard
+    if not calibre_db.get_filtered_book(
+        book_id, allow_show_archived=True, allow_show_hidden=True
+    ):
+        return _err("not_found", "Book not found", 404)
+    row = _row()
+    if not row.enabled:
+        return _err("sync_disabled", "Enable Moon+ Reader sync first.", 400)
+    if not row.password_encrypted:
+        return _err("password_required", "Configure the WebDAV password first.", 400)
+    if not row.cache_path:
+        return _err(
+            "cache_path_required",
+            "Find and select a Moon+ sync folder before synchronizing.",
+            400,
+        )
+    try:
+        result = queue_moonreader_book_sync(
+            int(current_user.id), int(book_id), None,
+            username=current_user.name or "System",
+        )
+    except Exception:
+        ub.session.rollback()
+        log.exception("Could not queue Moon+ Reader sync for book %s", book_id)
+        return _err("queue_failed", "Could not queue Moon+ Reader sync for this book.", 500)
+    return jsonify({
+        "book_id": int(book_id),
+        "queued": bool(result.get("queued")),
+        "pending": bool(result.get("pending")),
+    }), 202
 
 
 @api_v1.route("/account/moonreader/sync", methods=["POST"])

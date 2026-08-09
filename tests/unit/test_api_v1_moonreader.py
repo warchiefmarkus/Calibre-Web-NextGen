@@ -112,3 +112,29 @@ def test_sync_rejects_empty_cache_path_until_user_selects_discovery_result():
     assert status == 400
     assert json.loads(response.get_data())["error"]["code"] == "cache_path_required"
     queue.assert_not_called()
+
+
+def test_book_sync_queues_bidirectional_reconcile_for_visible_book():
+    from cps.api import moonreader as mod
+    row = _row(cache_path="Moon/.Moon+/Cache")
+    with _ctx("/api/v1/books/7/moonreader/sync", {}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=7)), \
+         patch.object(mod, "queue_moonreader_book_sync", return_value={"queued": True}) as queue:
+        response, status = inspect.unwrap(mod.start_book_moonreader_sync)(7)
+    assert status == 202
+    assert json.loads(response.get_data()) == {"book_id": 7, "queued": True, "pending": False}
+    queue.assert_called_once_with(1, 7, None, username="alice")
+
+
+def test_book_sync_rejects_book_outside_user_visibility():
+    from cps.api import moonreader as mod
+    with _ctx("/api/v1/books/7/moonreader/sync", {}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod.calibre_db, "get_filtered_book", return_value=None), \
+         patch.object(mod, "queue_moonreader_book_sync") as queue:
+        response, status = inspect.unwrap(mod.start_book_moonreader_sync)(7)
+    assert status == 404
+    assert json.loads(response.get_data())["error"]["code"] == "not_found"
+    queue.assert_not_called()
