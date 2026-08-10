@@ -268,10 +268,10 @@ function moonAnchorCandidates(value: string): string[] {
 }
 
 async function findMoonAnchorCfi(
-  view: FoliateView, anchor: string, chapter?: number | null,
+  view: FoliateView, anchor: string, section?: number | null,
 ): Promise<string | null> {
   const candidates = moonAnchorCandidates(anchor);
-  const hinted = Number.isInteger(chapter) && Number(chapter) >= 0 ? Number(chapter) : null;
+  const hinted = Number.isInteger(section) && Number(section) >= 0 ? Number(section) : null;
   const scan = async (query: string, index?: number): Promise<string | null> => {
     try {
       for await (const raw of view.search({
@@ -2141,7 +2141,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           // merely opening the book cannot push Foliate's fraction back to Moon.
           await view.init({ showTextStart: true });
           const moonCfi = await findMoonAnchorCfi(
-            view, moonAnchor, positionQuery.data?.position_chapter,
+            view, moonAnchor,
+            positionQuery.data?.position_section ?? positionQuery.data?.position_chapter,
           );
           if (moonCfi) await view.goTo(moonCfi);
           else if (savedFraction > 0) await view.goToFraction(Math.min(1, Math.max(0, savedFraction)));
@@ -2176,6 +2177,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, [applySettings, bookQuery.data?.title, fmt, id, positionQuery.data?.bookmark,
     positionQuery.data?.position_fraction, positionQuery.data?.position_source,
     positionQuery.data?.position_anchor, positionQuery.data?.position_chapter,
+    positionQuery.data?.position_section,
     positionQuery.isFetched, selectedFormat,
     settingsQuery.data, schedulePosition, dismissSelection, handleReaderWheel,
     restoreInlineTranslations, t]);

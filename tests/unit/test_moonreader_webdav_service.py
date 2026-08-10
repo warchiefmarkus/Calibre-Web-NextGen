@@ -245,6 +245,42 @@ def test_canonical_fraction_from_anchor_ignores_foliate_renderer_fraction(tmp_pa
     assert canonical == pytest.approx(expected)
     assert canonical != pytest.approx(.95)
 
+def test_nested_fb2_moon_chapters_map_to_foliate_top_level_sections(tmp_path):
+    from cps.services.moonreader_locator import chapters_and_foliate_sections
+
+    path = tmp_path / "nested.fb2"
+    path.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
+        '<body><title><p>Book title</p></title>'
+        '<section><title><p>Outer</p></title><p>Outer text</p>'
+        '<section><title><p>Inner</p></title><p>Inner text</p></section>'
+        '</section>'
+        '<section><title><p>Second</p></title><p>Second text</p></section>'
+        '</body></FictionBook>',
+        encoding="utf-8",
+    )
+
+    chapters, mapping = chapters_and_foliate_sections(str(path), "FB2")
+    assert [chapter.index for chapter in chapters] == [0, 1, 2]
+    # Foliate section 0 is the direct <title>; both flattened Moon chapters
+    # inside the first direct <section> therefore live in Foliate section 1.
+    assert mapping == {0: 1, 1: 1, 2: 2}
+
+
+def test_console_wars_nested_moon_chapter_maps_to_foliate_section_when_fixture_available():
+    from cps.services.moonreader_locator import chapters_and_foliate_sections
+
+    path = Path(
+        "/root/calibre/Library/Blieik Dzh Kharris/Konsol'nyie voiny (146)/"
+        "Konsol'nyie voiny - Blieik Dzh Kharris.fb2"
+    )
+    if not path.exists():
+        pytest.skip("deployment fixture is not available")
+    _chapters, mapping = chapters_and_foliate_sections(str(path), "FB2")
+    assert mapping[7] == 6
+
+
 def test_console_wars_locator_model_matches_moon_percentage_when_fixture_available():
     from cps.services.moonreader_locator import (
         fb2_chapters, fraction_from_locator, map_book_position, parse_position,

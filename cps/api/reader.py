@@ -116,6 +116,7 @@ def get_bookmark(book_id):
                 "position_source": "moonreader",
                 "position_anchor": anchor.get("text") if anchor else None,
                 "position_chapter": anchor.get("chapter") if anchor else None,
+                "position_section": anchor.get("foliate_section") if anchor else None,
                 "position_percentage": (
                     anchor.get("percentage") if anchor else
                     float(summary.get("percentage") or 0) if summary else

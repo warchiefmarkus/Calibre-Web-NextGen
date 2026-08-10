@@ -1233,6 +1233,7 @@ export type ReaderPosition = {
   position_source?: 'moonreader' | 'calibre_web' | null;
   position_anchor?: string | null;
   position_chapter?: number | null;
+  position_section?: number | null;
   position_percentage?: number | null;
 };
 

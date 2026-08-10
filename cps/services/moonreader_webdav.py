@@ -29,8 +29,9 @@ from sqlalchemy.orm import selectinload
 
 from .. import calibre_db, cli_param, config, config_sql, db, deployment_profile, logger, ub
 from .moonreader_locator import (
-    MoonLocatorError, MoonPosition, chapters_for_book, fraction_from_locator,
-    anchor_from_locator, infer_split_size, map_book_position, map_fraction_to_moon, moon_split_texts,
+    MoonLocatorError, MoonPosition, chapters_and_foliate_sections, chapters_for_book,
+    fraction_from_locator, anchor_from_locator, infer_split_size, map_book_position,
+    map_fraction_to_moon, moon_split_texts,
     parse_position as parse_moon_position,
     serialize_position as serialize_moon_position,
 )
@@ -705,16 +706,24 @@ def _local_book_format_path(book_id: int, fmt: str) -> str | None:
 
 
 @lru_cache(maxsize=8)
-def _cached_chapters(path: str, fmt: str, mtime_ns: int, size: int):
+def _cached_book_structure(path: str, fmt: str, mtime_ns: int, size: int):
     # mtime/size are deliberately part of the cache key so an externally
-    # replaced Calibre book cannot keep stale canonical progress geometry.
+    # replaced Calibre book cannot keep stale text geometry or section mapping.
     del mtime_ns, size
-    return tuple(chapters_for_book(path, fmt))
+    chapters, sections = chapters_and_foliate_sections(path, fmt)
+    return tuple(chapters), tuple(sorted(sections.items()))
+
+
+def _canonical_book_structure(path: str, fmt: str):
+    stat = os.stat(path)
+    chapters, sections = _cached_book_structure(
+        path, str(fmt or "").upper(), stat.st_mtime_ns, stat.st_size,
+    )
+    return chapters, dict(sections)
 
 
 def _canonical_chapters(path: str, fmt: str):
-    stat = os.stat(path)
-    return _cached_chapters(path, str(fmt or "").upper(), stat.st_mtime_ns, stat.st_size)
+    return _canonical_book_structure(path, fmt)[0]
 
 
 def canonical_fraction_from_anchor(
@@ -772,18 +781,17 @@ def moon_position_anchor(user_id: int, book_id: int, fmt: str) -> dict[str, Any]
         return None
     try:
         position = parse_position(row.raw_position)
-        matcher = BookMatcher()
-        match = matcher.for_book(int(book_id), normalized_format)
-        path = matcher.local_path(match) if match is not None else None
+        path = _local_book_format_path(int(book_id), normalized_format)
         if not path:
             return None
-        chapters = chapters_for_book(path, normalized_format)
-        anchor = anchor_from_locator(chapters, position)
+        chapters, foliate_sections = _canonical_book_structure(path, normalized_format)
+        anchor = anchor_from_locator(list(chapters), position)
         if not anchor:
             return None
         return {
             "text": anchor,
             "chapter": int(position.chapter),
+            "foliate_section": foliate_sections.get(int(position.chapter)),
             "percentage": float(position.percentage),
         }
     except (MoonLocatorError, OSError, TypeError, ValueError):

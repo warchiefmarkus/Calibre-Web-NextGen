@@ -220,7 +220,17 @@ def _read_fb2_bytes(path: str) -> bytes:
     return Path(path).read_bytes()
 
 
-def fb2_chapters(path: str) -> list[MoonChapter]:
+_FOLIATE_FB2_BODY_CHILDREN = frozenset({"image", "title", "epigraph", "section"})
+
+
+def fb2_chapters_and_foliate_sections(path: str) -> tuple[list[MoonChapter], dict[int, int]]:
+    """Parse Moon chapters and map each flattened chapter to Foliate's section.
+
+    Moon+ numbers every nested FB2 ``<section>`` as a separate chapter. Foliate
+    instead creates one reader section per convertible *direct* child of the main
+    ``<body>`` and keeps nested sections inside that same DOM document. The two
+    indexes therefore diverge as soon as a top-level section contains children.
+    """
     try:
         root = ET.fromstring(_read_fb2_bytes(path))
     except (ET.ParseError, OSError, zipfile.BadZipFile) as exc:
@@ -228,14 +238,33 @@ def fb2_chapters(path: str) -> list[MoonChapter]:
     body = _primary_fb2_body(root)
     if body is None:
         raise MoonLocatorError("FB2 primary body was not found.")
-    chapters = []
+
+    section_to_foliate: dict[int, int] = {}
+    foliate_index = 0
+    for child in list(body):
+        if _local_name(child.tag) not in _FOLIATE_FB2_BODY_CHILDREN:
+            continue
+        for node in child.iter():
+            if _local_name(node.tag) == "section":
+                section_to_foliate[id(node)] = foliate_index
+        foliate_index += 1
+
+    chapters: list[MoonChapter] = []
+    chapter_to_foliate: dict[int, int] = {}
     for index, section in enumerate(_iter_sections(body)):
         text = _node_text(_section_without_nested_sections(section))
         if text:
             chapters.append(MoonChapter(
                 index=index, text=text, source_html=_section_source_html(section),
             ))
-    return chapters
+            mapped = section_to_foliate.get(id(section))
+            if mapped is not None:
+                chapter_to_foliate[index] = mapped
+    return chapters, chapter_to_foliate
+
+
+def fb2_chapters(path: str) -> list[MoonChapter]:
+    return fb2_chapters_and_foliate_sections(path)[0]
 
 
 def _epub_rootfile(archive: zipfile.ZipFile) -> str:
@@ -291,13 +320,20 @@ def epub_chapters(path: str) -> list[MoonChapter]:
         raise MoonLocatorError("Could not parse the EPUB document.") from exc
 
 
-def chapters_for_book(path: str, fmt: str) -> list[MoonChapter]:
+def chapters_and_foliate_sections(
+    path: str, fmt: str,
+) -> tuple[list[MoonChapter], dict[int, int]]:
     name = str(fmt or "").upper()
     if name in {"FB2", "FBZ"} or path.casefold().endswith((".fb2", ".fbz", ".fb2.zip")):
-        return fb2_chapters(path)
+        return fb2_chapters_and_foliate_sections(path)
     if name in {"EPUB", "KEPUB"} or path.casefold().endswith((".epub", ".kepub")):
-        return epub_chapters(path)
-    return []
+        chapters = epub_chapters(path)
+        return chapters, {chapter.index: chapter.index for chapter in chapters}
+    return [], {}
+
+
+def chapters_for_book(path: str, fmt: str) -> list[MoonChapter]:
+    return chapters_and_foliate_sections(path, fmt)[0]
 
 
 def _chapter_total(chapters: list[MoonChapter]) -> int:

@@ -67,7 +67,8 @@ def test_foliate_restores_moon_position_by_text_anchor_not_moon_percentage_fract
     assert "position_source?: 'moonreader' | 'calibre_web'" in queries
     assert "position_anchor?: string | null" in queries
     assert "findMoonAnchorCfi" in reader
-    assert "view, moonAnchor, positionQuery.data?.position_chapter" in reader
+    assert "position_section?: number | null" in queries
+    assert "positionQuery.data?.position_section ?? positionQuery.data?.position_chapter" in reader
     assert "if (moonCfi) await view.goTo(moonCfi)" in reader
     assert "detail.cfi && !restoringInitialPosition" in reader
     assert "await view.init({ showTextStart: true })" in reader
