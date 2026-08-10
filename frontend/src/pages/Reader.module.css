@@ -560,6 +560,33 @@
   -webkit-box-orient: vertical;
 }
 
+.annotationNewNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: 1px dashed var(--reader-border);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  padding: 9px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.annotationNewNote:hover {
+  background: color-mix(in srgb, var(--reader-accent) 10%, transparent);
+}
+
+.annotationStandaloneBody {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px;
+}
+
 .itemActions {
   display: flex;
   align-items: center;

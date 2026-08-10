@@ -17,6 +17,266 @@ is for things you can see or feel when running the app.
 ## [Unreleased]
 
 ### Fixed
+- **The reader's Black page theme is back, and it is actually black.** The
+  classic reader has four page themes; the new UI's reader only ever showed
+  three, and anyone who had chosen **Black** was quietly given the dark theme
+  instead — a warm near-black — with no way to get back to it. Black is now its
+  own choice with a true black page, which is what an OLED screen wants at
+  night (#325).
+- **The reader remembers whether you want one column or two.** The new UI's
+  reader always laid pages out in two columns on a wide screen, even if you had
+  chosen a single column in the classic view — the preference was being saved
+  and then ignored. Reading appearance now offers **One column** and **Two
+  columns**, the page re-flows as soon as you pick, and the choice follows you
+  to your next book and your next device (#325).
+- **The reader's buttons are big enough to hit on a phone.** Close, contents,
+  appearance, highlights and full screen were 34 pixels square in the new UI's
+  reader — reachable with a mouse, fiddly with a thumb while turning pages. They
+  are now 44, the size Apple and Google both recommend, and the book title
+  shortens to make room instead of the buttons shrinking (#325).
+- **Typing in the reader no longer loses your place in the box.** Opening a
+  panel in the new UI's reader — the contents list, the appearance controls, the
+  highlight popover or the note box — put the cursor back at the top of that
+  panel every time anything else on the page updated. In the note box the top is
+  the close button, so a note you were part-way through writing could quietly
+  stop receiving what you typed. The cursor now stays where you put it (#325).
+
+- **Kindle books get their high-resolution cover now, not just print editions.**
+  The high-resolution Amazon cover lookup was keyed only on a book's ISBN, and a
+  Kindle edition usually has no ISBN at all — it has an ASIN. So the books most
+  likely to need a better cover were the ones the lookup could never reach, in
+  both places it runs: the upgrade applied to metadata-search results, and the
+  standalone "Amazon (high-res)" card in the cover picker, which simply never
+  appeared for those books. A stored Amazon identifier is now used as a lookup
+  key too, tried after the ISBN so nothing about the existing path changes. This
+  also covers books whose ISBN is a 979-prefixed one, which has no ISBN-10 form
+  and was previously a dead end. Reported by @briffaantoine with two worked
+  examples (#304).
+- **The cover picker now tells you where a picture actually came from.** Covers
+  offered by Hardcover, Google and the rest get swapped for a higher-resolution
+  copy when one exists, and that copy often comes from Amazon or Apple Books —
+  but the card kept the name of the provider that supplied the *metadata*, so a
+  card reading "Hardcover" could be showing you an Amazon image with nothing on
+  screen saying so. Cards now carry a second line naming the image's actual
+  source when it differs. Asked by @briffaantoine (#304).
+- **Looking at a book's other editions no longer sends a meaningless search to
+  every other source.** The editions list is a Hardcover feature and searches by
+  a Hardcover id, but that id was being handed to every enabled provider, which
+  each searched for it as plain text and came back with nothing — Goodreads in
+  particular looked broken because of it. The editions lookup now asks only the
+  source that understands it. Reported by @briffaantoine (#303).
+- **The reading app's catalog now calls "Discover" by the same name the website
+  does — and shows it in your language.** In an OPDS reader the entry was
+  labelled "Random Books", while the sidebar, the new interface and the link
+  itself all said Discover. Worse, on a German, Khmer or Norwegian server that
+  one entry stayed in English while everything around it was translated, because
+  the old wording had never been signed off by a translator. It now reads
+  Discover, translated, in all 28 languages. Reported by @chloeroform (#1097).
+- **"Reload metadata from disk" no longer wipes out details you edited without
+  asking first.** It sits in the same row as the download buttons on a book's
+  page, so reaching for a download and landing one button over rewrote the
+  book's title, author and series from whatever the file itself said — with no
+  undo and no warning. It now asks first, naming the book, and does nothing if
+  you say no. Reported by @JamesHACS (#1496).
+- **Revoking an app password now asks first too.** Found while fixing the
+  above: the revoke buttons render as a column of identical trash icons, and a
+  misclick cut off whichever device still used that password with no way to get
+  it back. It now names the password you are about to revoke.
+
+### Added
+- **You can now write a note about a book without highlighting anything first.**
+  Notes could only ever be attached to a passage, so there was nowhere to put a
+  thought about the book as a whole — "the argument in chapter 3 never lands"
+  had to be pinned to a sentence that was not really the point. **Write a note**
+  at the top of the reader's Highlights and notes panel opens a blank note, and
+  it appears alongside your highlights on the book's Highlights page (#325).
+
+- **The new UI's reader can go full screen.** The classic reader has always had
+  a full-screen button; the new one didn't, so on a laptop or tablet you read
+  with the browser's chrome eating the top of the page. There's now a
+  full-screen control in the reader's top bar. It's hidden on devices that
+  can't do it (an iPhone can only full-screen video, not a page) rather than
+  shown as a button that does nothing (#325).
+
+- **Your highlights and notes are now listed inside the reader, and you can jump
+  straight back to one.** Seeing what you had marked up meant leaving the book
+  for the Highlights page and losing your place — the classic reader has had an
+  in-reader panel for this all along. The new UI's reader now has a highlighter
+  button in the top bar, with a count, opening a drawer that lists every
+  highlight in the book with its note. Picking one takes you to that passage.
+  Highlights that came from a Kobo or KOReader are listed and labelled too,
+  though a few of those have no saved position to jump to (#325).
+- **Reporting a problem now fills the report in for you.** Reporting a bug meant
+  landing on a blank GitHub form that asked you to type out your version, your
+  browser and which page you were on — and if the app had just crashed, the
+  error message was gone from the screen by the time you got there. The "Report
+  Issue on GitHub" item in the Help menu, and the link on an error page, now
+  open a report that already has all of that filled in, including the error
+  itself when there is one. Nothing is sent by your library: it writes the
+  report in your browser and hands you a link, so you see the whole thing and
+  can edit or delete any of it before deciding whether to post it. Your address,
+  your library's name, your file paths and your book titles are never included.
+
+- **You can now write a note on a highlight while reading in the browser.**
+  Highlighting text in the new UI's reader only ever saved the colour — there
+  was nowhere to record *why* you highlighted it, even though notes made on a
+  Kobo or in KOReader have always shown up on the book's Highlights page. Select
+  a passage and the popup now offers **Add note** alongside the colours; tap a
+  highlight you have already made and you can add, edit or remove its note.
+  Highlights carrying a note are drawn with a dashed outline so you can pick
+  them out at a glance, and tapping one shows the note without opening the
+  editor. Notes sync into the same place as everything else, so they appear on
+  the Highlights page and in Markdown/CSV/JSON exports (#325).
+
+- **Two new cover fill styles that fill the e-reader frame instead of adding a
+  border.** Every existing style pads the cover out to your device's shape,
+  which leaves a mirrored, blurred or coloured band down the sides. If you would
+  rather see the artwork itself edge to edge, there are now two more options in
+  the fill-style dropdown: **Stretch to fill**, which scales the cover to the
+  frame and accepts a little distortion, and **Crop to fill**, which keeps the
+  proportions honest and trims a strip off the two long edges instead. The six
+  original styles are untouched and Edge mirror is still the default, so nothing
+  changes unless you pick one. Requested by @mgrimace (#1280).
+
+## [v4.1.33] - 2026-08-08
+
+### Changed
+
+- **On a sign-in-with-your-provider-only server, the login page stops asking
+  you to click one button.** If standard login is switched off and exactly one
+  OAuth provider is configured, the login page existed only to be clicked
+  through — it now starts that provider straight away. Add `?local=1` to the
+  login URL if you ever need the plain page back, which is how an admin gets in
+  when the provider itself is down. Cancelling at the provider's consent screen
+  used to hand your browser straight back to it, over and over; that loop is
+  gone too, and it predates this feature. Servers with standard login enabled,
+  or with more than one provider, are unchanged. Contributed by
+  [@lduesing](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1411)
+  ([#1411](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1411)).
+
+### Fixed
+
+- **More of the interface reads in Traditional Chinese.** Coverage went from
+  619 to 919 translated phrases, and 130 entries that gettext had guessed and
+  marked provisional — provisional entries are dropped when the catalogue is
+  compiled, so they were showing in English — are now confirmed translations.
+  Contributed by
+  [@siuwai1999](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1424)
+  ([#1424](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1424)).
+
+- **Installing outside Docker still lost your settings database, and imports
+  died without saying why.** The previous fix moved `app.db` and `dirs.json`
+  to the folder you installed into, but `cwa.db` — the one holding your CWA
+  settings, import history and enforcement records — kept looking for a
+  `/config` folder at the top of your filesystem. If it could write there you
+  got a second config directory nothing else reads; if it could not, importing
+  a book stopped partway through and the process exited reporting success, so
+  nothing in the logs said anything had gone wrong. All three files now resolve
+  the same way, a failure to open the database says which path it tried and
+  exits non-zero, and adding a missing settings column no longer depends on
+  `/config` being writable — that step used to be skipped silently on exactly
+  these installs. Docker sets `CALIBRE_DBPATH=/config` explicitly and is
+  byte-for-byte unaffected. Follows on from the packaging work reported by
+  @Thovi98.
+
+- **Installing outside Docker put your database somewhere the app never
+  looks.** On a source install, the setup script wrote `app.db` into a
+  `/config` folder it created at the top of your filesystem, while the app
+  itself reads its database from the folder you installed into. Nothing said
+  anything was wrong; you just got a first-run setup screen and an empty
+  library, with the seeded database sitting in a directory nothing opens. The
+  two halves now resolve the config folder the same way, so a source install
+  keeps its database where the app reads it. `CWA_DIRS_JSON` had the matching
+  problem — it moved `dirs.json` for the scripts but not for the app, which
+  would have pointed your ingest and your library at two different places —
+  and is now honoured by both. Docker installs set these explicitly and are
+  byte-for-byte unaffected. Reported by @Thovi98, packaging for YunoHost.
+
+- **First run printed a chown error that was not an error.** Outside the
+  container there is no `abc` service account to hand files to, so setup
+  reported `chown: invalid user: 'abc:abc'` and a failed-command traceback on
+  every run. The files were already owned by the right user. Setup now says it
+  is skipping the step and why, and only reports a genuine permission problem.
+  Reported by @Thovi98.
+
+- **Installing outside Docker failed on the first setup script.** If you install
+  from source rather than pulling the image — a distro package, a systemd unit,
+  anything not living at `/app/calibre-web-automated` — `auto_library.py` quit
+  with `FileNotFoundError` looking for a starter database under `/app`, a
+  directory that only exists inside the container. The file was in your install
+  the whole time; the scripts just weren't looking where the code actually was.
+  They now work out their own location, so a source install sets itself up
+  without patching. The same run then reached a second copy of the problem and
+  tried to create your library at `/calibre-library` no matter what
+  `dirs.json` said; it now uses the folder you configured. Docker installs
+  resolve to exactly the same paths as before and are unaffected. Reported by
+  @Thovi98, who packages Calibre-Web NextGen for YunoHost, and follows the
+  `cps/` cleanup @chloeroform did in #1438.
+
+- **Upgrading a source install no longer looks like it lost your settings.**
+  Earlier builds put the database in a `/config` folder at the very top of the
+  filesystem, whatever directory you installed into. Now that setup uses your
+  install directory, a machine upgrading from one of those builds has a real
+  database in the old place and none in the new one — and setting up a fresh
+  empty one there would have left you looking at an empty library with your
+  users and books apparently gone. Setup now stops before that happens, tells
+  you which database it found, and gives you the one setting that keeps it.
+  Nothing is moved or deleted for you, because only you know which copy is the
+  one you want. Fresh installs and Docker are unaffected.
+
+- **The container reported itself unhealthy, and the library count showed 0
+  books.** A path cleanup landed a reference to a setting the file never
+  imported, so the lookup that finds your Calibre library raised an error the
+  moment anything called it. Two places call it, and both quietly treat any
+  error as "no library": the `/health` endpoint every Docker, Compose and
+  Kubernetes setup polls started answering "degraded" forever even though the
+  app was serving pages normally, and the book count on the instance rendered
+  0. If your orchestration restarts or refuses to roll out on a failing
+  healthcheck, that is why. Affects the `:dev` channel only — no published
+  release shipped it.
+
+- **The log no longer opens with a warning about rate-limit storage on every
+  startup.** Calibre-Web-NextGen serves from a single process, so the
+  rate limiter's in-memory counters are shared by everything that reads them
+  and are the correct choice here. The limiter library could not tell that
+  the choice was deliberate, because the setting was simply left at its
+  default, so it warned that the setup was unsuitable for production on each
+  boot. The setting is now stated explicitly. Nothing about rate limiting
+  changes — login attempts are still capped the same way — the log just stops
+  raising a concern that did not apply. Reported by @chloeroform (#1443).
+
+- **The Tags page showed columns of "…" instead of tag names.** The grid was
+  sized before the per-row rename and delete buttons existed, so once those
+  arrived they took their space out of the tag name itself: in a 1280px-wide
+  window the name had 86px of a 244px cell, and 87% of tags were cut off. Rows
+  carrying those buttons now get a wider column — three across instead of four
+  on a typical desktop — and a long name uses a second line before it
+  ellipsizes. Measured on a 152-tag library, names cut off went from 87% to 9%
+  on desktop, 41% to 9% at the 720px width in the report, and 32% to 8% on a
+  phone. The Authors, Series and Publishers lists keep their current column
+  count and gain the same second line; the compact list view is unchanged.
+
+- **A third-party KOReader sync client is no longer left guessing why a book
+  looks unsynced.** Positions that exist only as a percentage — the ones the
+  web reader and a Kobo produce — are deliberately held back from clients that
+  haven't said they can use them, because older plugins would try to jump to a
+  position they can't understand and lose your place. The problem was that
+  "held back" and "never synced" looked identical from the client's side: an
+  empty answer, with nothing naming the setting that would reveal the position.
+  The server now says what it is holding and how to ask for it, logs the same
+  thing for anyone reading the server log, and the sync protocol documentation
+  now covers the parameter and both position formats. Nothing changes for the
+  bundled plugin or for anyone syncing today. Reported by @sroebert (#1445),
+  who hit this building Crossink and had to read our source to find it.
+
+- **The "help translate this" notice no longer reappears after every update, and
+  now works outside Docker.** The app remembered that it had already shown you
+  the notice by writing a small file into its own program folder, which gets
+  replaced whenever you update — so the reminder came back each time. Outside
+  Docker that folder doesn't exist at all, so the note was never saved and the
+  reminder never appeared for anyone running from source. It's now kept
+  alongside your settings, where it survives updates. Reported by @chloeroform
+  (#1447).
 
 - **If your library lives in a sub-folder, NextGen stopped leaving a stray
   `metadata.db` at the top of it.** Something in the startup checked for a
@@ -36,6 +296,22 @@ is for things you can see or feel when running the app.
   was already installed. Docker users were never affected — those images take
   their version from the build, not from this file. Reported by @chloeroform
   (#1437).
+
+- **The interface now reads in Spanish throughout, instead of leaving about
+  half of its labels in English.** With the language set to Spanish, the admin
+  screens, metadata editing, upload, shelves, the reader and a long tail of task
+  and error messages still showed in English. Another 196 phrases were worse
+  than untranslated: gettext had guessed them from a similar English sentence and
+  marked the guess provisional, and a provisional entry is dropped when the
+  catalog is compiled — so those rendered in English while Spanish that said
+  something else, sometimes the text of an entirely different string, sat in the
+  file waiting for somebody to confirm it. A few outright reversed the meaning of
+  the English. Spanish was covering 1,378 of 2,645 phrases and now covers all
+  2,645, which makes it the most complete translation the project ships. Wording
+  for add, delete, edit, file, email and eReader is now consistent across the
+  interface. Contributed by
+  [@HaruIjima-kun](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1469)
+  ([#1469](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1469)).
 
 ## [v4.1.32] - 2026-08-07
 

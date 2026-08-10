@@ -88,7 +88,7 @@ if os.environ.get("CWA_METADATA_DEBUG", "").lower() in ("1", "true", "yes"):
 def _get_global_provider_enabled_map() -> dict:
     try:
         # Import here to avoid circular import issues and keep startup fast
-        sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+        sys.path.insert(1, constants.SCRIPTS_DIR)
         from cwa_db import CWA_DB  # type: ignore
         cwa_db = CWA_DB()
         settings = cwa_db.get_cwa_settings()
@@ -119,7 +119,7 @@ def _get_provider_hierarchy() -> list:
         DEFAULT_METADATA_PROVIDER_HIERARCHY_JSON,
     )
     try:
-        sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+        sys.path.insert(1, constants.SCRIPTS_DIR)
         from cwa_db import CWA_DB  # type: ignore
         settings = CWA_DB().get_cwa_settings() or {}
         hierarchy = json.loads(
@@ -407,7 +407,15 @@ def metadata_search():
           ]
         }
     """
-    query = request.form.to_dict().get("query")
+    form = request.form.to_dict()
+    query = form.get("query")
+    # Optional comma-separated provider allowlist. The editions drill-down asks
+    # for one provider's own identifier syntax (`hardcover-id:<id>`); without
+    # this every other enabled provider was handed that literal string, searched
+    # for it, and came back empty — visible to users as "Goodreads finds
+    # nothing" and, less visibly, as a pointless request to each of those sites
+    # (fork #303). Absent or empty means every enabled provider, as before.
+    only = {p for p in (form.get("providers") or "").split(",") if p.strip()}
     results: list = []
     provider_status: list = []
     active = current_user.view_settings.get("metadata", {})
@@ -421,6 +429,19 @@ def metadata_search():
     for provider in cl:
         is_active = metadata_provider_enabled(provider.__id__, active)
         is_global = bool(global_enabled.get(provider.__id__, True))
+        # A restricted run reports the others as "not asked", not as "disabled":
+        # the user's own toggles are unchanged and the status row shouldn't
+        # claim otherwise.
+        if only and provider.__id__ not in only:
+            provider_status.append({
+                "id": provider.__id__,
+                "name": provider.__name__,
+                "status": "disabled",
+                "count": 0,
+                "message": "Not searched for this lookup",
+                "duration_ms": 0,
+            })
+            continue
         if not is_active or not is_global:
             provider_status.append({
                 "id": provider.__id__,

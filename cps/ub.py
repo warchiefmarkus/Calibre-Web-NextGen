@@ -1134,8 +1134,12 @@ class Annotation(Base):
     chapter_progress = Column(Float, nullable=True)
     cfi_range = Column(String, nullable=True)
     # Sub-project (3)/(4) — polymorphic position support for non-CFI formats.
-    # position_type values: 'cfi' (default for EPUB), 'pdf_quad', 'comic_page'.
-    # NULL on legacy rows means EPUB CFI (backward compatible).
+    # position_type values: 'cfi' (default for EPUB), 'pdf_quad', 'comic_page',
+    # 'koreader_xpointer', and 'unanchored'.
+    # NULL on legacy rows means EPUB CFI (backward compatible) — which is exactly
+    # why 'unanchored' has to be an explicit non-NULL value: absence is already
+    # taken, so a note with no anchor cannot be expressed by leaving this empty.
+    # It would be resolved as a CFI instead. See #325.
     position_type = Column(String, nullable=True)
     pdf_page = Column(Integer, nullable=True)         # 1-indexed PDF page number
     # Full EmbedPDF transfer item; legacy normalized rectangle arrays remain readable.
@@ -1178,7 +1182,9 @@ class Annotation(Base):
     )
 
     _VALID_SOURCES = {"kobo", "webreader", "koreader"}
-    _VALID_POSITION_TYPES = {"cfi", "pdf_quad", "comic_page", "koreader_xpointer"}
+    _VALID_POSITION_TYPES = {
+        "cfi", "pdf_quad", "comic_page", "koreader_xpointer", "unanchored",
+    }
 
     @validates("source")
     def _validate_source(self, _key, value):
@@ -1481,6 +1487,12 @@ class Thumbnail(Base):
 
 # Add missing tables during migration of database
 def add_missing_tables(engine, _session):
+    # Local import: progress_syncing.models imports Base from this module, so a
+    # module-level import would be circular. Every other table below is defined
+    # in this file; this one is not, and referencing it as a bare global raised
+    # NameError on any app.db missing kosync_progress (a fresh install).
+    from .progress_syncing.models import KOSyncProgress
+
     if not engine.dialect.has_table(engine.connect(), "archived_book"):
         ArchivedBook.__table__.create(bind=engine, checkfirst=True)
     if not engine.dialect.has_table(engine.connect(), "thumbnail"):

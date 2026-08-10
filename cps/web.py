@@ -31,6 +31,7 @@ from werkzeug.datastructures import Headers
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from . import constants, logger, isoLanguages, services, helper, spa, oauth_auto_redirect
+from .constants import DIRS_JSON
 from . import db, ub, config, app
 from . import calibre_db, kobo_sync_status
 from .services.ereader_send import send_includes_own_address
@@ -68,7 +69,7 @@ import subprocess
 import time
 
 import sys
-sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+sys.path.insert(1, constants.SCRIPTS_DIR)
 from cwa_db import CWA_DB
 
 feature_support = {
@@ -549,7 +550,7 @@ def get_sort_function(sort_param, data):
 
 def cwa_get_library_location() -> str:
     dirs = {}
-    with open('/app/calibre-web-automated/dirs.json', 'r') as f:
+    with open(DIRS_JSON, 'r') as f:
         dirs: dict[str, str] = json.load(f)
     library_dir = dirs['calibre_library_dir']
     return library_dir

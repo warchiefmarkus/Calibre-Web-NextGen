@@ -97,3 +97,12 @@ def test_foliate_uses_canonical_text_progress_but_restores_own_position_by_cfi()
     assert "savedPositionFraction ?? positionQuery.data?.position_fraction" in reader
     assert "const canonical = Number(saved?.position_fraction);" in progress
     assert "setSavedPositionFraction(clampReadingFraction(canonical))" in progress
+
+def test_foliate_supports_upstream_standalone_book_notes_without_drawing_an_anchor():
+    reader = (ROOT / "frontend/src/pages/Reader.tsx").read_text(encoding="utf-8")
+    assert "position_type: 'unanchored'" in reader
+    assert "if (!annotation.unanchored) void view.addAnnotation(annotation);" in reader
+    assert "if (!annotation.unanchored) await viewRef.current?.deleteAnnotation(annotation);" in reader
+    assert "createStandaloneNote" in reader
+    assert "t('Write a note')" in reader
+

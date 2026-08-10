@@ -46,6 +46,7 @@ type FoliateAnnotation = {
   note?: string | null;
   id?: string;
   text?: string | null;
+  unanchored?: boolean;
 };
 
 type FoliateRenderer = HTMLElement & {
@@ -90,8 +91,9 @@ type ServerAnnotation = {
   annotation_id: string;
   cfi_range: string | null;
   highlighted_text: string | null;
-  highlight_color: string;
+  highlight_color: string | null;
   note_text: string | null;
+  position_type?: string | null;
 };
 type PendingReaderSelection = {
   value: string;
@@ -2081,7 +2083,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     };
     const redrawAnnotations = () => {
       for (const annotation of annotationsRef.current.values()) {
-        void view.addAnnotation(annotation);
+        if (!annotation.unanchored) void view.addAnnotation(annotation);
       }
     };
 
@@ -2111,15 +2113,17 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         const annotationPayload = await apiGet<{ annotations: ServerAnnotation[] }>(
           `/annotations/${id}/data.json?format=${encodeURIComponent(fmt)}`,
         ).catch(() => ({ annotations: [] }));
-        const loaded = annotationPayload.annotations
-          .filter((row) => !!row.cfi_range)
-          .map((row): FoliateAnnotation => ({
-            value: row.cfi_range ?? '',
+        const loaded = annotationPayload.annotations.map((row): FoliateAnnotation => {
+          const unanchored = row.position_type === 'unanchored';
+          return {
+            value: row.cfi_range ?? `unanchored:${row.annotation_id}`,
             color: row.highlight_color || 'yellow',
             note: row.note_text,
             id: row.annotation_id,
             text: row.highlighted_text,
-          }));
+            unanchored,
+          };
+        });
         annotationsRef.current = new Map(loaded.map((item) => [item.value, item]));
         setAnnotations(loaded);
 
@@ -2275,6 +2279,29 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setPendingSelection(null);
   };
 
+  const createStandaloneNote = async () => {
+    const raw = window.prompt(t('Write a note'), '');
+    if (raw === null) return;
+    const note = raw.trim();
+    if (!note) return;
+    const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
+      position_type: 'unanchored',
+      note_text: note,
+      chapter_progress: currentRef.current.fraction ?? 0,
+      format: fmt.toUpperCase(),
+    });
+    const annotation: FoliateAnnotation = {
+      value: `unanchored:${row.annotation_id}`,
+      color: row.highlight_color || 'yellow',
+      note: row.note_text ?? note,
+      id: row.annotation_id,
+      text: null,
+      unanchored: true,
+    };
+    annotationsRef.current.set(annotation.value, annotation);
+    setAnnotations(Array.from(annotationsRef.current.values()));
+  };
+
   const openSelectedTextInChatGpt = () => {
     const text = pendingSelection?.text.trim();
     if (!text) return;
@@ -2348,7 +2375,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     await apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}?format=${encodeURIComponent(fmt)}`);
     annotationsRef.current.delete(annotation.value);
     setAnnotations(Array.from(annotationsRef.current.values()));
-    await viewRef.current?.deleteAnnotation(annotation);
+    if (!annotation.unanchored) await viewRef.current?.deleteAnnotation(annotation);
     if (selectedAnnotation?.id === annotation.id) setSelectedAnnotation(null);
   };
 
@@ -2553,7 +2580,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           bookmarks={bookmarks} openBookmark={openReaderBookmark}
           deleteBookmark={(bookmarkId) => deleteBookmark.mutate(bookmarkId)}
           annotations={annotations}
-          showAnnotation={(annotation) => { markReadingMovement(); restoreInlineTranslations(); void viewRef.current?.showAnnotation(annotation); setPanel(null); }}
+          createStandaloneNote={() => void createStandaloneNote()}
+          showAnnotation={(annotation) => {
+            if (annotation.unanchored) return;
+            markReadingMovement();
+            restoreInlineTranslations();
+            void viewRef.current?.showAnnotation(annotation);
+            setPanel(null);
+          }}
           removeAnnotation={(annotation) => void removeAnnotation(annotation)}
           updateAnnotationNote={(annotation) => void updateAnnotationNote(annotation)}
           settings={settings} updateSettings={updateSettings}
@@ -2746,6 +2780,7 @@ type ReaderSidePanelProps = {
   openBookmark: (bookmark: ReaderBookmark) => void;
   deleteBookmark: (bookmarkId: string) => void;
   annotations: FoliateAnnotation[];
+  createStandaloneNote: () => void;
   showAnnotation: (annotation: FoliateAnnotation) => void;
   removeAnnotation: (annotation: FoliateAnnotation) => void;
   updateAnnotationNote: (annotation: FoliateAnnotation) => void;
@@ -2822,13 +2857,25 @@ function ReaderSidePanel(props: ReaderSidePanelProps) {
 
       {panel === 'notes' && (
         <div className={styles.panelList}>
-          {props.annotations.length === 0 && <p className={styles.muted}>{t('No highlights yet.')}</p>}
+          <button className={styles.annotationNewNote} onClick={props.createStandaloneNote}>
+            <StickyNote size={16} aria-hidden="true" />
+            {t('Write a note')}
+          </button>
+          {props.annotations.length === 0 && <p className={styles.muted}>{t('No highlights or notes yet.')}</p>}
           {props.annotations.map((annotation) => (
             <div className={styles.annotationItem} key={annotation.id ?? annotation.value}>
-              <button onClick={() => props.showAnnotation(annotation)}>
-                <span className={styles.annotationText}>{annotation.text || t('Highlight')}</span>
-                {annotation.note && <span className={styles.annotationNote}>{annotation.note}</span>}
-              </button>
+              {annotation.unanchored ? (
+                <div className={styles.annotationStandaloneBody}
+                  title={t('A note about the book, not tied to a passage')}>
+                  <StickyNote size={14} aria-hidden="true" />
+                  <span className={styles.annotationNote}>{annotation.note}</span>
+                </div>
+              ) : (
+                <button onClick={() => props.showAnnotation(annotation)}>
+                  <span className={styles.annotationText}>{annotation.text || t('Highlight')}</span>
+                  {annotation.note && <span className={styles.annotationNote}>{annotation.note}</span>}
+                </button>
+              )}
               <div className={styles.itemActions}>
                 <button onClick={() => props.updateAnnotationNote(annotation)}>{t('Note')}</button>
                 <button className={styles.deleteButton} onClick={() => props.removeAnnotation(annotation)}
