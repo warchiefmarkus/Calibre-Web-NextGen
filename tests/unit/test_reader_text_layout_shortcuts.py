@@ -8,16 +8,20 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 READER = (ROOT / "frontend/src/pages/Reader.tsx").read_text()
 QUERIES = (ROOT / "frontend/src/lib/queries.ts").read_text()
+SETTINGS = (ROOT / "frontend/src/pages/reader/settings/ReaderSettingsPanel.tsx").read_text()
+STYLE = (ROOT / "frontend/src/pages/reader/settings/readerStyle.ts").read_text()
+TRANSLATION = (ROOT / "frontend/src/pages/reader/translation/translationPage.tsx").read_text()
+OVERLAY = (ROOT / "frontend/src/pages/reader/translation/TranslationOverlay.tsx").read_text()
 
 
 def test_foliate_reader_persists_and_applies_text_justification():
     assert "justifyText: boolean;" in QUERIES
-    assert "checked={settings.justifyText}" in READER
-    assert "update({ justifyText: event.target.checked })" in READER
-    assert "body, p, li, blockquote { text-align: justify !important;" in READER
-    assert "text-align-last: auto !important" in READER
-    assert "textAlign: style.textAlign" in READER
-    assert "style: block.style" in READER
+    assert "checked={settings.justifyText}" in SETTINGS
+    assert "update({ justifyText: event.target.checked })" in SETTINGS
+    assert "body, p, li, blockquote { text-align: justify !important;" in STYLE
+    assert "text-align-last: auto !important" in STYLE
+    assert "textAlign: style.textAlign" in TRANSLATION
+    assert "style: block.style" in OVERLAY
 
 
 def test_font_shortcuts_adjust_exactly_one_percent_and_respect_limits():

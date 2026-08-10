@@ -109,9 +109,9 @@ def test_classic_reader_uses_dedicated_route_and_shared_line_height():
 
 def test_spa_font_range_matches_canonical_contract():
     root = Path(__file__).resolve().parents[2]
-    reader = (root / "frontend/src/pages/Reader.tsx").read_text()
-    assert "const FONT_MIN = 75;" in reader
-    assert "const FONT_MAX = 200;" in reader
+    style = (root / "frontend/src/pages/reader/settings/readerStyle.ts").read_text()
+    assert "const FONT_MIN = 75;" in style
+    assert "const FONT_MAX = 200;" in style
 
 
 def test_translation_settings_are_typed_and_partial_updates_do_not_clear_profile():
@@ -148,8 +148,9 @@ def test_translation_side_panel_overlays_stage_without_reflowing_translated_page
 def test_translation_preload_uses_stable_page_identity_and_sentence_carry():
     root = Path(__file__).resolve().parents[2]
     reader = (root / "frontend/src/pages/Reader.tsx").read_text()
-    assert "function translationSourcePageId(" in reader
-    assert "function translationPageCacheKey(" in reader
+    translation = (root / "frontend/src/pages/reader/translation/translationPage.tsx").read_text()
+    assert "function translationSourcePageId(" in translation
+    assert "function translationPageCacheKey(" in translation
     assert "translationSentenceCarryRef.current.set" in reader
     assert "splitTrailingSentenceForNext" in reader
     assert "translationPreloading" in reader
@@ -162,10 +163,11 @@ def test_scrolled_translation_overlay_is_vertical_and_tap_zones_remain_visible()
     root = Path(__file__).resolve().parents[2]
     css = (root / "frontend/src/pages/Reader.module.css").read_text()
     reader = (root / "frontend/src/pages/Reader.tsx").read_text()
+    overlay = (root / "frontend/src/pages/reader/translation/TranslationOverlay.tsx").read_text()
     assert ".translationOverlay[data-flow='scrolled']" in css
     assert "overflow-y: auto;" in css
     assert ".translationTapZone" in css
-    assert "data-flow={settings.flow}" in reader
+    assert "data-flow={props.settings.flow}" in overlay
     assert "translationOverlayRef.current" in reader
 
 

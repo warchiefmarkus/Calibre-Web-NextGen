@@ -12595,6 +12595,34 @@ msgstr ""
 msgid "Show Read/Unread Section"
 msgstr "Показувати вибір серії"
 
+#: cps/spa_strings.py
+msgid "Could not delete annotation."
+msgstr "Не вдалося видалити анотацію."
+
+#: cps/spa_strings.py
+msgid "Could not save annotation."
+msgstr "Не вдалося зберегти анотацію."
+
+#: cps/spa_strings.py
+msgid "Delete note"
+msgstr "Видалити нотатку"
+
+#: cps/spa_strings.py
+msgid "Edit highlight"
+msgstr "Редагувати виділення"
+
+#: cps/spa_strings.py
+msgid "Exit full screen"
+msgstr "Вийти з повноекранного режиму"
+
+#: cps/spa_strings.py
+msgid "Note (optional)"
+msgstr "Нотатка (необов’язково)"
+
+#: cps/spa_strings.py
+msgid "Remove highlight"
+msgstr "Видалити виділення"
+
 #~ msgid "(no text captured)"
 #~ msgstr ""
 

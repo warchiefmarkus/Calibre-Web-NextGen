@@ -6,7 +6,9 @@ import pytest
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 READER = (ROOT / "frontend/src/pages/Reader.tsx").read_text()
-PANEL = (ROOT / "frontend/src/pages/ReaderTranslationSettings.tsx").read_text()
+TRANSLATION = (ROOT / "frontend/src/pages/reader/translation/translationPage.tsx").read_text()
+PANEL = (ROOT / "frontend/src/pages/reader/translation/ReaderTranslationSettings.tsx").read_text()
+TOOLBAR = (ROOT / "frontend/src/pages/reader/ReaderToolbar.tsx").read_text()
 SETTINGS = (ROOT / "cps/reader_settings.py").read_text()
 
 
@@ -19,7 +21,7 @@ def test_preload_setting_is_persisted_and_requires_auto_translation_cache():
 
 
 def test_next_page_is_extracted_without_moving_foliate_or_changing_cfi():
-    viewport = READER.split("function canExtractTranslationPageOffset", 1)[1].split(
+    viewport = TRANSLATION.split("function canExtractTranslationPageOffset", 1)[1].split(
         "function rectIntersectsViewport", 1
     )[0]
     assert "page + pageOffset <= pages - 2" in viewport
@@ -53,13 +55,13 @@ def test_preload_runs_after_current_page_cache_hit_or_translation_success():
     assert READER.count("scheduleNextTranslationPreload(settings);") >= 3
     assert "translationPreloadNextPage" in READER
     assert "activeSettings.flow !== 'paginated'" not in READER
-    assert "renderer.getAttribute('flow') === 'paginated'" in READER
-    assert "start + pageOffset * size < viewSize - 2" in READER
+    assert "renderer.getAttribute('flow') === 'paginated'" in TRANSLATION
+    assert "start + pageOffset * size < viewSize - 2" in TRANSLATION
     assert "sourceAlreadyMatchesTarget(activeSettings, bookLanguage, blocks)" in READER
 
 
 def test_foreground_joins_the_matching_preload_promise_without_a_second_request():
-    assert "type TranslationPreloadTask" in READER
+    assert "type TranslationPreloadTask" in TRANSLATION
     assert "translationPreloadTaskRef.current = { key: job.key, controller, promise }" in READER
     foreground = READER.split("const preloadTask = translationPreloadTaskRef.current", 1)[1].split(
         "translationAbortRef.current?.abort();", 1
@@ -75,9 +77,9 @@ def test_toolbar_ring_reports_both_foreground_translation_and_preload_activity()
     assert "setTranslationPreloading(true)" in READER
     assert "setTranslationPreloading(false)" in READER
     assert "&& (translationLoading || translationPreloading)" in READER
-    assert "? 'translation'" in READER
-    assert "'preload'" in READER
-    assert "aria-busy={translationActivity}" in READER
+    assert "? 'translation'" in TOOLBAR
+    assert "'preload'" in TOOLBAR
+    assert "aria-busy={props.translationActivity}" in TOOLBAR
 
 
 def test_aborted_joined_preload_always_releases_foreground_spinner():

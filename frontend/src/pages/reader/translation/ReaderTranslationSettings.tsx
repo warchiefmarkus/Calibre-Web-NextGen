@@ -12,9 +12,9 @@ import {
   type ReaderTranslationModelInfo,
   type ReaderTranslationProfile,
   type ReaderTranslationProfileInput,
-} from '../lib/queries';
-import { useT } from '../lib/i18n';
-import styles from './Reader.module.css';
+} from '../../../lib/queries';
+import { useT } from '../../../lib/i18n';
+import styles from '../../Reader.module.css';
 
 const PROVIDERS = {
   custom: {

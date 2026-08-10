@@ -12852,6 +12852,34 @@ msgstr "Synchroniseer geselecteerde boekenplanken met Kobo"
 msgid "Show Read/Unread Section"
 msgstr "Toon gelezen/niet gelezen selectie"
 
+#: cps/spa_strings.py
+msgid "Could not delete annotation."
+msgstr "Kon annotatie niet verwijderen."
+
+#: cps/spa_strings.py
+msgid "Could not save annotation."
+msgstr "Kon annotatie niet opslaan."
+
+#: cps/spa_strings.py
+msgid "Delete note"
+msgstr "Notitie verwijderen"
+
+#: cps/spa_strings.py
+msgid "Edit highlight"
+msgstr "Markering bewerken"
+
+#: cps/spa_strings.py
+msgid "Exit full screen"
+msgstr "Volledig scherm afsluiten"
+
+#: cps/spa_strings.py
+msgid "Note (optional)"
+msgstr "Notitie (optioneel)"
+
+#: cps/spa_strings.py
+msgid "Remove highlight"
+msgstr "Markering verwijderen"
+
 #~ msgid "(no text captured)"
 #~ msgstr "(geen tekst vastgelegd)"
 

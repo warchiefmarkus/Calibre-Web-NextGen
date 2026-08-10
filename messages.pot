@@ -4106,6 +4106,10 @@ msgid "Could not create the shelf."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Could not delete annotation."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Could not delete shelf."
 msgstr ""
 
@@ -4200,6 +4204,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not save OCR settings."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not save annotation."
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/shelf_reorder.html
@@ -4370,6 +4378,10 @@ msgid "Delete failed."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Delete note"
+msgstr ""
+
+#: cps/spa_strings.py
 #, python-brace-format
 msgid "Delete shelf \"{name}\"? This cannot be undone."
 msgstr ""
@@ -4523,6 +4535,10 @@ msgid "Edit"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Edit highlight"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Edit note"
 msgstr ""
 
@@ -4590,6 +4606,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Enter WebDAV password"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Exit full screen"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5369,6 +5389,10 @@ msgid "Note"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Note (optional)"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Notes"
 msgstr ""
 
@@ -5778,6 +5802,10 @@ msgstr ""
 
 #: cps/spa_strings.py cps/templates/detail.html
 msgid "Remove from shelf"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Remove highlight"
 msgstr ""
 
 #: cps/spa_strings.py

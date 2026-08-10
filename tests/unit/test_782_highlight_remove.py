@@ -5,11 +5,13 @@ import pytest
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 READER = (ROOT / 'frontend/src/pages/Reader.tsx').read_text()
+DRAW = (ROOT / 'frontend/src/pages/reader/annotations/draw.ts').read_text()
 API = (ROOT / 'frontend/src/lib/api.ts').read_text()
 
 
 def test_reader_uses_foliate_overlay_and_server_annotation_ids():
-    assert "Overlayer.highlight" in READER
+    assert "Overlayer.highlight" in DRAW
+    assert "drawFoliateHighlight" in READER
     assert "annotationsRef.current" in READER
     assert "annotation_id" in READER
     assert "view.addAnnotation" in READER

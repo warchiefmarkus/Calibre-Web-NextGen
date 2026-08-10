@@ -13322,6 +13322,34 @@ msgstr "Synchroniser les étagères sélectionnées avec Kobo"
 msgid "Show Read/Unread Section"
 msgstr "Afficher la section Lu / Non lu"
 
+#: cps/spa_strings.py
+msgid "Could not delete annotation."
+msgstr "Impossible de supprimer l’annotation."
+
+#: cps/spa_strings.py
+msgid "Could not save annotation."
+msgstr "Impossible d’enregistrer l’annotation."
+
+#: cps/spa_strings.py
+msgid "Delete note"
+msgstr "Supprimer la note"
+
+#: cps/spa_strings.py
+msgid "Edit highlight"
+msgstr "Modifier le surlignage"
+
+#: cps/spa_strings.py
+msgid "Exit full screen"
+msgstr "Quitter le plein écran"
+
+#: cps/spa_strings.py
+msgid "Note (optional)"
+msgstr "Note (facultative)"
+
+#: cps/spa_strings.py
+msgid "Remove highlight"
+msgstr "Supprimer le surlignage"
+
 #~ msgid "(no text captured)"
 #~ msgstr "(aucun texte enregistré)"
 

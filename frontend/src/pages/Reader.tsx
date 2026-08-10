@@ -1,12 +1,5 @@
-import { Fragment, createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Link } from 'wouter';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faOpenai } from '@fortawesome/free-brands-svg-icons';
-import {
-  AlignJustify, Bookmark, BookOpen, ChevronLeft, ChevronRight,
-  Columns2, Highlighter, Languages, List, Maximize, Search, Settings,
-  Square, StickyNote, Trash2, Volume2, X,
-} from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState';
 import { SpinnerCentered } from '../components/Spinner';
 import { apiDelete, apiGet, apiPatch, apiPost, resourceUrl } from '../lib/api';
@@ -14,87 +7,38 @@ import {
   useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
   useReaderBookmarks, useReaderSettings, useReaderTranslationProfiles,
   useSaveReaderSettings, translateReaderPage, type ReaderBookmark, type ReaderSettings,
-  type ReaderTranslationBlock, type ReaderTranslationProfile, type ReaderTranslationResponse,
-  type ReaderTranslationRun, type ReaderTranslationRunMark,
+  type ReaderTranslationBlock, type ReaderTranslationResponse,
 } from '../lib/queries';
 import { useT } from '../lib/i18n';
 import { formatReadingProgress, parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
-import { ReaderTranslationSettings } from './ReaderTranslationSettings';
 import styles from './Reader.module.css';
 
-// Vendored at an exact upstream commit; see vendor/foliate-js/UPSTREAM.md.
-import '../vendor/foliate-js/view.js';
-// @ts-expect-error foliate-js intentionally ships browser JavaScript without declarations.
-import { Overlayer } from '../vendor/foliate-js/overlayer.js';
-type TocItem = { label?: string; href?: string; subitems?: TocItem[] };
-type SearchExcerpt = { pre: string; match: string; post: string };
-type SearchResult = { cfi: string; label: string; excerpt: SearchExcerpt };
-type ReaderPanel = 'toc' | 'search' | 'bookmarks' | 'notes' | 'settings' | 'translation' | null;
-
-type FoliateLocation = {
-  fraction?: number;
-  location?: { current?: number; total?: number };
-  tocItem?: { label?: string; href?: string };
-  pageItem?: { label?: string };
-  cfi?: string;
-  range?: Range;
-};
-
-type FoliateAnnotation = {
-  value: string;
-  color?: string;
-  note?: string | null;
-  id?: string;
-  text?: string | null;
-  unanchored?: boolean;
-};
-
-type FoliateRenderer = HTMLElement & {
-  setStyles?: (css: string | [string, string]) => void;
-  getContents?: () => Array<{ doc: Document; index: number }>;
-  page?: number;
-  pages?: number;
-  size?: number;
-  start?: number;
-  end?: number;
-  viewSize?: number;
-};
-type FoliateView = HTMLElement & {
-  book?: {
-    toc?: TocItem[];
-    sections?: unknown[];
-    metadata?: { title?: unknown; author?: unknown; language?: string | string[] };
-    dir?: string;
-  };
-  renderer?: FoliateRenderer;
-  lastLocation?: FoliateLocation;
-  open: (file: File) => Promise<void>;
-  init: (options: { lastLocation?: string | { fraction: number }; showTextStart?: boolean }) => Promise<void>;
-  close: () => void;
-  prev: (distance?: number) => Promise<void>;
-  next: (distance?: number) => Promise<void>;
-  goLeft: () => Promise<void>;
-  goRight: () => Promise<void>;
-  goTo: (target: string | number | { fraction: number }) => Promise<unknown>;
-  goToFraction: (fraction: number) => Promise<void>;
-  getSectionFractions: () => number[];
-  getCFI: (index: number, range?: Range) => string;
-  search: (options: Record<string, unknown>) => AsyncGenerator<unknown>;
-  clearSearch: () => void;
-  addAnnotation: (annotation: FoliateAnnotation) => Promise<unknown>;
-  deleteAnnotation: (annotation: FoliateAnnotation) => Promise<unknown>;
-  showAnnotation: (annotation: FoliateAnnotation) => Promise<void>;
-  deselect: () => void;
-};
-
-type ServerAnnotation = {
-  annotation_id: string;
-  cfi_range: string | null;
-  highlighted_text: string | null;
-  highlight_color: string | null;
-  note_text: string | null;
-  position_type?: string | null;
-};
+// Foliate-specific engine details live behind the reader module boundary.
+import { allowsWheelPageTurn, createFoliateView, flattenToc, formatLanguageMap, isReaderTypingTarget,
+  readerFileName, readerMime, scrolledPageTurnDistance, type FoliateAnnotation, type FoliateLocation,
+  type FoliateView, type SearchExcerpt, type SearchResult, type TocItem } from './reader/FoliateEngine';
+import { ReaderSidePanel, type ReaderPanel } from './reader/ReaderSidePanel';
+import { ReaderToolbar } from './reader/ReaderToolbar';
+import { ReaderBottomBar } from './reader/ReaderBottomBar';
+import { SelectionActions } from './reader/SelectionActions';
+import { AnnotationComposer } from './reader/annotations/AnnotationComposer';
+import { drawFoliateHighlight } from './reader/annotations/draw';
+import { annotationColor, type AnnotationEditorState, type HighlightColor,
+  type ServerAnnotation } from './reader/annotations/types';
+import { useReaderFullscreen } from './reader/fullscreen';
+import { findMoonAnchorCfi } from './reader/useMoonRestore';
+import { useReadingMovement } from './reader/useReadingMovement';
+import { TranslationOverlay } from './reader/translation/TranslationOverlay';
+import { FONT_MAX, FONT_MIN, READER_THEME, readerCss } from './reader/settings/readerStyle';
+import {
+  TRANSLATION_DEBOUNCE_MS, alignTranslatedBlocks, applySentenceCarry, extractVisiblePage,
+  normalizeLanguageCode, sourceAlreadyMatchesTarget, splitTrailingSentenceForNext,
+  translationPageCacheKey, translationPageKey,
+  translationProfileRevision, translationRequestBlocks, translationResponseForMode,
+  translationSourcePageId, type StyledTranslationBlock, type TranslationContentSegment,
+  type TranslationPageLayout, type TranslationPreloadJob, type TranslationPreloadTask,
+  type TranslationSentenceCarry,
+} from './reader/translation/translationPage';
 type PendingReaderSelection = {
   value: string;
   text: string;
@@ -108,1000 +52,14 @@ type InlineTranslationPatch = {
 };
 const FOLIATE_FORMATS = ['EPUB', 'KEPUB', 'FB2', 'FBZ', 'MOBI', 'AZW3', 'AZW', 'CBZ'] as const;
 const FORMAT_PRIORITY = ['EPUB', 'KEPUB', 'FB2', 'MOBI', 'AZW3', 'AZW', 'CBZ'];
-const FONT_MIN = 75;
-const FONT_MAX = 200;
-
-const MIME: Record<string, string> = {
-  EPUB: 'application/epub+zip',
-  KEPUB: 'application/epub+zip',
-  FB2: 'application/x-fictionbook+xml',
-  FBZ: 'application/x-zip-compressed-fb2',
-  MOBI: 'application/x-mobipocket-ebook',
-  AZW: 'application/vnd.amazon.ebook',
-  AZW3: 'application/vnd.amazon.ebook',
-  CBZ: 'application/vnd.comicbook+zip',
-};
-
-const FONT_FAMILY: Record<ReaderSettings['font'], string> = {
-  default: 'Georgia, "Times New Roman", serif',
-  Yahei: '"Microsoft YaHei", sans-serif',
-  SimSun: 'SimSun, serif',
-  KaiTi: 'KaiTi, serif',
-  Arial: 'Arial, sans-serif',
-};
-
-const THEME: Record<ReaderSettings['theme'], { background: string; text: string; link: string }> = {
-  lightTheme: { background: '#fffdf8', text: '#24211d', link: '#225ea8' },
-  sepiaTheme: { background: '#f4ecd8', text: '#433422', link: '#7a4b20' },
-  darkTheme: { background: '#202124', text: '#e8eaed', link: '#8ab4f8' },
-  blackTheme: { background: '#000000', text: '#eeeeee', link: '#8ab4f8' },
-};
-
 const READER_WHEEL_THRESHOLD_PX = 48;
 const READER_WHEEL_COOLDOWN_MS = 320;
 const READER_WHEEL_IDLE_RESET_MS = 160;
-const SCROLLED_PAGE_OVERLAP_RATIO = 0.12;
-
-function scrolledPageTurnDistance(renderer: FoliateRenderer | undefined): number | undefined {
-  if (!renderer || renderer.getAttribute('flow') !== 'scrolled') return undefined;
-  const size = Number(renderer.size);
-  if (!Number.isFinite(size) || size <= 0) return undefined;
-  const margin = Math.max(0, Number.parseFloat(renderer.getAttribute('margin') ?? '0') || 0);
-  const visibleSize = Math.max(1, size - 2 * margin);
-  const overlap = Math.max(24, visibleSize * SCROLLED_PAGE_OVERLAP_RATIO);
-  return Math.max(1, visibleSize - overlap);
-}
-
-function allowsWheelPageTurn(target: EventTarget | null): boolean {
-  const element = target as { closest?: (selector: string) => Element | null } | null;
-  if (!element?.closest) return true;
-  if (element.closest('[data-reader-wheel-page-zone]')) return true;
-  return !element.closest('input, textarea, select, button, [contenteditable="true"], [role="slider"]');
-}
-
-function isReaderTypingTarget(target: EventTarget | null): boolean {
-  const element = target as { closest?: (selector: string) => Element | null } | null;
-  return !!element?.closest?.(
-    'textarea, select, [contenteditable="true"], input:not([type="checkbox"]):not([type="radio"]):not([type="range"])',
-  );
-}
-
-const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, figcaption';
-const TRANSLATION_CONTENT_SELECTOR = `${TRANSLATABLE_SELECTOR}, img`;
-const MAX_VISIBLE_TRANSLATION_CHARS = 8_000;
-const MAX_VISIBLE_TRANSLATION_BLOCKS = 80;
-const MAX_INLINE_TRANSLATION_RUNS = 200;
-const MAX_INLINE_TRANSLATION_RUN_CHARS = 1200;
-const TRANSLATION_DEBOUNCE_MS = 500;
-
-type TranslationViewport = {
-  frameRect: DOMRect;
-  rendererRect: DOMRect;
-  viewportRect: { left: number; right: number; top: number; bottom: number };
-};
-
-type TranslationBlockStyle = Pick<CSSProperties,
-  'fontFamily' | 'fontSize' | 'fontWeight' | 'fontStyle' | 'lineHeight'
-  | 'letterSpacing' | 'textAlign' | 'textIndent' | 'textTransform'
-  | 'marginBlockStart' | 'marginBlockEnd'>;
-
-type SourceTranslationRun = ReaderTranslationRun & { href?: string };
-type StyledTranslationBlock = ReaderTranslationBlock & {
-  style?: TranslationBlockStyle;
-  sourceRuns?: SourceTranslationRun[];
-};
-
-type PreservedImageStyle = Pick<CSSProperties,
-  'width' | 'height' | 'maxWidth' | 'maxHeight' | 'objectFit' | 'display'
-  | 'marginBlockStart' | 'marginBlockEnd' | 'marginInlineStart' | 'marginInlineEnd'
-  | 'borderRadius'>;
-
-type TranslationTextSegment = { kind: 'text'; id: string };
-type TranslationImageSegment = {
-  kind: 'image';
-  id: string;
-  src: string;
-  alt: string;
-  title?: string;
-  style: PreservedImageStyle;
-};
-type TranslationContentSegment = TranslationTextSegment | TranslationImageSegment;
-
-type TranslationPageLayout = {
-  pageWidth: number;
-  pageHeight: number;
-  contentWidth: number;
-  contentHeight: number;
-  paddingInlineStart: number;
-  paddingInlineEnd: number;
-  paddingBlockStart: number;
-  paddingBlockEnd: number;
-  columnGap: number;
-  defaultStyle: TranslationBlockStyle;
-};
-
-type VisibleTranslationPage = {
-  blocks: ReaderTranslationBlock[];
-  styles: Record<string, TranslationBlockStyle>;
-  sourceRuns: Record<string, SourceTranslationRun[]>;
-  segments: TranslationContentSegment[];
-  layout: TranslationPageLayout;
-};
-
-type TranslationPreloadJob = {
-  key: string;
-  settings: ReaderSettings;
-  profileRevision: string;
-  blocks: ReaderTranslationBlock[];
-};
-
-type TranslationSentenceCarry = {
-  blockId: string;
-  text: string;
-};
-
-type TranslationPreloadTask = {
-  key: string;
-  controller: AbortController;
-  promise: Promise<ReaderTranslationResponse>;
-};
-
-const LANGUAGE_ALIASES: Record<string, string> = {
-  ua: 'uk', ukr: 'uk', ukrainian: 'uk',
-  eng: 'en', english: 'en',
-  rus: 'ru', russian: 'ru',
-  pol: 'pl', polish: 'pl',
-  deu: 'de', ger: 'de', german: 'de',
-  fra: 'fr', fre: 'fr', french: 'fr',
-};
 
 function chatGptSelectedTextUrl(text: string): string {
   return `https://chatgpt.com/?q=${encodeURIComponent(text.trim())}`;
 }
 
-function moonAnchorCandidates(value: string): string[] {
-  const normalized = value.replace(/\s+/gu, ' ').trim();
-  if (!normalized) return [];
-  const candidates = [120, 80, 48, 32]
-    .filter((length) => normalized.length >= length)
-    .map((length) => normalized.slice(0, length).trim());
-  if (!candidates.includes(normalized)) candidates.unshift(normalized);
-  return [...new Set(candidates)].filter((item) => item.length >= 24);
-}
-
-async function findMoonAnchorCfi(
-  view: FoliateView, anchor: string, section?: number | null,
-): Promise<string | null> {
-  const candidates = moonAnchorCandidates(anchor);
-  const hinted = Number.isInteger(section) && Number(section) >= 0 ? Number(section) : null;
-  const scan = async (query: string, index?: number): Promise<string | null> => {
-    try {
-      for await (const raw of view.search({
-        query, index, matchCase: false, matchDiacritics: false,
-      })) {
-        if (raw === 'done') break;
-        const item = raw as { cfi?: string; subitems?: Array<{ cfi: string }> };
-        const cfi = item.cfi ?? item.subitems?.[0]?.cfi;
-        if (cfi) return cfi;
-      }
-      return null;
-    } catch {
-      return null;
-    } finally {
-      view.clearSearch();
-    }
-  };
-  if (hinted !== null) {
-    for (const query of candidates) {
-      const cfi = await scan(query, hinted);
-      if (cfi) return cfi;
-    }
-  }
-  for (const query of candidates.slice(-2)) {
-    const cfi = await scan(query);
-    if (cfi) return cfi;
-  }
-  return null;
-}
-
-function normalizeLanguageCode(value: unknown): string {
-  const raw = Array.isArray(value) ? value[0] : value;
-  if (typeof raw !== 'string') return '';
-  const normalized = raw.trim().toLowerCase().replace('_', '-');
-  if (!normalized) return '';
-  const primary = normalized.split('-')[0];
-  return LANGUAGE_ALIASES[normalized] ?? LANGUAGE_ALIASES[primary] ?? primary;
-}
-
-function canExtractTranslationPageOffset(renderer: FoliateRenderer, pageOffset: number): boolean {
-  if (pageOffset === 0) return true;
-  if (!Number.isInteger(pageOffset) || pageOffset < 0) return false;
-  const size = Number(renderer.size);
-  if (!Number.isFinite(size) || size <= 0) return false;
-  if (renderer.getAttribute('flow') === 'paginated') {
-    const page = Number(renderer.page);
-    const pages = Number(renderer.pages);
-    return Number.isFinite(page) && Number.isFinite(pages)
-      && page + pageOffset <= pages - 2;
-  }
-  const start = Number(renderer.start);
-  const viewSize = Number(renderer.viewSize);
-  return Number.isFinite(start) && Number.isFinite(viewSize)
-    && start + pageOffset * size < viewSize - 2;
-}
-
-function translationViewport(
-  renderer: FoliateRenderer, doc: Document, pageOffset = 0,
-): TranslationViewport | null {
-  const frame = doc.defaultView?.frameElement;
-  if (!(frame instanceof HTMLElement) || !canExtractTranslationPageOffset(renderer, pageOffset)) return null;
-  const rendererRect = renderer.getBoundingClientRect();
-  const frameRect = frame.getBoundingClientRect();
-  if (renderer.getAttribute('flow') !== 'paginated') {
-    const shift = pageOffset * Math.max(1, Number(renderer.size) || rendererRect.height);
-    return {
-      frameRect,
-      rendererRect,
-      viewportRect: {
-        left: rendererRect.left, right: rendererRect.right,
-        top: rendererRect.top + shift,
-        bottom: rendererRect.bottom + shift,
-      },
-    };
-  }
-
-  // Foliate lays an entire section out as one very wide iframe. The iframe's
-  // innerWidth is therefore the width of every column, not the visible page.
-  // Limit extraction to the centred current page/spread. For preloading, shift
-  // only the extraction viewport by one paginator step; the renderer, CFI, and
-  // saved reading position remain untouched.
-  const writingMode = doc.defaultView?.getComputedStyle(doc.documentElement).writingMode ?? '';
-  if (pageOffset && writingMode.startsWith('vertical')) return null;
-  const pageWidth = Math.max(1, doc.documentElement.getBoundingClientRect().width);
-  const maxColumns = Math.max(1, Number(renderer.getAttribute('max-column-count') || 1));
-  const visibleWidth = Math.min(rendererRect.width, pageWidth * maxColumns);
-  const direction = renderer.getAttribute('dir') === 'rtl' ? -1 : 1;
-  const shift = pageOffset * Math.max(1, Number(renderer.size) || rendererRect.width) * direction;
-  const left = rendererRect.left + (rendererRect.width - visibleWidth) / 2 + shift;
-  return {
-    frameRect,
-    rendererRect,
-    viewportRect: {
-      left,
-      right: left + visibleWidth,
-      top: rendererRect.top,
-      bottom: rendererRect.bottom,
-    },
-  };
-}
-
-function rectIntersectsViewport(rect: DOMRect, viewport: TranslationViewport): boolean {
-  const left = viewport.frameRect.left + rect.left;
-  const right = viewport.frameRect.left + rect.right;
-  const top = viewport.frameRect.top + rect.top;
-  const bottom = viewport.frameRect.top + rect.bottom;
-  return rect.width > 0 && rect.height > 0
-    && right > viewport.viewportRect.left && left < viewport.viewportRect.right
-    && bottom > viewport.viewportRect.top && top < viewport.viewportRect.bottom;
-}
-
-function intersectingOuterRects(element: Element, viewport: TranslationViewport): Array<{
-  left: number; right: number; top: number; bottom: number;
-}> {
-  return Array.from(element.getClientRects())
-    .filter((rect) => rectIntersectsViewport(rect, viewport))
-    .map((rect) => ({
-      left: viewport.frameRect.left + rect.left,
-      right: viewport.frameRect.left + rect.right,
-      top: viewport.frameRect.top + rect.top,
-      bottom: viewport.frameRect.top + rect.bottom,
-    }));
-}
-
-type ExtractedInlineRuns = {
-  text: string;
-  sourceRuns: SourceTranslationRun[];
-  requestRuns: ReaderTranslationRun[];
-};
-
-function inlineRunContext(node: Text, block: Element): {
-  marks: ReaderTranslationRunMark[];
-  href?: string;
-} {
-  const ancestors: Element[] = [];
-  let current = node.parentElement;
-  while (current && current !== block) {
-    ancestors.push(current);
-    current = current.parentElement;
-  }
-  ancestors.reverse();
-
-  const marks: ReaderTranslationRunMark[] = [];
-  const addMark = (mark: ReaderTranslationRunMark) => {
-    if (!marks.includes(mark)) marks.push(mark);
-  };
-  let href: string | undefined;
-  for (const element of ancestors) {
-    const name = element.localName.toLowerCase();
-    if (name === 'strong' || name === 'b') addMark('strong');
-    if (name === 'em' || name === 'i') addMark('em');
-    if (['code', 'kbd', 'samp', 'tt'].includes(name)) addMark('code');
-    if (name === 'sup') addMark('sup');
-    if (name === 'sub') addMark('sub');
-    if (name === 'a') {
-      addMark('link');
-      const resolved = (element as Element & { href?: string }).href || element.getAttribute('href') || '';
-      if (resolved) href = resolved;
-    }
-
-    const style = element.ownerDocument.defaultView?.getComputedStyle(element);
-    if (!style) continue;
-    const numericWeight = Number.parseInt(style.fontWeight, 10);
-    if (style.fontWeight === 'bold' || (Number.isFinite(numericWeight) && numericWeight >= 600)) {
-      addMark('strong');
-    }
-    if (style.fontStyle === 'italic' || style.fontStyle === 'oblique') addMark('em');
-    if (style.verticalAlign === 'super') addMark('sup');
-    if (style.verticalAlign === 'sub') addMark('sub');
-  }
-  return { marks, href };
-}
-
-function sameInlineRunFormat(
-  left: Omit<SourceTranslationRun, 'id' | 'text'>,
-  right: Omit<SourceTranslationRun, 'id' | 'text'>,
-): boolean {
-  return left.href === right.href
-    && (left.break_before ?? 0) === (right.break_before ?? 0)
-    && JSON.stringify(left.marks ?? []) === JSON.stringify(right.marks ?? []);
-}
-
-function visibleBlockRuns(
-  element: Element,
-  viewport: TranslationViewport,
-  blockId: string,
-  maxChars: number,
-): ExtractedInlineRuns | null {
-  const doc = element.ownerDocument;
-  const runs: Array<Omit<SourceTranslationRun, 'id'>> = [];
-  let pendingBreaks = 0;
-  let pendingSpace = false;
-  let totalChars = 0;
-  let stopped = false;
-
-  const appendText = (raw: string, context: { marks: ReaderTranslationRunMark[]; href?: string }) => {
-    if (stopped) return;
-    let text = raw.replace(/[\t\f\v ]+/g, ' ');
-    if (!text.trim()) return;
-    const remaining = maxChars - totalChars;
-    if (remaining <= 0) {
-      stopped = true;
-      return;
-    }
-    if (text.length > remaining) {
-      text = text.slice(0, remaining).trimEnd();
-      stopped = true;
-    }
-    if (!text) return;
-
-    const format: Omit<SourceTranslationRun, 'id' | 'text'> = {
-      marks: context.marks.length ? context.marks : undefined,
-      href: context.href,
-      break_before: pendingBreaks || undefined,
-    };
-    const last = runs[runs.length - 1];
-    const canMerge = !!last
-      && !pendingBreaks
-      && sameInlineRunFormat(last, format)
-      && last.text.length + text.length <= MAX_INLINE_TRANSLATION_RUN_CHARS;
-    if (canMerge) {
-      last.text += text;
-    } else if (runs.length < MAX_INLINE_TRANSLATION_RUNS) {
-      runs.push({ text, ...format });
-    } else {
-      stopped = true;
-      return;
-    }
-    totalChars += text.length;
-    pendingBreaks = 0;
-  };
-
-  const visit = (node: Node) => {
-    if (stopped) return;
-    if (node.nodeType === Node.TEXT_NODE) {
-      const textNode = node as Text;
-      const parent = textNode.parentElement;
-      if (!parent || parent.closest('script, style, noscript, svg, canvas')) return;
-      const context = inlineRunContext(textNode, element);
-      let previousEnd = 0;
-      for (const match of textNode.data.matchAll(/\S+/g)) {
-        const start = match.index ?? 0;
-        const end = start + match[0].length;
-        const whitespaceBefore = textNode.data.slice(previousEnd, start);
-        previousEnd = end;
-        const range = doc.createRange();
-        range.setStart(textNode, start);
-        range.setEnd(textNode, end);
-        if (!Array.from(range.getClientRects()).some((rect) => rectIntersectsViewport(rect, viewport))) {
-          continue;
-        }
-        const lineBreaks = whitespaceBefore.match(/\r\n|\r|\n/g)?.length ?? 0;
-        if (lineBreaks) {
-          pendingBreaks = Math.min(8, pendingBreaks + lineBreaks);
-          pendingSpace = false;
-        } else if (/\s/.test(whitespaceBefore)) {
-          pendingSpace = true;
-        }
-        const prefix = pendingSpace && runs.length ? ' ' : '';
-        pendingSpace = false;
-        appendText(`${prefix}${match[0]}`, context);
-        if (stopped) break;
-      }
-      const trailingWhitespace = textNode.data.slice(previousEnd);
-      const trailingBreaks = trailingWhitespace.match(/\r\n|\r|\n/g)?.length ?? 0;
-      if (trailingBreaks) {
-        pendingBreaks = Math.min(8, pendingBreaks + trailingBreaks);
-        pendingSpace = false;
-      } else if (/\s/.test(trailingWhitespace)) {
-        pendingSpace = true;
-      }
-      return;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-    const child = node as Element;
-    const name = child.localName.toLowerCase();
-    if (name === 'br') {
-      const range = doc.createRange();
-      range.selectNode(child);
-      if (Array.from(range.getClientRects()).some((rect) => rectIntersectsViewport(rect, viewport))) {
-        pendingBreaks = Math.min(8, pendingBreaks + 1);
-        pendingSpace = false;
-      }
-      return;
-    }
-    if (['script', 'style', 'noscript', 'svg', 'canvas', 'img'].includes(name)) return;
-    child.childNodes.forEach(visit);
-  };
-
-  element.childNodes.forEach(visit);
-  while (runs.length && !runs[0].text.trim()) runs.shift();
-  while (runs.length && !runs[runs.length - 1].text.trim()) runs.pop();
-  if (!runs.length) return null;
-  runs[0].text = runs[0].text.replace(/^\s+/, '');
-  runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/\s+$/, '');
-
-  const sourceRuns = runs
-    .filter((run) => run.text.trim())
-    .map((run, index) => ({ ...run, id: `${blockId}-r${index + 1}` }));
-  if (!sourceRuns.length) return null;
-  const requestRuns: ReaderTranslationRun[] = sourceRuns.map(({ href: _href, ...run }) => run);
-  const text = sourceRuns.map((run) => `${'\n'.repeat(run.break_before ?? 0)}${run.text}`).join('').trim();
-  return { text, sourceRuns, requestRuns };
-}
-
-
-function computedTranslationStyle(element: Element): TranslationBlockStyle {
-  const style = element.ownerDocument.defaultView?.getComputedStyle(element);
-  if (!style) return {};
-  return {
-    fontFamily: style.fontFamily,
-    fontSize: style.fontSize,
-    fontWeight: style.fontWeight,
-    fontStyle: style.fontStyle,
-    lineHeight: style.lineHeight,
-    letterSpacing: style.letterSpacing,
-    textAlign: style.textAlign as CSSProperties['textAlign'],
-    textIndent: style.textIndent,
-    textTransform: style.textTransform as CSSProperties['textTransform'],
-    marginBlockStart: style.marginBlockStart || style.marginTop,
-    marginBlockEnd: style.marginBlockEnd || style.marginBottom,
-  };
-}
-
-function preservedImageSegment(
-  image: HTMLImageElement, viewport: TranslationViewport, id: string,
-): TranslationImageSegment | null {
-  const rects = intersectingOuterRects(image, viewport);
-  const src = image.currentSrc || image.src;
-  if (!rects.length || !src) return null;
-  const rect = rects.reduce((largest, candidate) => {
-    const largestArea = (largest.right - largest.left) * (largest.bottom - largest.top);
-    const candidateArea = (candidate.right - candidate.left) * (candidate.bottom - candidate.top);
-    return candidateArea > largestArea ? candidate : largest;
-  });
-  const style = image.ownerDocument.defaultView?.getComputedStyle(image);
-  const parentStyle = image.parentElement
-    ? image.ownerDocument.defaultView?.getComputedStyle(image.parentElement)
-    : null;
-  const width = Math.max(1, rect.right - rect.left);
-  const height = Math.max(1, rect.bottom - rect.top);
-  const centered = parentStyle?.textAlign === 'center'
-    || (style?.marginLeft === 'auto' && style?.marginRight === 'auto');
-  return {
-    kind: 'image',
-    id,
-    src,
-    alt: image.alt || '',
-    title: image.title || undefined,
-    style: {
-      width: `${width}px`,
-      height: 'auto',
-      maxWidth: '100%',
-      maxHeight: `${Math.max(1, Math.min(height, viewport.rendererRect.height - 16))}px`,
-      objectFit: (style?.objectFit || 'contain') as CSSProperties['objectFit'],
-      display: 'block',
-      marginBlockStart: style?.marginBlockStart || style?.marginTop || '0px',
-      marginBlockEnd: style?.marginBlockEnd || style?.marginBottom || '0px',
-      marginInlineStart: centered ? 'auto' : (style?.marginInlineStart || style?.marginLeft || '0px'),
-      marginInlineEnd: centered ? 'auto' : (style?.marginInlineEnd || style?.marginRight || '0px'),
-      borderRadius: style?.borderRadius || '0px',
-    },
-  };
-}
-
-function clampLayoutInset(value: number, pageSize: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  return Math.max(0, Math.min(pageSize * 0.3, value));
-}
-
-function extractVisiblePage(renderer?: FoliateRenderer, pageOffset = 0): VisibleTranslationPage | null {
-  if (!renderer) return null;
-  const contents = renderer.getContents?.() ?? [];
-  const blocks: ReaderTranslationBlock[] = [];
-  const styles: Record<string, TranslationBlockStyle> = {};
-  const sourceRuns: Record<string, SourceTranslationRun[]> = {};
-  const segments: TranslationContentSegment[] = [];
-  let totalChars = 0;
-  let layoutViewport: TranslationViewport | null = null;
-  let layoutDoc: Document | null = null;
-  let minTextLeft = Number.POSITIVE_INFINITY;
-  let maxTextRight = Number.NEGATIVE_INFINITY;
-
-  for (const content of [...contents].sort((a, b) => a.index - b.index)) {
-    const doc = content.doc;
-    const viewport = translationViewport(renderer, doc, pageOffset);
-    if (!viewport) continue;
-    layoutViewport ??= viewport;
-    layoutDoc ??= doc;
-    const elements = Array.from(doc.body?.querySelectorAll(TRANSLATION_CONTENT_SELECTOR) ?? []);
-    for (let index = 0; index < elements.length; index += 1) {
-      const element = elements[index];
-      if (element.localName.toLowerCase() === 'img') {
-        const image = preservedImageSegment(
-          element as HTMLImageElement, viewport, `d${content.index}-i${index}`,
-        );
-        if (image) segments.push(image);
-        continue;
-      }
-      if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) break;
-      const visibleRects = intersectingOuterRects(element, viewport);
-      if (!visibleRects.length) continue;
-      if (Array.from(element.children).some((child) => child.matches(TRANSLATABLE_SELECTOR))) continue;
-      const blockId = `d${content.index}-b${index}`;
-      const remaining = MAX_VISIBLE_TRANSLATION_CHARS - totalChars;
-      const extracted = visibleBlockRuns(element, viewport, blockId, remaining);
-      if (!extracted) continue;
-      blocks.push({
-        id: blockId,
-        tag: element.tagName.toLowerCase(),
-        text: extracted.text,
-        runs: extracted.requestRuns,
-      });
-      sourceRuns[blockId] = extracted.sourceRuns;
-      segments.push({ kind: 'text', id: blockId });
-      styles[blockId] = computedTranslationStyle(element);
-      totalChars += extracted.requestRuns.reduce((sum, run) => sum + run.text.length, 0);
-      for (const rect of visibleRects) {
-        minTextLeft = Math.min(minTextLeft, rect.left);
-        maxTextRight = Math.max(maxTextRight, rect.right);
-      }
-    }
-    if (blocks.length >= MAX_VISIBLE_TRANSLATION_BLOCKS || totalChars >= MAX_VISIBLE_TRANSLATION_CHARS) break;
-  }
-
-  if (!segments.length || !layoutViewport || !layoutDoc) return null;
-  const { rendererRect, frameRect, viewportRect } = layoutViewport;
-  const pageWidth = Math.max(1, viewportRect.right - viewportRect.left);
-  const pageHeight = Math.max(1, rendererRect.height);
-  const fallbackInline = Math.min(32, pageWidth * 0.06);
-  const paddingInlineStart = clampLayoutInset(
-    minTextLeft - viewportRect.left, pageWidth, fallbackInline,
-  );
-  const paddingInlineEnd = clampLayoutInset(
-    viewportRect.right - maxTextRight, pageWidth, fallbackInline,
-  );
-  const paddingBlockStart = clampLayoutInset(
-    frameRect.top - rendererRect.top, pageHeight, 16,
-  );
-  const paddingBlockEnd = clampLayoutInset(
-    rendererRect.bottom - frameRect.bottom, pageHeight, 16,
-  );
-  const contentWidth = Math.max(160, pageWidth - paddingInlineStart - paddingInlineEnd);
-  const contentHeight = Math.max(120, pageHeight - paddingBlockStart - paddingBlockEnd);
-  const body = layoutDoc.body ?? layoutDoc.documentElement;
-
-  return {
-    blocks,
-    styles,
-    sourceRuns,
-    segments,
-    layout: {
-      pageWidth,
-      pageHeight,
-      contentWidth,
-      contentHeight,
-      paddingInlineStart,
-      paddingInlineEnd,
-      paddingBlockStart,
-      paddingBlockEnd,
-      columnGap: Math.max(16, paddingInlineStart + paddingInlineEnd),
-      defaultStyle: computedTranslationStyle(body),
-    },
-  };
-}
-
-function looksLikeUkrainian(blocks: ReaderTranslationBlock[]): boolean {
-  const text = blocks.map((block) => block.text).join(' ');
-  const cyrillic = text.match(/[А-Яа-яІіЇїЄєҐґЁёЫыЭэЪъ]/g)?.length ?? 0;
-  if (cyrillic < 40) return false;
-  const ukrainianLetters = text.match(/[ІіЇїЄєҐґ]/g)?.length ?? 0;
-  const russianExclusive = text.match(/[ЁёЫыЭэЪъ]/g)?.length ?? 0;
-  const words = text.toLowerCase().match(/[а-яіїєґ']+/g) ?? [];
-  const ukrainianWords = new Set(['і', 'та', 'що', 'це', 'як', 'для', 'який', 'яка', 'які', 'бути', 'від', 'після']);
-  const wordHits = words.filter((word) => ukrainianWords.has(word)).length;
-  return (ukrainianLetters >= 3 && ukrainianLetters >= russianExclusive * 2 + 1)
-    || (wordHits >= 4 && russianExclusive === 0);
-}
-
-function sourceAlreadyMatchesTarget(
-  settings: ReaderSettings,
-  bookLanguage: string,
-  blocks?: ReaderTranslationBlock[],
-): boolean {
-  const target = normalizeLanguageCode(settings.translationTargetLanguage);
-  const configuredSource = normalizeLanguageCode(settings.translationSourceLanguage);
-  if (!target) return false;
-  if (configuredSource && configuredSource !== 'auto') return configuredSource === target;
-  if (bookLanguage && bookLanguage === target) return true;
-  return target === 'uk' && !!blocks?.length && looksLikeUkrainian(blocks);
-}
-
-function translationProfileRevision(profile: ReaderTranslationProfile | null | undefined): string {
-  if (!profile) return '';
-  return JSON.stringify({
-    updatedAt: profile.updated_at,
-    baseUrl: profile.base_url,
-    endpointPath: profile.endpoint_path,
-    model: profile.model,
-    temperature: profile.temperature,
-    maxOutputTokens: profile.max_output_tokens,
-    jsonMode: profile.json_mode,
-  });
-}
-
-function translationPageKey(
-  settings: ReaderSettings,
-  blocks: ReaderTranslationBlock[],
-  profileRevision: string,
-): string {
-  return JSON.stringify({
-    profile: settings.translationProfileId,
-    profileRevision,
-    source: settings.translationSourceLanguage,
-    target: settings.translationTargetLanguage,
-    mode: settings.translationMode,
-    prompt: settings.translationPrompt,
-    blocks: blocks.map((block) => [block.id, block.text, block.runs]),
-  });
-}
-
-function translationSourcePageId(
-  renderer: FoliateRenderer | undefined,
-  pageOffset = 0,
-): string | null {
-  if (!renderer || !canExtractTranslationPageOffset(renderer, pageOffset)) return null;
-  const contentIndex = [...(renderer.getContents?.() ?? [])]
-    .sort((left, right) => left.index - right.index)[0]?.index;
-  if (!Number.isFinite(contentIndex)) return null;
-  const flow = renderer.getAttribute('flow') === 'scrolled' ? 'scrolled' : 'paginated';
-  if (flow === 'paginated') {
-    const page = Number(renderer.page);
-    return Number.isFinite(page) ? `${contentIndex}:${flow}:${page + pageOffset}` : null;
-  }
-  const size = Number(renderer.size);
-  const start = Number(renderer.start);
-  if (!Number.isFinite(size) || size <= 0 || !Number.isFinite(start)) return null;
-  return `${contentIndex}:${flow}:${Math.round(start + pageOffset * size)}`;
-}
-
-function translationPageCacheKey(
-  settings: ReaderSettings,
-  profileRevision: string,
-  pageId: string | null,
-): string | null {
-  if (!pageId) return null;
-  return JSON.stringify({
-    pageId,
-    profile: settings.translationProfileId,
-    profileRevision,
-    source: settings.translationSourceLanguage,
-    target: settings.translationTargetLanguage,
-    mode: settings.translationMode,
-    prompt: settings.translationPrompt,
-    flow: settings.flow,
-    spread: settings.spread,
-    font: settings.font,
-    fontSize: settings.fontSize,
-    lineHeight: settings.lineHeight,
-    margin: settings.margin,
-    maxColumnCount: settings.maxColumnCount,
-    maxInlineSize: settings.maxInlineSize,
-  });
-}
-
-function mergeSentenceCarry(carry: string, pageStart: string): string {
-  const prefix = carry.replace(/\s+/g, ' ').trim();
-  const current = pageStart.replace(/\s+/g, ' ').trim();
-  if (!prefix) return current;
-  if (!current) return prefix;
-  const lowerPrefix = prefix.toLocaleLowerCase();
-  const lowerCurrent = current.toLocaleLowerCase();
-  if (lowerCurrent.startsWith(lowerPrefix)) return current;
-  if (lowerPrefix.endsWith(lowerCurrent)) return prefix;
-
-  const prefixWords = prefix.split(' ');
-  const currentWords = current.split(' ');
-  const normalizeWord = (word: string) => word.toLocaleLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-  let overlap = 0;
-  for (let count = Math.min(32, prefixWords.length, currentWords.length); count >= 2; count -= 1) {
-    const left = prefixWords.slice(-count).map(normalizeWord);
-    const right = currentWords.slice(0, count).map(normalizeWord);
-    if (left.every((word, index) => word && word === right[index])) {
-      overlap = count;
-      break;
-    }
-  }
-  return `${prefix} ${currentWords.slice(overlap).join(' ')}`.trim();
-}
-
-function applySentenceCarry(
-  blocks: ReaderTranslationBlock[],
-  carry?: TranslationSentenceCarry,
-): ReaderTranslationBlock[] {
-  if (!carry) return blocks;
-  const index = blocks.findIndex((block) => block.id === carry.blockId);
-  if (index < 0) return blocks;
-  return blocks.map((block, blockIndex) => blockIndex === index ? {
-    id: block.id,
-    tag: block.tag,
-    text: mergeSentenceCarry(carry.text, block.text),
-  } : block);
-}
-
-function splitTrailingSentenceForNext(
-  blocks: ReaderTranslationBlock[],
-  nextBlocks: ReaderTranslationBlock[],
-): { blocks: ReaderTranslationBlock[]; carry?: TranslationSentenceCarry } {
-  const last = blocks[blocks.length - 1];
-  const next = nextBlocks[0];
-  if (!last || !next || last.id !== next.id
-      || !['p', 'li', 'blockquote'].includes(last.tag)) return { blocks };
-  const text = last.text.replace(/\s+/g, ' ').trim();
-  if (!text || /[.!?…]["'’”»)\]}]*$/u.test(text)) return { blocks };
-
-  const boundary = /[.!?…]["'’”»)\]}]*(?:\s+|$)/gu;
-  let completedEnd = 0;
-  for (const match of text.matchAll(boundary)) {
-    completedEnd = (match.index ?? 0) + match[0].length;
-  }
-  const completed = text.slice(0, completedEnd).trimEnd();
-  const trailing = text.slice(completedEnd).trim();
-  if (!completed || trailing.length < 8 || !/[\p{L}\p{N}]/u.test(trailing)) return { blocks };
-
-  return {
-    blocks: blocks.map((block) => block.id === last.id ? {
-      id: block.id,
-      tag: block.tag,
-      text: completed,
-    } : block),
-    carry: { blockId: last.id, text: trailing },
-  };
-}
-
-function alignTranslatedBlocks(
-  sourceBlocks: ReaderTranslationBlock[],
-  translatedBlocks: ReaderTranslationBlock[],
-): ReaderTranslationBlock[] {
-  const translatedById = new Map(translatedBlocks.map((block) => [block.id, block]));
-  return sourceBlocks.map((source, index) => {
-    const translated = translatedById.get(source.id) ?? translatedBlocks[index];
-    return translated ? { ...translated, id: source.id, tag: source.tag } : source;
-  });
-}
-
-function translationRequestBlocks(
-  mode: ReaderSettings['translationMode'],
-  blocks: ReaderTranslationBlock[],
-): ReaderTranslationBlock[] {
-  if (mode === 'structured') return blocks;
-  return [{
-    id: '__page__',
-    tag: 'p',
-    text: blocks.map((block) => block.text.trim()).filter(Boolean).join('\n\n'),
-  }];
-}
-
-function simpleTranslationParts(
-  sourceBlocks: ReaderTranslationBlock[],
-  translatedText: string,
-): string[] {
-  const text = translatedText.replace(/\r\n?/g, '\n').trim();
-  if (sourceBlocks.length <= 1) return [text];
-  const paragraphs = text.split(/\n\s*\n+/).map((part) => part.trim()).filter(Boolean);
-  if (paragraphs.length === sourceBlocks.length) return paragraphs;
-
-  const weights = sourceBlocks.map((block) => Math.max(1, block.text.trim().length));
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  const result: string[] = [];
-  let cursor = 0;
-  let cumulativeWeight = 0;
-  for (let index = 0; index < sourceBlocks.length - 1; index += 1) {
-    cumulativeWeight += weights[index];
-    const remainingBlocks = sourceBlocks.length - index - 1;
-    const minimumEnd = Math.min(text.length, cursor + 1);
-    const maximumEnd = Math.max(minimumEnd, text.length - remainingBlocks);
-    const target = Math.max(minimumEnd, Math.min(
-      maximumEnd, Math.round(text.length * cumulativeWeight / totalWeight),
-    ));
-    const forward = text.slice(target, Math.min(maximumEnd, target + 120)).search(/\s/);
-    const backwardMatch = text.slice(Math.max(minimumEnd, target - 120), target).match(/\s(?=\S*$)/);
-    const backward = backwardMatch?.index;
-    const backwardStart = Math.max(minimumEnd, target - 120);
-    const boundary = forward >= 0
-      ? target + forward
-      : backward !== undefined
-        ? backwardStart + backward
-        : target;
-    result.push(text.slice(cursor, boundary).trim());
-    cursor = boundary;
-  }
-  result.push(text.slice(cursor).trim());
-  return result;
-}
-
-function translationResponseForMode(
-  mode: ReaderSettings['translationMode'],
-  sourceBlocks: ReaderTranslationBlock[],
-  response: ReaderTranslationResponse,
-): ReaderTranslationResponse {
-  if (mode === 'structured' || response.skipped && response.blocks.length === sourceBlocks.length) {
-    return response;
-  }
-  const translatedText = response.blocks.map((block) => block.text).join('\n\n');
-  const parts = simpleTranslationParts(sourceBlocks, translatedText);
-  return {
-    ...response,
-    blocks: sourceBlocks.map((block, index) => ({
-      id: block.id,
-      tag: block.tag,
-      text: parts[index] || block.text,
-    })),
-  };
-}
-
-function safeTranslationHref(value?: string): string | undefined {
-  if (!value) return undefined;
-  try {
-    const url = new URL(value, window.location.href);
-    return ['http:', 'https:', 'mailto:', 'tel:', 'blob:'].includes(url.protocol)
-      ? url.href
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function translatedInlineContent(block: StyledTranslationBlock): ReactNode {
-  const sourceRuns = block.sourceRuns;
-  const translatedRuns = block.runs;
-  if (!sourceRuns?.length || !translatedRuns?.length) return block.text;
-  const translatedById = new Map(translatedRuns.map((run) => [run.id, run.text]));
-  return sourceRuns.map((sourceRun) => {
-    const translatedText = translatedById.get(sourceRun.id) ?? sourceRun.text;
-    let node: ReactNode = translatedText;
-    const formattingMarks = (sourceRun.marks ?? []).filter((mark) => mark !== 'link');
-    for (const mark of [...formattingMarks].reverse()) {
-      node = createElement(mark, undefined, node);
-    }
-    if (sourceRun.marks?.includes('link')) {
-      const href = safeTranslationHref(sourceRun.href);
-      node = href
-        ? createElement('a', { href, target: '_blank', rel: 'noopener noreferrer' }, node)
-        : createElement('span', { className: styles.translationLink }, node);
-    }
-    const children: ReactNode[] = [];
-    for (let index = 0; index < (sourceRun.break_before ?? 0); index += 1) {
-      children.push(createElement('br', { key: `${sourceRun.id}-br${index}` }));
-    }
-    children.push(node);
-    return createElement(Fragment, { key: sourceRun.id }, ...children);
-  });
-}
-
-function formatLanguageMap(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object') {
-    const entries = Object.values(value as Record<string, unknown>);
-    return entries.find((item): item is string => typeof item === 'string') ?? '';
-  }
-  return '';
-}
-
-function flattenToc(items: TocItem[] = [], depth = 0): Array<TocItem & { depth: number }> {
-  return items.flatMap((item) => [
-    { ...item, depth },
-    ...flattenToc(item.subitems ?? [], depth + 1),
-  ]);
-}
-
-function excerptText(excerpt: SearchExcerpt): string {
-  return `${excerpt.pre}${excerpt.match}${excerpt.post}`;
-}
-
-function fileName(format: string): string {
-  const extension = format === 'KEPUB' ? 'epub' : format.toLowerCase();
-  return `book.${extension}`;
-}
-
-function readerCss(settings: ReaderSettings, compactViewport = false): string {
-  const theme = THEME[settings.theme];
-  const compactReflow = compactViewport ? `
-    html {
-      inline-size: 100% !important;
-      min-inline-size: 0 !important;
-      max-inline-size: 100% !important;
-      overflow-x: hidden !important;
-      box-sizing: border-box !important;
-    }
-    body {
-      inline-size: auto !important;
-      width: auto !important;
-      min-inline-size: 0 !important;
-      min-width: 0 !important;
-      max-inline-size: 100% !important;
-      max-width: 100% !important;
-      margin-inline: 0 !important;
-      overflow-x: hidden !important;
-      box-sizing: border-box !important;
-    }
-    body * {
-      min-inline-size: 0 !important;
-      min-width: 0 !important;
-      max-inline-size: 100% !important;
-      max-width: 100% !important;
-      box-sizing: border-box !important;
-    }
-    h1, h2, h3, h4, h5, h6, p, pre, code {
-      overflow-wrap: anywhere !important;
-    }
-    pre, code { white-space: pre-wrap !important; }
-    table { inline-size: 100% !important; table-layout: fixed !important; }
-  ` : '';
-  const textAlignment = settings.justifyText
-    ? 'body, p, li, blockquote { text-align: justify !important; text-align-last: auto !important; }'
-    : 'body { text-align: left !important; }';
-  return `
-    :root { color-scheme: ${settings.theme === 'lightTheme' || settings.theme === 'sepiaTheme' ? 'light' : 'dark'}; }
-    html, body { background: ${theme.background} !important; color: ${theme.text} !important; }
-    body { font-family: ${FONT_FAMILY[settings.font]} !important; font-size: ${settings.fontSize}% !important;
-      line-height: ${settings.lineHeight / 100} !important; }
-    ${textAlignment}
-    a { color: ${theme.link} !important; }
-    img, svg, video { max-width: 100% !important; }
-    ${compactReflow}
-    ::selection { background: rgba(255, 214, 64, .55); }
-  `;
-}
 export function Reader({ id, format }: { id: string; format?: string }) {
   const t = useT();
   const bookQuery = useBook(id);
@@ -1126,16 +84,15 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const deleteBookmark = useDeleteReaderBookmark(id, fmt);
 
   const { schedule: schedulePosition, saveError, savedPositionFraction } = useReadingPositionSaver(id, fmt, 450);
+  const { movementRef: readingMovementRef, markReadingMovement, resetReadingMovement } = useReadingMovement();
 
+  const shellRef = useRef<HTMLElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
   const searchRunRef = useRef(0);
   const annotationsRef = useRef<Map<string, FoliateAnnotation>>(new Map());
   const currentRef = useRef<FoliateLocation>({ fraction: 0 });
-  // Foliate emits relocate events during initial layout, anchor restore, font reflow,
-  // and teardown. Persist only after an explicit user reading/navigation action.
-  const readingMovementRef = useRef(false);
   const settingsRef = useRef<ReaderSettings | null>(null);
   const wheelDeltaRef = useRef(0);
   const wheelDirectionRef = useRef(0);
@@ -1165,6 +122,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const pendingSelectionRangeRef = useRef<{ range: Range; doc: Document } | null>(null);
   const inlineTranslationPatchesRef = useRef<InlineTranslationPatch[]>([]);
 
+  const { fullscreenSupported, isFullscreen, toggleFullscreen } = useReaderFullscreen(shellRef);
+
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReaderPanel>(null);
@@ -1181,7 +140,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [pendingSelection, setPendingSelection] = useState<PendingReaderSelection | null>(null);
   const [annotations, setAnnotations] = useState<FoliateAnnotation[]>([]);
-  const [selectedAnnotation, setSelectedAnnotation] = useState<FoliateAnnotation | null>(null);
+  const [annotationEditor, setAnnotationEditor] = useState<AnnotationEditorState | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [translationBlocks, setTranslationBlocks] = useState<StyledTranslationBlock[]>([]);
   const [translationSegments, setTranslationSegments] = useState<TranslationContentSegment[]>([]);
@@ -1194,6 +153,23 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [translationSkipped, setTranslationSkipped] = useState(false);
   const [selectionTranslationLoading, setSelectionTranslationLoading] = useState(false);
   const [selectionTranslationError, setSelectionTranslationError] = useState<string | null>(null);
+
+  const closePanel = useCallback(() => setPanel(null), []);
+  const closeAnnotationEditor = useCallback(() => setAnnotationEditor(null), []);
+
+  const openEditAnnotation = useCallback((annotation: FoliateAnnotation) => {
+    if (annotation.unanchored) {
+      setAnnotationEditor({
+        mode: 'standalone', annotation, color: 'yellow',
+        note: annotation.note ?? '', focusNote: true,
+      });
+      return;
+    }
+    setAnnotationEditor({
+      mode: 'edit', annotation, color: annotationColor(annotation.color),
+      note: annotation.note ?? '', focusNote: true,
+    });
+  }, []);
 
   const activeTranslationProfile = useMemo(() => (
     translationProfilesQuery.data?.profiles.find(
@@ -1260,7 +236,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       compactViewport || next.spread === 'nonespread' ? 1 : next.maxColumnCount,
     ));
     renderer.toggleAttribute('animated', next.animated && next.flow === 'paginated');
-    renderer.setAttribute('background', THEME[next.theme].background);
+    renderer.setAttribute('background', READER_THEME[next.theme].background);
     renderer.setStyles?.(readerCss(next, compactViewport));
   }, []);
 
@@ -1579,10 +555,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     });
     return true;
   }, [navigate, showTranslationPage, t]);
-
-  const markReadingMovement = useCallback(() => {
-    readingMovementRef.current = true;
-  }, []);
 
   const navigateReader = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
     markReadingMovement();
@@ -1978,12 +950,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
     let cancelled = false;
     let restoringInitialPosition = true;
-    readingMovementRef.current = false;
+    resetReadingMovement();
     const host = hostRef.current;
-    const view = document.createElement('foliate-view') as FoliateView;
-    view.className = styles.foliateView;
+    const view = createFoliateView(styles.foliateView);
     viewRef.current = view;
     host.replaceChildren(view);
+    annotationsRef.current.clear();
+    setAnnotations([]);
+    setAnnotationEditor(null);
     setReady(false);
     setError(null);
     setBookLanguage('');
@@ -2049,7 +1023,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       doc.addEventListener('touchend', () => scheduleSelectionRead(false, 120), { passive: true });
       doc.addEventListener('contextmenu', () => scheduleSelectionRead(false, 120));
       doc.addEventListener('selectionchange', () => scheduleSelectionRead(false, 80));
-      const armMovement = () => { readingMovementRef.current = true; };
+      const armMovement = markReadingMovement;
       const armPointerDrag = (event: PointerEvent) => {
         if (event.pointerType === 'touch' || event.buttons !== 0) armMovement();
       };
@@ -2074,12 +1048,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         draw: (fn: unknown, options: unknown) => void;
         annotation: FoliateAnnotation;
       }>).detail;
-      draw(Overlayer.highlight, { color: annotation.color ?? 'yellow' });
+      draw(drawFoliateHighlight, { color: annotation.color ?? 'yellow', hasNote: !!annotation.note });
     };
     const onShowAnnotation = (event: Event) => {
       const value = (event as CustomEvent<{ value: string }>).detail.value;
-      setSelectedAnnotation(annotationsRef.current.get(value) ?? null);
-      setPanel('notes');
+      const annotation = annotationsRef.current.get(value);
+      if (annotation) openEditAnnotation(annotation);
     };
     const redrawAnnotations = () => {
       for (const annotation of annotationsRef.current.values()) {
@@ -2096,13 +1070,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     const open = async () => {
       try {
         const formatName = selectedFormat.format.toUpperCase();
+        const annotationPromise = apiGet<{ annotations: ServerAnnotation[] }>(
+          `/annotations/${id}/data.json?format=${encodeURIComponent(fmt)}`,
+        ).catch(() => ({ annotations: [] }));
         const response = await fetch(resourceUrl(`/show/${id}/${formatName.toLowerCase()}`), {
           credentials: 'include',
         });
         if (!response.ok) throw new Error(t('Could not load the book file ({status})', { status: response.status }));
         const data = await response.arrayBuffer();
         if (cancelled) return;
-        await view.open(new File([data], fileName(formatName), { type: MIME[formatName] ?? '' }));
+        await view.open(new File([data], readerFileName(formatName), { type: readerMime(formatName) }));
         if (cancelled) return;
         applySettings(initialSettings);
         setBookRtl(view.book?.dir === 'rtl');
@@ -2110,22 +1087,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setTitle(formatLanguageMap(view.book?.metadata?.title) || bookQuery.data?.title || t('Untitled'));
         setToc(flattenToc(view.book?.toc ?? []));
         setSectionFractions(view.getSectionFractions());
-        const annotationPayload = await apiGet<{ annotations: ServerAnnotation[] }>(
-          `/annotations/${id}/data.json?format=${encodeURIComponent(fmt)}`,
-        ).catch(() => ({ annotations: [] }));
-        const loaded = annotationPayload.annotations.map((row): FoliateAnnotation => {
-          const unanchored = row.position_type === 'unanchored';
-          return {
-            value: row.cfi_range ?? `unanchored:${row.annotation_id}`,
-            color: row.highlight_color || 'yellow',
-            note: row.note_text,
-            id: row.annotation_id,
-            text: row.highlighted_text,
-            unanchored,
-          };
-        });
-        annotationsRef.current = new Map(loaded.map((item) => [item.value, item]));
-        setAnnotations(loaded);
+
 
         const savedLocator = positionQuery.data?.bookmark;
         const legacyFb2Fraction = fmt === 'fb2' ? parseFb2ScrollBookmark(savedLocator) : null;
@@ -2156,9 +1118,24 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         }
         if (cancelled) return;
         restoringInitialPosition = false;
-        readingMovementRef.current = false;
-        redrawAnnotations();
+        resetReadingMovement();
         setReady(true);
+        void annotationPromise.then((annotationPayload) => {
+          if (cancelled) return;
+          const loaded = annotationPayload.annotations.map((row): FoliateAnnotation => {
+            const unanchored = row.position_type === 'unanchored';
+            return {
+              value: row.cfi_range ?? `unanchored:${row.annotation_id}`,
+              color: annotationColor(row.highlight_color),
+              note: row.note_text, id: row.annotation_id, text: row.highlighted_text, unanchored,
+            };
+          });
+          for (const annotation of loaded) annotationsRef.current.set(annotation.value, annotation);
+          setAnnotations(Array.from(annotationsRef.current.values()));
+          for (const annotation of loaded) {
+            if (!annotation.unanchored) void view.addAnnotation(annotation);
+          }
+        });
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : t('Could not open this book.'));
       }
@@ -2184,7 +1161,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     positionQuery.data?.position_section,
     positionQuery.isFetched, selectedFormat,
     settingsQuery.data, schedulePosition, dismissSelection, handleReaderWheel,
-    restoreInlineTranslations, t]);
+    markReadingMovement, openEditAnnotation, resetReadingMovement, restoreInlineTranslations, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     if (isReaderTypingTarget(event.target)) return;
@@ -2252,55 +1229,99 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (run === searchRunRef.current) setSearching(false);
     }
   };
-  const createHighlight = async (withNote = false) => {
-    const selection = pendingSelection;
-    const view = viewRef.current;
-    if (!selection || !view) return;
-    const note = withNote ? window.prompt(t('Note'), '') : null;
-    if (withNote && note === null) return;
-    const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
-      cfi_range: selection.value,
-      highlighted_text: selection.text,
-      highlight_color: 'yellow',
-      note_text: note || null,
-      format: fmt.toUpperCase(),
-    });
-    const annotation: FoliateAnnotation = {
-      value: row.cfi_range ?? selection.value,
-      color: row.highlight_color || 'yellow',
-      note: row.note_text,
-      id: row.annotation_id,
-      text: row.highlighted_text,
-    };
+  const upsertAnnotation = useCallback((annotation: FoliateAnnotation) => {
     annotationsRef.current.set(annotation.value, annotation);
     setAnnotations(Array.from(annotationsRef.current.values()));
-    await view.addAnnotation(annotation);
-    view.deselect();
-    setPendingSelection(null);
-  };
+  }, []);
 
-  const createStandaloneNote = async () => {
-    const raw = window.prompt(t('Write a note'), '');
-    if (raw === null) return;
-    const note = raw.trim();
-    if (!note) return;
-    const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
-      position_type: 'unanchored',
-      note_text: note,
-      chapter_progress: currentRef.current.fraction ?? 0,
-      format: fmt.toUpperCase(),
+  const openCreateHighlight = useCallback((focusNote: boolean) => {
+    if (!pendingSelection) return;
+    setAnnotationEditor({
+      mode: 'create',
+      selection: { value: pendingSelection.value, text: pendingSelection.text },
+      color: 'yellow', note: '', focusNote,
     });
-    const annotation: FoliateAnnotation = {
-      value: `unanchored:${row.annotation_id}`,
-      color: row.highlight_color || 'yellow',
-      note: row.note_text ?? note,
-      id: row.annotation_id,
-      text: null,
-      unanchored: true,
-    };
-    annotationsRef.current.set(annotation.value, annotation);
+  }, [pendingSelection]);
+
+  const openStandaloneNote = useCallback(() => {
+    setAnnotationEditor({ mode: 'standalone', color: 'yellow', note: '', focusNote: true });
+  }, []);
+
+
+
+  const saveAnnotationEditor = useCallback(async (color: HighlightColor, note: string) => {
+    const editor = annotationEditor;
+    if (!editor) return;
+    if (editor.mode === 'create') {
+      const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
+        cfi_range: editor.selection.value,
+        highlighted_text: editor.selection.text,
+        highlight_color: color,
+        note_text: note || null,
+        format: fmt.toUpperCase(),
+      });
+      const annotation: FoliateAnnotation = {
+        value: row.cfi_range ?? editor.selection.value,
+        color: annotationColor(row.highlight_color ?? color),
+        note: row.note_text,
+        id: row.annotation_id,
+        text: row.highlighted_text,
+      };
+      upsertAnnotation(annotation);
+      await viewRef.current?.addAnnotation(annotation);
+      dismissSelection();
+    } else if (editor.mode === 'standalone') {
+      const existing = editor.annotation;
+      if (existing?.id) {
+        const row = await apiPatch<ServerAnnotation>(
+          `/annotations/${id}/${encodeURIComponent(existing.id)}`,
+          { note_text: note || null, format: fmt.toUpperCase() },
+        );
+        upsertAnnotation({ ...existing, note: row.note_text });
+      } else {
+        const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
+          position_type: 'unanchored',
+          note_text: note,
+          chapter_progress: currentRef.current.fraction ?? 0,
+          format: fmt.toUpperCase(),
+        });
+        upsertAnnotation({
+          value: `unanchored:${row.annotation_id}`,
+          color: 'yellow', note: row.note_text ?? note,
+          id: row.annotation_id, text: null, unanchored: true,
+        });
+      }
+    } else {
+      const existing = editor.annotation;
+      if (!existing.id) return;
+      const row = await apiPatch<ServerAnnotation>(
+        `/annotations/${id}/${encodeURIComponent(existing.id)}`,
+        { highlight_color: color, note_text: note || null, format: fmt.toUpperCase() },
+      );
+      const updated: FoliateAnnotation = {
+        ...existing,
+        color: annotationColor(row.highlight_color ?? color),
+        note: row.note_text,
+      };
+      await viewRef.current?.deleteAnnotation(existing);
+      upsertAnnotation(updated);
+      await viewRef.current?.addAnnotation(updated);
+    }
+    setAnnotationEditor(null);
+  }, [annotationEditor, dismissSelection, fmt, id, upsertAnnotation]);
+
+  const removeAnnotation = useCallback(async (annotation: FoliateAnnotation) => {
+    if (!annotation.id) return;
+    await apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}?format=${encodeURIComponent(fmt)}`);
+    annotationsRef.current.delete(annotation.value);
     setAnnotations(Array.from(annotationsRef.current.values()));
-  };
+    if (!annotation.unanchored) await viewRef.current?.deleteAnnotation(annotation);
+    setAnnotationEditor((current) => {
+      if (!current || current.mode === 'create') return current;
+      const currentId = current.mode === 'edit' ? current.annotation.id : current.annotation?.id;
+      return currentId === annotation.id ? null : current;
+    });
+  }, [fmt, id]);
 
   const openSelectedTextInChatGpt = () => {
     const text = pendingSelection?.text.trim();
@@ -2370,28 +1391,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     }
   };
 
-  const removeAnnotation = async (annotation: FoliateAnnotation) => {
-    if (!annotation.id) return;
-    await apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}?format=${encodeURIComponent(fmt)}`);
-    annotationsRef.current.delete(annotation.value);
-    setAnnotations(Array.from(annotationsRef.current.values()));
-    if (!annotation.unanchored) await viewRef.current?.deleteAnnotation(annotation);
-    if (selectedAnnotation?.id === annotation.id) setSelectedAnnotation(null);
-  };
-
-  const updateAnnotationNote = async (annotation: FoliateAnnotation) => {
-    if (!annotation.id) return;
-    const note = window.prompt(t('Note'), annotation.note ?? '');
-    if (note === null) return;
-    const row = await apiPatch<ServerAnnotation>(
-      `/annotations/${id}/${encodeURIComponent(annotation.id)}`,
-      { note_text: note || null, format: fmt.toUpperCase() },
-    );
-    const updated = { ...annotation, note: row.note_text };
-    annotationsRef.current.set(updated.value, updated);
-    setAnnotations(Array.from(annotationsRef.current.values()));
-    setSelectedAnnotation(updated);
-  };
   const addReaderBookmark = () => {
     const locator = currentRef.current.cfi;
     if (!locator) return;
@@ -2430,11 +1429,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     synth.speak(utterance);
   };
 
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void hostRef.current?.parentElement?.requestFullscreen();
-  };
-
   const progress = Math.max(0, Math.min(1, location.fraction ?? 0));
   const serverProgress = Number(savedPositionFraction ?? positionQuery.data?.position_fraction);
   const canonicalProgress = Number.isFinite(serverProgress)
@@ -2450,7 +1444,6 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     && !translationSkipped && !!translationLayout && translationSegments.length > 0;
   const translationActivity = translationRequested && !translationError
     && (translationLoading || translationPreloading);
-  const translatedBlockById = new Map(translationBlocks.map((block) => [block.id, block]));
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
   const loading = bookQuery.isLoading || settingsQuery.isLoading || positionQuery.isLoading;
 
@@ -2458,107 +1451,37 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   if (bookQuery.error) return <EmptyState message={t('Could not load the book.')} />;
   if (!selectedFormat) return <EmptyState message={t('No supported reader format is available.')} />;
   return (
-    <main className={`${styles.reader} ${styles[settings?.theme ?? 'lightTheme']}`}>
-      <header className={styles.topBar}>
-        <Link href={`/book/${id}`} className={styles.iconButton} title={t('Close reader')}>
-          <X size={20} aria-hidden="true" />
-        </Link>
-        <div className={styles.bookIdentity}>
-          <strong>{title || bookQuery.data?.title}</strong>
-          <span>{selectedFormat.format.toUpperCase()}</span>
-        </div>
-        <nav className={styles.toolbar} aria-label={t('Reader tools')}>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'toc' ? null : 'toc')}
-            title={t('Table of contents')} aria-pressed={panel === 'toc'}>
-            <List size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'search' ? null : 'search')}
-            title={t('Search in book')} aria-pressed={panel === 'search'}>
-            <Search size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={addReaderBookmark}
-            title={t('Add bookmark')} disabled={!location.cfi || createBookmark.isPending}>
-            <Bookmark size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'bookmarks' ? null : 'bookmarks')}
-            title={t('Bookmarks')} aria-pressed={panel === 'bookmarks'}>
-            <BookOpen size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'notes' ? null : 'notes')}
-            title={t('Highlights and notes')} aria-pressed={panel === 'notes'}>
-            <StickyNote size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={toggleSpeech}
-            title={speaking ? t('Stop reading aloud') : t('Read aloud')} aria-pressed={speaking}>
-            {speaking ? <Square size={18} aria-hidden="true" /> : <Volume2 size={19} aria-hidden="true" />}
-          </button>
-          {settings?.translationProfileId && (
-            <div className={styles.translationToggle} role="group" aria-label={t('Page language view')}>
-              <button type="button" className={settings.translationView === 'original' || translationSkipped ? styles.translationToggleActive : ''}
-                onClick={() => updateSettings({ translationView: 'original' })}
-                aria-pressed={settings.translationView === 'original' || translationSkipped}
-                aria-label={t('Original')} title={`${t('Original')} (T)`}>
-                <BookOpen size={16} aria-hidden="true" />
-              </button>
-              <button type="button" className={settings.translationView === 'translated' && !translationSkipped ? styles.translationToggleActive : ''}
-                onClick={() => updateSettings({ translationEnabled: true, translationView: 'translated' })}
-                aria-pressed={settings.translationView === 'translated' && !translationSkipped}
-                aria-busy={translationActivity}
-                data-translation-activity={translationLoading
-                  ? 'translation'
-                  : translationPreloading
-                    ? 'preload'
-                    : 'idle'}
-                aria-label={t('Translation')} title={`${t('Translation')} (T)`}>
-                <span className={`${styles.translationToggleIcon} ${
-                  translationActivity ? styles.translationToggleIconBusy : ''
-                }`}>
-                  <Languages size={16} aria-hidden="true" />
-                </span>
-              </button>
-            </div>
-          )}
-          <button className={styles.iconButton}
-            onClick={() => setPanel(panel === 'translation' ? null : 'translation')}
-            title={t('Page translation')} aria-pressed={panel === 'translation'}>
-            <Languages size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'settings' ? null : 'settings')}
-            title={t('Reader settings')} aria-pressed={panel === 'settings'}>
-            <Settings size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={toggleFullscreen} title={t('Full screen')}>
-            <Maximize size={19} aria-hidden="true" />
-          </button>
-        </nav>
-      </header>
+    <main ref={shellRef} className={`${styles.reader} ${styles[settings?.theme ?? 'lightTheme']}`}>
+      <ReaderToolbar
+        bookId={id} title={title || bookQuery.data?.title || t('Untitled')} format={selectedFormat.format}
+        panel={panel} setPanel={setPanel} canBookmark={!!location.cfi && !createBookmark.isPending}
+        addBookmark={addReaderBookmark} speaking={speaking} toggleSpeech={toggleSpeech}
+        settings={settings} updateSettings={updateSettings}
+        translationSkipped={translationSkipped} translationActivity={translationActivity}
+        translationLoading={translationLoading} translationPreloading={translationPreloading}
+        fullscreenSupported={fullscreenSupported} isFullscreen={isFullscreen} toggleFullscreen={toggleFullscreen}
+      />
 
-      {pendingSelection && (
-        <div className={styles.selectionBar} role="toolbar" aria-label={t('Selected text actions')}>
-          <span>{pendingSelection.text.slice(0, 120)}</span>
-          <button onClick={() => void createHighlight(false)}>
-            <Highlighter size={17} aria-hidden="true" /> {t('Highlight')}
-          </button>
-          <button onClick={() => void createHighlight(true)}>
-            <StickyNote size={17} aria-hidden="true" /> {t('Add note')}
-          </button>
-          <button onClick={() => void translateSelectedText()}
-            disabled={selectionTranslationLoading}>
-            <Languages size={17} aria-hidden="true" /> {t('Translation')}
-          </button>
-          <button onClick={openSelectedTextInChatGpt}
-            title={t('Open selected text in ChatGPT')}
-            aria-label={t('Open selected text in ChatGPT')}>
-            <FontAwesomeIcon icon={faOpenai} className={styles.selectionChatGptIcon} aria-hidden="true" />
-            ChatGPT
-          </button>
-          <button onClick={dismissSelection}>
-            <X size={17} aria-hidden="true" /> {t('Cancel')}
-          </button>
-          {selectionTranslationError && (
-            <span className={styles.selectionError} role="alert">{selectionTranslationError}</span>
-          )}
-        </div>
+      {pendingSelection && <SelectionActions
+        text={pendingSelection.text} openHighlight={openCreateHighlight}
+        translate={() => void translateSelectedText()} translationLoading={selectionTranslationLoading}
+        openChatGpt={openSelectedTextInChatGpt} dismiss={dismissSelection} error={selectionTranslationError}
+      />}
+
+      {annotationEditor && (
+        <AnnotationComposer
+          key={annotationEditor.mode === 'edit' ? annotationEditor.annotation.id :
+            annotationEditor.mode === 'standalone' ? annotationEditor.annotation?.id ?? 'new-note' :
+              `new-${annotationEditor.selection.value}`}
+          state={annotationEditor}
+          onClose={closeAnnotationEditor}
+          onSave={saveAnnotationEditor}
+          onDelete={annotationEditor.mode === 'edit'
+            ? () => removeAnnotation(annotationEditor.annotation)
+            : annotationEditor.mode === 'standalone' && annotationEditor.annotation
+              ? () => removeAnnotation(annotationEditor.annotation!)
+              : undefined}
+        />
       )}
 
       <div className={styles.workspace}>
@@ -2566,30 +1489,30 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           <button
             type="button"
             className={styles.sidePanelBackdrop}
-            onClick={() => setPanel(null)}
+            onClick={closePanel}
             tabIndex={-1}
             aria-label={t('Close')}
             title={t('Close')}
           />
         )}
         {panel && <ReaderSidePanel
-          panel={panel} onClose={() => setPanel(null)} toc={toc}
-          onNavigate={(target) => { markReadingMovement(); restoreInlineTranslations(); dismissSelection(); void viewRef.current?.goTo(target); setPanel(null); }}
+          panel={panel} onClose={closePanel} toc={toc}
+          onNavigate={(target) => { markReadingMovement(); restoreInlineTranslations(); dismissSelection(); void viewRef.current?.goTo(target); closePanel(); }}
           searchText={searchText} setSearchText={setSearchText} runSearch={() => void runSearch()}
           searching={searching} searchProgress={searchProgress} searchResults={searchResults}
           bookmarks={bookmarks} openBookmark={openReaderBookmark}
           deleteBookmark={(bookmarkId) => deleteBookmark.mutate(bookmarkId)}
           annotations={annotations}
-          createStandaloneNote={() => void createStandaloneNote()}
+          createStandaloneNote={openStandaloneNote}
           showAnnotation={(annotation) => {
             if (annotation.unanchored) return;
             markReadingMovement();
             restoreInlineTranslations();
             void viewRef.current?.showAnnotation(annotation);
-            setPanel(null);
+            closePanel();
           }}
+          editAnnotation={openEditAnnotation}
           removeAnnotation={(annotation) => void removeAnnotation(annotation)}
-          updateAnnotationNote={(annotation) => void updateAnnotationNote(annotation)}
           settings={settings} updateSettings={updateSettings}
         />}
         <section
@@ -2622,86 +1545,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             </div>
           )}
           {translationOverlayVisible && settings && translationLayout && (
-            <div
-              ref={translationOverlayRef}
-              className={styles.translationOverlay}
-              data-reader-translation-overlay
-              data-flow={settings.flow}
-              aria-live="polite"
-              style={{
-                background: THEME[settings.theme].background,
-                color: THEME[settings.theme].text,
-              }}
-            >
-              <div
-                className={styles.translationPageShell}
-                style={{
-                  width: `${translationLayout.pageWidth}px`,
-                  height: settings.flow === 'scrolled' ? 'auto' : `${translationLayout.pageHeight}px`,
-                  minHeight: settings.flow === 'scrolled' ? '100%' : undefined,
-                }}
-              >
-                <div className={styles.translationPagerViewport}>
-                  <div
-                    ref={translationPagerContentRef}
-                    className={styles.translationPagerContent}
-                    style={{
-                      left: settings.flow === 'scrolled'
-                        ? 'auto'
-                        : `${translationLayout.paddingInlineStart}px`,
-                      top: settings.flow === 'scrolled'
-                        ? 'auto'
-                        : `${translationLayout.paddingBlockStart}px`,
-                      width: `${translationLayout.contentWidth}px`,
-                      height: settings.flow === 'scrolled'
-                        ? 'auto'
-                        : `${translationLayout.contentHeight}px`,
-                      minHeight: settings.flow === 'scrolled'
-                        ? `${translationLayout.contentHeight}px`
-                        : undefined,
-                      paddingBlock: settings.flow === 'scrolled'
-                        ? `${translationLayout.paddingBlockStart}px ${translationLayout.paddingBlockEnd}px`
-                        : undefined,
-                      columnWidth: settings.flow === 'scrolled'
-                        ? 'auto'
-                        : `${translationLayout.contentWidth}px`,
-                      columnGap: settings.flow === 'scrolled'
-                        ? 'normal'
-                        : `${translationLayout.columnGap}px`,
-                      transform: settings.flow === 'scrolled'
-                        ? 'none'
-                        : `translate3d(${-translationPageIndex * (
-                          translationLayout.contentWidth + translationLayout.columnGap
-                        )}px, 0, 0)`,
-                      ...translationLayout.defaultStyle,
-                    }}
-                  >
-                    {translationSegments.map((segment) => {
-                      if (segment.kind === 'image') {
-                        return <img
-                          key={segment.id}
-                          className={styles.translationImage}
-                          data-source-image-id={segment.id}
-                          src={segment.src}
-                          alt={segment.alt}
-                          title={segment.title}
-                          style={segment.style}
-                          draggable={false}
-                        />;
-                      }
-                      const block = translatedBlockById.get(segment.id);
-                      if (!block) return null;
-                      return createElement(block.tag, {
-                        key: block.id,
-                        className: styles.translationBlock,
-                        'data-source-block-id': block.id,
-                        style: block.style,
-                      }, translatedInlineContent(block));
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <TranslationOverlay settings={settings} layout={translationLayout} segments={translationSegments}
+              blocks={translationBlocks} pageIndex={translationPageIndex}
+              overlayRef={translationOverlayRef} pagerContentRef={translationPagerContentRef} />
           )}
 
           {settings?.tapToTurn && settings.flow === 'paginated' && ready && !error && (
@@ -2726,253 +1572,21 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           )}
         </section>
       </div>
-      <footer className={styles.bottomBar}>
-        <button className={styles.pageButton} onClick={() => navigateReaderOrClosePanel('prev')} title={t('Previous page')}>
-          <ChevronLeft size={22} aria-hidden="true" />
-        </button>
-        <div className={styles.progressArea}>
-          <div className={styles.progressMeta}>
-            <span>{location.tocItem?.label || t('Book')}</span>
-            <span>
-              {location.pageItem?.label ? `${t('Page')} ${location.pageItem.label} · ` : ''}
-              {location.location?.current && location.location?.total
-                ? `${t('Location')} ${location.location.current}/${location.location.total} · ` : ''}
-              {percent}%
-            </span>
-          </div>
-          <input className={styles.progressSlider} type="range" min={0} max={1000}
-            value={Math.round(progress * 1000)} list="reader-section-marks"
-            aria-label={t('Reading progress')}
-            onChange={(event) => {
-              const fraction = Number(event.target.value) / 1000;
-              markReadingMovement();
-              restoreInlineTranslations();
-              dismissSelection();
-              setLocation((current) => ({ ...current, fraction }));
-              void viewRef.current?.goToFraction(fraction);
-            }} />
-          <datalist id="reader-section-marks">
-            {sectionFractions.map((fraction) => <option key={fraction} value={Math.round(fraction * 1000)} />)}
-          </datalist>
-        </div>
-        <button className={styles.pageButton} onClick={() => navigateReaderOrClosePanel('next')} title={t('Next page')}>
-          <ChevronRight size={22} aria-hidden="true" />
-        </button>
-      </footer>
+      <ReaderBottomBar location={location} percent={percent} progress={progress}
+        sectionFractions={sectionFractions}
+        previous={() => navigateReaderOrClosePanel('prev')}
+        next={() => navigateReaderOrClosePanel('next')}
+        changeProgress={(fraction) => {
+          markReadingMovement();
+          restoreInlineTranslations();
+          dismissSelection();
+          setLocation((current) => ({ ...current, fraction }));
+          void viewRef.current?.goToFraction(fraction);
+        }}
+      />
       {saveError && <div className={styles.saveError} role="alert">
         {t('Could not save reading position. It will be retried automatically.')}
       </div>}
     </main>
-  );
-}
-type ReaderSidePanelProps = {
-  panel: Exclude<ReaderPanel, null>;
-  onClose: () => void;
-  toc: Array<TocItem & { depth: number }>;
-  onNavigate: (target: string) => void;
-  searchText: string;
-  setSearchText: (value: string) => void;
-  runSearch: () => void;
-  searching: boolean;
-  searchProgress: number;
-  searchResults: SearchResult[];
-  bookmarks: ReaderBookmark[];
-  openBookmark: (bookmark: ReaderBookmark) => void;
-  deleteBookmark: (bookmarkId: string) => void;
-  annotations: FoliateAnnotation[];
-  createStandaloneNote: () => void;
-  showAnnotation: (annotation: FoliateAnnotation) => void;
-  removeAnnotation: (annotation: FoliateAnnotation) => void;
-  updateAnnotationNote: (annotation: FoliateAnnotation) => void;
-  settings: ReaderSettings | null;
-  updateSettings: (patch: Partial<ReaderSettings>) => void;
-};
-
-function ReaderSidePanel(props: ReaderSidePanelProps) {
-  const t = useT();
-  const { panel, onClose } = props;
-  const title = {
-    toc: t('Table of contents'), search: t('Search in book'),
-    bookmarks: t('Bookmarks'), notes: t('Highlights and notes'),
-    settings: t('Reader settings'), translation: t('Translation'),
-  }[panel];
-  return (
-    <aside className={styles.sidePanel} aria-label={title}>
-      <header className={styles.panelHeader}>
-        <h2>{title}</h2>
-        <button className={styles.iconButton} onClick={onClose} title={t('Close')}>
-          <X size={18} aria-hidden="true" />
-        </button>
-      </header>
-
-      {panel === 'toc' && (
-        <div className={styles.panelList}>
-          {props.toc.length === 0 && <p className={styles.muted}>{t('No contents found.')}</p>}
-          {props.toc.map((item, index) => (
-            <button key={`${item.href}-${index}`} className={styles.listButton}
-              style={{ paddingInlineStart: `${12 + item.depth * 16}px` }}
-              disabled={!item.href}
-              onClick={() => item.href && props.onNavigate(item.href)}>
-              {item.label || t('Untitled')}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {panel === 'search' && (
-        <div className={styles.panelBody}>
-          <form className={styles.searchForm} onSubmit={(event) => { event.preventDefault(); props.runSearch(); }}>
-            <input value={props.searchText} onChange={(event) => props.setSearchText(event.target.value)}
-              placeholder={t('Search in book')} aria-label={t('Search in book')} />
-            <button type="submit" disabled={!props.searchText.trim() || props.searching}>{t('Search')}</button>
-          </form>
-          {props.searching && <progress max={1} value={props.searchProgress} />}
-          <div className={styles.panelList}>
-            {props.searchResults.map((result, index) => (
-              <button key={`${result.cfi}-${index}`} className={styles.searchResult}
-                onClick={() => props.onNavigate(result.cfi)}>
-                <strong>{result.label || t('Book')}</strong>
-                <span>{excerptText(result.excerpt)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {panel === 'bookmarks' && (
-        <div className={styles.panelList}>
-          {props.bookmarks.length === 0 && <p className={styles.muted}>{t('No bookmarks yet.')}</p>}
-          {props.bookmarks.map((bookmark) => (
-            <div className={styles.savedItem} key={bookmark.bookmark_id}>
-              <button onClick={() => props.openBookmark(bookmark)}>
-                <strong>{bookmark.chapter || t('Bookmark')}</strong>
-                <span>{formatReadingProgress(bookmark.progression * 100)}%
-                  {bookmark.label ? ` · ${bookmark.label}` : ''}</span>
-              </button>
-              <button className={styles.deleteButton} onClick={() => props.deleteBookmark(bookmark.bookmark_id)}
-                title={t('Delete')}><Trash2 size={16} aria-hidden="true" /></button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {panel === 'notes' && (
-        <div className={styles.panelList}>
-          <button className={styles.annotationNewNote} onClick={props.createStandaloneNote}>
-            <StickyNote size={16} aria-hidden="true" />
-            {t('Write a note')}
-          </button>
-          {props.annotations.length === 0 && <p className={styles.muted}>{t('No highlights or notes yet.')}</p>}
-          {props.annotations.map((annotation) => (
-            <div className={styles.annotationItem} key={annotation.id ?? annotation.value}>
-              {annotation.unanchored ? (
-                <div className={styles.annotationStandaloneBody}
-                  title={t('A note about the book, not tied to a passage')}>
-                  <StickyNote size={14} aria-hidden="true" />
-                  <span className={styles.annotationNote}>{annotation.note}</span>
-                </div>
-              ) : (
-                <button onClick={() => props.showAnnotation(annotation)}>
-                  <span className={styles.annotationText}>{annotation.text || t('Highlight')}</span>
-                  {annotation.note && <span className={styles.annotationNote}>{annotation.note}</span>}
-                </button>
-              )}
-              <div className={styles.itemActions}>
-                <button onClick={() => props.updateAnnotationNote(annotation)}>{t('Note')}</button>
-                <button className={styles.deleteButton} onClick={() => props.removeAnnotation(annotation)}
-                  title={t('Delete')}><Trash2 size={16} aria-hidden="true" /></button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {panel === 'settings' && props.settings && (
-        <ReaderSettingsPanel settings={props.settings} update={props.updateSettings} />
-      )}
-      {panel === 'translation' && props.settings && (
-        <div className={styles.translationPanel}>
-          <ReaderTranslationSettings settings={props.settings} update={props.updateSettings} />
-        </div>
-      )}
-    </aside>
-  );
-}
-function ReaderSettingsPanel({ settings, update }: {
-  settings: ReaderSettings;
-  update: (patch: Partial<ReaderSettings>) => void;
-}) {
-  const t = useT();
-  return (
-    <div className={styles.settingsPanel}>
-      <label>{t('Reading mode')}
-        <select value={settings.flow} onChange={(event) => update({ flow: event.target.value as ReaderSettings['flow'] })}>
-          <option value="paginated">{t('Pages')}</option>
-          <option value="scrolled">{t('Continuous scroll')}</option>
-        </select>
-      </label>
-      <label>{t('Columns')}
-        <select value={settings.spread} onChange={(event) => update({ spread: event.target.value as ReaderSettings['spread'] })}
-          disabled={settings.flow === 'scrolled'}>
-          <option value="nonespread">{t('One column')}</option>
-          <option value="spread">{t('Two columns')}</option>
-        </select>
-      </label>
-      <label>{t('Theme')}
-        <select value={settings.theme} onChange={(event) => update({ theme: event.target.value as ReaderSettings['theme'] })}>
-          <option value="lightTheme">{t('Light')}</option>
-          <option value="sepiaTheme">{t('Sepia')}</option>
-          <option value="darkTheme">{t('Dark')}</option>
-          <option value="blackTheme">{t('Black')}</option>
-        </select>
-      </label>
-      <label>{t('Font')}
-        <select value={settings.font} onChange={(event) => update({ font: event.target.value as ReaderSettings['font'] })}>
-          <option value="default">{t('Publisher / serif')}</option>
-          <option value="Arial">Arial</option>
-          <option value="Yahei">Microsoft YaHei</option>
-          <option value="SimSun">SimSun</option>
-          <option value="KaiTi">KaiTi</option>
-        </select>
-      </label>
-      <label>{t('Font size')} <output>{settings.fontSize}%</output>
-        <input type="range" min={FONT_MIN} max={FONT_MAX} value={settings.fontSize}
-          onChange={(event) => update({ fontSize: Number(event.target.value) })} />
-      </label>
-      <label>{t('Line height')} <output>{(settings.lineHeight / 100).toFixed(1)}</output>
-        <input type="range" min={100} max={220} step={5} value={settings.lineHeight}
-          onChange={(event) => update({ lineHeight: Number(event.target.value) })} />
-      </label>
-      <label>{t('Page margins')} <output>{settings.margin}px</output>
-        <input type="range" min={0} max={80} step={4} value={settings.margin}
-          onChange={(event) => update({ margin: Number(event.target.value) })} />
-      </label>
-      <label>{t('Text width')} <output>{settings.maxInlineSize}px</output>
-        <input type="range" min={420} max={1200} step={20} value={settings.maxInlineSize}
-          onChange={(event) => update({ maxInlineSize: Number(event.target.value) })} />
-      </label>
-      <label className={styles.checkboxLabel}>
-        <input type="checkbox" checked={settings.justifyText}
-          onChange={(event) => update({ justifyText: event.target.checked })} />
-        {t('Justify text')}
-      </label>
-      <label className={styles.checkboxLabel}>
-        <input type="checkbox" checked={settings.animated}
-          onChange={(event) => update({ animated: event.target.checked })} />
-        {t('Animated page turns')}
-      </label>
-      <label className={styles.checkboxLabel}>
-        <input type="checkbox" checked={settings.tapToTurn}
-          onChange={(event) => update({ tapToTurn: event.target.checked })} />
-        {t('Turn pages by clicking the left or right side')}
-      </label>
-      <div className={styles.settingsHint}>
-        <AlignJustify size={18} aria-hidden="true" />
-        <span>{t('Reader settings are saved to your account and follow you across devices.')}</span>
-      </div>
-      <div className={styles.settingsHint}>
-        <Columns2 size={18} aria-hidden="true" />
-        <span>{t('Page count changes with font, margins, and window size; progress remains stable.')}</span>
-      </div>
-    </div>
   );
 }

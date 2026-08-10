@@ -12643,6 +12643,34 @@ msgstr "sincronizar andeis seleccionados con Kobo"
 msgid "Show Read/Unread Section"
 msgstr "Mostrar selección lidos/non lidos"
 
+#: cps/spa_strings.py
+msgid "Could not delete annotation."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not save annotation."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Delete note"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Edit highlight"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Exit full screen"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Note (optional)"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Remove highlight"
+msgstr ""
+
 #~ msgid "(no text captured)"
 #~ msgstr ""
 

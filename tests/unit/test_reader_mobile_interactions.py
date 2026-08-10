@@ -11,7 +11,7 @@ CSS = (ROOT / "frontend/src/pages/Reader.module.css").read_text()
 
 def test_open_side_panel_intercepts_outside_page_turn_taps():
     assert "styles.sidePanelBackdrop" in READER
-    assert "onClick={() => setPanel(null)}" in READER
+    assert "onClick={closePanel}" in READER
     assert "navigateReaderOrClosePanel('left')" in READER
     assert "navigateReaderOrClosePanel('right')" in READER
     assert ".sidePanelBackdrop" in CSS

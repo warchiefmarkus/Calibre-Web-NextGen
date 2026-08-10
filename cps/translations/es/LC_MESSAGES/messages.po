@@ -13429,6 +13429,34 @@ msgstr "Exponer las estanterías seleccionadas en OPDS"
 msgid "Show Read/Unread Section"
 msgstr "Mostrar Selección Leidos/No Leidos"
 
+#: cps/spa_strings.py
+msgid "Could not delete annotation."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not save annotation."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Delete note"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Edit highlight"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Exit full screen"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Note (optional)"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Remove highlight"
+msgstr "Quitar subrayado"
+
 #~ msgid "(no text captured)"
 #~ msgstr ""
 

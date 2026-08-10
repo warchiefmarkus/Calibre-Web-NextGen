@@ -10,7 +10,7 @@
   z-index: 1000;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 54px minmax(0, 1fr) 64px;
+  grid-template-rows: 66px minmax(0, 1fr) 64px;
   overflow: hidden;
   background: var(--reader-bg);
   color: var(--reader-text);
@@ -92,8 +92,8 @@
 .pageButton {
   display: inline-grid;
   place-items: center;
-  min-width: 38px;
-  min-height: 38px;
+  min-width: 44px;
+  min-height: 44px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -123,7 +123,7 @@
 
 .sidePanelBackdrop {
   position: fixed;
-  inset: 54px 0 0;
+  inset: 66px 0 0;
   z-index: 1001;
   border: 0;
   padding: 0;
@@ -200,7 +200,7 @@
 
 .translationToggle {
   display: inline-grid;
-  grid-template-columns: repeat(2, 32px);
+  grid-template-columns: repeat(2, 44px);
   align-items: center;
   gap: 2px;
   padding: 3px;
@@ -211,8 +211,8 @@
 }
 
 .translationToggle button {
-  inline-size: 32px;
-  block-size: 32px;
+  inline-size: 44px;
+  block-size: 44px;
   display: grid;
   place-items: center;
   border: 0;
@@ -724,7 +724,7 @@
 .selectionBar {
   position: fixed;
   z-index: 1003;
-  top: 62px;
+  top: 70px;
   left: 50%;
   transform: translateX(-50%);
   width: min(860px, calc(100vw - 24px));
@@ -784,12 +784,19 @@
 }
 
 @media (max-width: 760px) {
-  .reader { grid-template-rows: 52px minmax(0, 1fr) 72px; }
+  .reader { grid-template-rows: 66px minmax(0, 1fr) 72px; }
   .bookIdentity span { display: none; }
-  .toolbar { gap: 0; }
-  .iconButton { min-width: 34px; min-height: 34px; }
+  .toolbar {
+    gap: 0;
+    min-width: 0;
+    max-width: min(70vw, 430px);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+  .iconButton { min-width: 44px; min-height: 44px; }
   .tapZone { width: clamp(44px, 14vw, 64px); }
-  .sidePanelBackdrop { inset-block-start: 52px; }
+  .sidePanelBackdrop { inset-block-start: 66px; }
   .sidePanel {
     position: absolute;
     inset: 0 auto 0 0;
@@ -812,7 +819,7 @@
   }
   .selectionBar > span:first-child { display: none; }
   .selectionBar button {
-    min-height: 42px;
+    min-height: 44px;
     justify-content: center;
     white-space: normal;
   }
@@ -1165,4 +1172,185 @@
   .translationProfileGrid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Foliate annotation composer: upstream note/highlight UX adapted to the
+   unified reader engine. All interactive targets are >=44px. */
+.annotationComposerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1010;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 38%);
+}
+
+.annotationComposer {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 32px));
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--reader-border);
+  border-radius: 12px;
+  background: var(--reader-panel);
+  color: var(--reader-text);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 35%);
+}
+
+.annotationComposerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.annotationComposerHeader > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.annotationComposerHeader h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.annotationComposerQuote {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-inline-start: 3px solid var(--reader-accent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--reader-accent) 8%, transparent);
+  color: var(--reader-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.annotationColorFieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.annotationColorFieldset legend,
+.annotationNoteField > span {
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.annotationColorChoices {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.annotationColorButton {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.annotationColorButton > span,
+.annotationColorDot {
+  display: inline-block;
+  border-radius: 999px;
+  background: var(--annotation-color, #f6c945);
+}
+.annotationColorButton > span { width: 28px; height: 28px; }
+.annotationColorDot { width: 10px; height: 10px; flex: 0 0 auto; }
+.annotationColorButton[aria-pressed='true'] { border-color: var(--reader-accent); }
+.annotationColorButton[data-color='yellow'], .annotationColorDot[data-color='yellow'] { --annotation-color: #f6c945; }
+.annotationColorButton[data-color='green'], .annotationColorDot[data-color='green'] { --annotation-color: #5fbd78; }
+.annotationColorButton[data-color='blue'], .annotationColorDot[data-color='blue'] { --annotation-color: #5b9cf6; }
+.annotationColorButton[data-color='red'], .annotationColorDot[data-color='red'] { --annotation-color: #ef6a6a; }
+
+.annotationNoteField {
+  display: grid;
+}
+
+.annotationNoteField textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  box-sizing: border-box;
+  border: 1px solid var(--reader-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--reader-bg);
+  color: var(--reader-text);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.annotationComposerActions {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.annotationComposerActions button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--reader-border);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: var(--reader-panel);
+  color: inherit;
+  cursor: pointer;
+}
+.annotationComposerActions button:disabled { opacity: .55; cursor: wait; }
+.annotationSaveAction { background: var(--reader-accent) !important; color: white !important; border-color: var(--reader-accent) !important; }
+.annotationDeleteAction { color: #b43c3c !important; }
+
+.annotationText {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.itemActions button { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; }
+.searchForm button, .selectionBar button { min-height: 44px; }
+
+@media (max-width: 600px) {
+  .annotationComposerBackdrop {
+    place-items: end center;
+    padding: 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
+  .annotationComposer {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px 12px 8px 8px;
+  }
+  .annotationNoteField textarea { font-size: 16px; }
+  .annotationComposerActions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .annotationComposerActions > span { display: none; }
+  .annotationDeleteAction { grid-column: 1 / -1; }
+}
+.annotationComposerError {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: color-mix(in srgb, #b43c3c 12%, transparent);
+  color: #b43c3c;
+  font-size: 13px;
 }
