@@ -25,10 +25,9 @@
 .label {
   display: block;
   line-height: 1;
-  /* Numerals and the percent glyph have no visible descenders, so centering
-     their font line box looks slightly high inside the pill. Keep the pill
-     geometry unchanged and optically center only the visible label. */
-  transform: translateY(.5px);
+  /* Keep the pill geometry unchanged; the visible percentage sits slightly
+     low with the current font metrics, so nudge only the label upward. */
+  transform: translateY(-.5px);
 }
 
 .right {
