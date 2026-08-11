@@ -17,7 +17,7 @@ export function CoverProgressBadge({ progress, side = 'left' }: CoverProgressBad
   return (
     <span className={`${styles.badge} ${side === 'right' ? styles.right : ''}`} data-cover-progress
       aria-label={label} title={label}>
-      {percent}%
+      <span className={styles.label}>{percent}%</span>
     </span>
   );
 }
