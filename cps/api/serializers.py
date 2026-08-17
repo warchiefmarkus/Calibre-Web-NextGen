@@ -4,7 +4,7 @@
 
 from datetime import date, datetime
 
-from .. import constants
+from .. import constants, deployment_profile
 from ..clean_html import clean_string
 from ..ui_themes import theme_slug
 
@@ -113,7 +113,8 @@ def serialize_shelf(shelf, count, is_owner):
         "name": shelf.name,
         "is_public": bool(shelf.is_public),
         "is_owner": bool(is_owner),
-        "kobo_sync": bool(getattr(shelf, "kobo_sync", False)),
+        "kobo_sync": deployment_profile.enable_kobo()
+        and bool(getattr(shelf, "kobo_sync", False)),
         "count": count,
     }
 

@@ -8,14 +8,16 @@ and the Jinja UI never diverge. All are per-user actions, so they require a real
 (non-anonymous) session — the anonymous-browse guest can't own favorites/hidden
 state or send mail.
 """
+from datetime import datetime, timezone
+
 from flask import jsonify, request
+from sqlalchemy import and_
 
 from . import api_v1
-from .. import ub, config, calibre_db
+from .. import ub, config, calibre_db, deployment_profile
 from ..cw_login import current_user
 from ..usermanagement import login_required_if_no_ano
 from ..helper import send_mail, valid_email
-from ..kobo_sync_status import change_archived_books, remove_synced_book
 
 
 def _err(code, message, status):
@@ -31,6 +33,21 @@ def _require_real_user():
 
 def _book_or_404(book_id):
     return calibre_db.get_book(book_id)
+
+
+def _toggle_archived_book(book_id: int, message: str) -> bool:
+    """Archive state is a generic CWNG preference, independent of Kobo."""
+    row = ub.session.query(ub.ArchivedBook).filter(and_(
+        ub.ArchivedBook.user_id == int(current_user.id),
+        ub.ArchivedBook.book_id == book_id,
+    )).first()
+    if row is None:
+        row = ub.ArchivedBook(user_id=current_user.id, book_id=book_id)
+    row.is_archived = not bool(row.is_archived)
+    row.last_modified = datetime.now(timezone.utc)
+    ub.session.merge(row)
+    ub.session_commit(message)
+    return bool(row.is_archived)
 
 
 @api_v1.route("/books/<int:book_id>/favorite", methods=["POST"])
@@ -62,10 +79,14 @@ def toggle_book_archived(book_id):
     guard = _require_real_user()
     if guard:
         return guard
-    archived = change_archived_books(book_id, message="Book {} archive bit toggled".format(book_id))
-    # Force a resync so the device picks up the archive change (matches legacy).
-    remove_synced_book(book_id)
-    return jsonify({"archived": bool(archived)})
+    archived = _toggle_archived_book(
+        book_id, message="Book {} archive bit toggled".format(book_id)
+    )
+    if deployment_profile.enable_kobo():
+        # Standard mode keeps the existing Kobo resync bookkeeping.
+        from ..kobo_sync_status import remove_synced_book
+        remove_synced_book(book_id)
+    return jsonify({"archived": archived})
 
 
 @api_v1.route("/books/<int:book_id>/hidden", methods=["POST"])
