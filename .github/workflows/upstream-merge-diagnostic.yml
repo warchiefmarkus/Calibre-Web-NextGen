@@ -1,0 +1,36 @@
+name: Upstream merge diagnostic
+
+on:
+  push:
+    branches:
+      - automation/upstream-merge-diagnostic
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Diagnose upstream merge
+        shell: bash
+        run: |
+          set +e
+          git config user.name "Upstream Merge Diagnostic"
+          git config user.email "actions@users.noreply.github.com"
+          git remote add upstream https://github.com/new-usemame/Calibre-Web-NextGen.git || true
+          git fetch upstream main
+          git reset --hard 9b4c1a53112c998326e96fab9758fb8470c22c67
+          git merge --no-commit --no-ff upstream/main
+          rc=$?
+          echo "MERGE_RC=$rc"
+          echo "=== CONFLICT FILES ==="
+          git diff --name-only --diff-filter=U
+          echo "=== STATUS ==="
+          git status --short
+          echo "=== NON-TRANSLATION CONFLICT HUNKS ==="
+          git diff --cc -- . ':(exclude)cps/translations/**' ':(exclude)messages.pot'
+          exit 0
