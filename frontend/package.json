@@ -12,8 +12,12 @@
     "test:e2e:report": "playwright show-report e2e/.report"
   },
   "dependencies": {
+    "@embedpdf/core": "^2.14.4",
+    "@embedpdf/models": "^2.14.4",
+    "@embedpdf/plugin-annotation": "^2.14.4",
+    "@embedpdf/plugin-scroll": "^2.14.4",
+    "@embedpdf/react-pdf-viewer": "^2.14.4",
     "@tanstack/react-query": "^5.59.0",
-    "epubjs": "^0.3.93",
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -27,5 +31,8 @@
     "@vitejs/plugin-react": "^4.3.3",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "^0.9.10"
   }
 }
