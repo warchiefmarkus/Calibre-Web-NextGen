@@ -1,0 +1,13 @@
+[Unit]
+Description=Backup Calibre-Web NextGen state
+After=calibre-web-nextgen.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/root/calibre/CalibreWeb/deploy/maintenance/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

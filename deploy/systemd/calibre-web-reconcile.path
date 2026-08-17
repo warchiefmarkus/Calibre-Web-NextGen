@@ -1,0 +1,9 @@
+[Unit]
+Description=Trigger CWNG reconcile after partial cleanup
+
+[Path]
+PathExists=/root/calibre/CalibreWeb/var/run/reconcile.trigger
+Unit=calibre-web-reconcile.service
+
+[Install]
+WantedBy=multi-user.target

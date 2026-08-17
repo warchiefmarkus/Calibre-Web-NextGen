@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic CWNG user-data reconcile
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+Unit=calibre-web-reconcile.service
+
+[Install]
+WantedBy=timers.target
