@@ -560,6 +560,18 @@
   -webkit-box-orient: vertical;
 }
 
+.annotationSource {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border: 1px solid var(--reader-border);
+  border-radius: 999px;
+  color: var(--reader-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
 .annotationNewNote {
   display: flex;
   align-items: center;

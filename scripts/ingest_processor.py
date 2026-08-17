@@ -828,7 +828,22 @@ _CONVERSION_FAILURE_GUIDANCE = {
         "the downloaded EPUB/PDF into the ingest folder instead. The original file "
         "has been moved to the failed books folder (processed_books/failed)."
     ),
+    'lcpl': (
+        "LCPL_NOTICE: '{filename}' is a Readium LCP licence file, not an ebook — "
+        "fulfilling it requires an LCP-capable Calibre plugin. If Calibre attempted "
+        "fulfilment and one is installed, its own output appears above this line and "
+        "explains why fulfilment failed. Your "
+        "recovery options are: (1) set CWA_CALIBRE_USER_PLUGINS=true and place the "
+        "plugin zip in /config/.config/calibre/plugins (see the 'Calibre plugins' "
+        "section of the README), or (2) fulfil the licence in an LCP-capable desktop "
+        "reader, then drop the resulting EPUB/PDF into the ingest folder instead. "
+        "The original file has been moved to the failed books folder "
+        "(processed_books/failed)."
+    ),
 }
+
+# Unlike ACSM's #984 refinement, LCPL has no marker-based branch because no
+# real LCP plugin output markers have been measured; add one only with evidence.
 
 
 # fork #984: the guidance above is right only when no ACSM plugin is present.
@@ -852,6 +867,50 @@ _ACSM_PLUGIN_RAN_GUIDANCE = (
     "the downloaded EPUB/PDF into the ingest folder instead. The original file "
     "has been moved to the failed books folder (processed_books/failed)."
 )
+
+
+def stamp_books_with_import_time(connection, book_ids, now=None):
+    """Set ``books.timestamp`` to the import time for every freshly added book.
+
+    ``calibredb add`` derives ``timestamp`` from the file's own metadata, which
+    for most EPUBs is the publication date and can be years old. Left alone, a
+    book imported today lands wherever its publication date falls in "Newest"
+    rather than at the top, which is fork #1331 as @Oakwhisper described it: one
+    book added that day, sitting in the middle of the list.
+
+    One ``calibredb add`` can report several ids — ``_parse_added_book_ids``
+    handles ``Added book ids: 4, 5`` precisely because that happens — so every
+    id from the run needs the same correction. Stamping only the last one leaves
+    the rest of the batch carrying publication dates, which is what made the
+    ordering look arbitrary rather than simply wrong.
+
+    :param connection: Open sqlite3 connection to ``metadata.db`` with the
+        ``title_sort`` function registered, since updating ``books`` fires a
+        trigger that calls it.
+    :param book_ids: The ids ``calibredb add`` reported. ``None`` entries and
+        duplicates are ignored; a non-integer id is skipped rather than raising.
+    :param now: Timestamp to write, in calibre's stored format. Defaults to the
+        current time.
+    :return: Number of rows updated.
+    """
+    ids = set()
+    for book_id in book_ids or []:
+        try:
+            ids.add(int(book_id))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return 0
+    if now is None:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S+00:00")
+    ordered = sorted(ids)
+    placeholders = ",".join("?" * len(ordered))
+    cur = connection.cursor()
+    cur.execute(
+        "UPDATE books SET timestamp = ? WHERE id IN ({})".format(placeholders),
+        [now, *ordered],
+    )
+    return cur.rowcount
 
 
 def _acsm_plugin_failure_reason(converter_output):
@@ -975,9 +1034,14 @@ def _run_converter_streaming(cmd, env, timeout=None):
 
 # fork #1094: formats where a failed conversion means "this was never a book".
 # Importing the original rescues a real book whose conversion failed, but for
-# these it would file a junk entry — an .acsm is an Adobe fulfillment ticket,
-# and the guidance above promises the user it went to processed_books/failed.
-_NOT_A_BOOK_FORMATS = frozenset({'acsm'})
+# these it would file a junk entry — .acsm is an Adobe fulfilment ticket and
+# .lcpl a Readium LCP licence; backup("failed") preserves either in that folder.
+_NOT_A_BOOK_FORMATS = frozenset({'acsm', 'lcpl'})
+
+
+def is_a_book_format(input_format) -> bool:
+    """False for formats that are tickets/licences rather than books."""
+    return (input_format or '').lower() not in _NOT_A_BOOK_FORMATS
 
 
 def is_rescuable_on_conversion_failure(input_format) -> bool:
@@ -987,7 +1051,7 @@ def is_rescuable_on_conversion_failure(input_format) -> bool:
     whether the file is a readable book. False for formats that are not
     books at all, where the original is a ticket or container.
     """
-    return (input_format or '').lower() not in _NOT_A_BOOK_FORMATS
+    return is_a_book_format(input_format)
 
 
 def conversion_failure_guidance(input_format, filename, converter_output=None):
@@ -1014,6 +1078,29 @@ def conversion_failure_guidance(input_format, filename, converter_output=None):
             return _ACSM_PLUGIN_RAN_GUIDANCE.format(
                 filename=filename, reason=reason)
     return template.format(filename=filename)
+
+
+def _fail_not_a_book_input(processor, filepath) -> None:
+    """Preserve a ticket/licence and explain why it was not imported."""
+    if processor.backup(filepath, backup_type="failed"):
+        _remove_completed_import_manifest(filepath)
+    guidance = conversion_failure_guidance(
+        processor.input_format, processor.filename
+    )
+    if guidance:
+        print(f"\n[ingest-processor]: {guidance}\n", flush=True)
+
+
+def _remove_completed_import_manifest(filepath) -> None:
+    """Remove only a successfully handled browser-upload import sidecar."""
+    manifest_path = filepath + ".cwa.json"
+    try:
+        with open(manifest_path, 'r', encoding='utf-8') as manifest_file:
+            manifest = json.load(manifest_file)
+        if isinstance(manifest, dict) and manifest.get("action") == "import":
+            os.remove(manifest_path)
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        pass
 
 
 class NewBookProcessor:
@@ -1056,7 +1143,7 @@ class NewBookProcessor:
 
         # Formats
         self.supported_book_formats = {
-            'acsm','azw','azw3','azw4','cbz','cbr','cb7','cbc','chm','djvu','docx','epub','fb2','fbz','html','htmlz','kepub','kfx','kfx-zip','lit','lrf','mobi','odt','pdf','prc','pdb','pml','rb','rtf','snb','tcr','txtz','txt'
+            'acsm','lcpl','azw','azw3','azw4','cbz','cbr','cb7','cbc','chm','djvu','docx','epub','fb2','fbz','html','htmlz','kepub','kfx','kfx-zip','lit','lrf','mobi','odt','pdf','prc','pdb','pml','rb','rtf','snb','tcr','txtz','txt'
         }
         self.hierarchy_of_success = {
             'epub','kepub','lit','mobi','azw','azw3','fb2','fbz','azw4','prc','odt','lrf','pdb','cbz','pml','rb','cbr','cb7','cbc','chm','djvu','snb','tcr','pdf','docx','rtf','html','htmlz','txtz','txt'
@@ -1314,9 +1401,11 @@ class NewBookProcessor:
             # Name the absolute directory: "moved to failed backup" on its own
             # left users with nowhere to look (#1094).
             print(f"[ingest-processor]: Saved a copy of {os.path.basename(input_file)} to {output_path}", flush=True)
+            return True
         except Exception as e:
             # Never let backups crash ingest; just log the problem
             print(f"[ingest-processor]: ERROR - Failed to backup '{input_file}' to '{output_path}': {e}")
+            return False
 
 
     def convert_book(self, end_format=None) -> tuple[bool, str]:
@@ -1674,16 +1763,21 @@ class NewBookProcessor:
             # so they appear at the top of "Recently Added" views.
             # calibredb sets timestamp from EPUB metadata (publication date), which can be
             # years in the past, making new imports invisible in recently-added sorting.
-            if self.last_added_book_id is not None:
+            # Every id from this add, not just the last: one add can report
+            # several (see _parse_added_book_ids), and any id left unstamped
+            # keeps the publication date calibredb gave it (fork #1331).
+            imported_ids = self.last_added_book_ids or (
+                [self.last_added_book_id] if self.last_added_book_id is not None else []
+            )
+            if imported_ids:
                 try:
                     with sqlite3.connect(self.metadata_db, timeout=30) as con:
                         if not self._register_title_sort_function(con):
                             print("[ingest-processor] INFO: Skipping timestamp adjust (title_sort SQL function unavailable).", flush=True)
                         else:
-                            cur = con.cursor()
                             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S+00:00")
-                            cur.execute('UPDATE books SET timestamp = ? WHERE id = ?', (now, self.last_added_book_id))
-                            print(f"[ingest-processor] INFO: Set timestamp to {now} for newly imported book id={self.last_added_book_id}.", flush=True)
+                            affected = stamp_books_with_import_time(con, imported_ids, now)
+                            print(f"[ingest-processor] INFO: Set timestamp to {now} for {affected} newly imported book(s): {imported_ids}.", flush=True)
                 except Exception as e:
                     print(f"[ingest-processor] WARN: Failed to set timestamp for new book: {e}", flush=True)
 
@@ -2152,8 +2246,11 @@ def main(filepath=None):
                     if book_id > -1:
                         # Validate book exists before attempting add_format
                         if nbp._validate_book_exists(book_id):
-                            nbp.add_format_to_book(book_id, filepath)
-                            success = True
+                            if is_a_book_format(nbp.input_format):
+                                nbp.add_format_to_book(book_id, filepath)
+                                success = True
+                            else:
+                                _fail_not_a_book_input(nbp, filepath)
                         else:
                             print(f"[ingest-processor] ERROR: Book ID {book_id} not found in library for {os.path.basename(filepath)}", flush=True)
                             nbp.backup(filepath, backup_type="failed")
@@ -2189,8 +2286,11 @@ def main(filepath=None):
             return 0
 
         if nbp.is_target_format: # File can just be imported
-            print(f"\n[ingest-processor]: No conversion needed for {nbp.filename}, importing now...", flush=True)
-            nbp.add_book_to_library(filepath)
+            if is_a_book_format(nbp.input_format):
+                print(f"\n[ingest-processor]: No conversion needed for {nbp.filename}, importing now...", flush=True)
+                nbp.add_book_to_library(filepath)
+            else:
+                _fail_not_a_book_input(nbp, filepath)
         elif nbp.is_supported_audiobook():
             print(f"\n[ingest-processor]: No conversion needed for {nbp.filename}, is audiobook, importing now...", flush=True)
             nbp.add_book_to_library(filepath, False, Path(nbp.filename).suffix)
@@ -2204,8 +2304,11 @@ def main(filepath=None):
                 conversion_attempted = False
 
                 if nbp.input_format in nbp.convert_ignored_formats: # File could be converted & the converter is activated but the user has specified files of this format should not be converted
-                    print(f"\n[ingest-processor]: {nbp.filename} not in target format but user has told CWA not to convert this format so importing the file anyway...", flush=True)
-                    nbp.add_book_to_library(filepath)
+                    if is_a_book_format(nbp.input_format):
+                        print(f"\n[ingest-processor]: {nbp.filename} not in target format but user has told CWA not to convert this format so importing the file anyway...", flush=True)
+                        nbp.add_book_to_library(filepath)
+                    else:
+                        _fail_not_a_book_input(nbp, filepath)
                     convert_successful = False
                 elif nbp.target_format == "kepub": # File is not in the convert ignore list and target is kepub, so we start the kepub conversion process
                     conversion_attempted = True
@@ -2248,8 +2351,11 @@ def main(filepath=None):
                     nbp.add_book_to_library(filepath)
 
             elif nbp.can_convert and not nbp.auto_convert_on: # Books not in target format but Auto-Converter is off so files are imported anyway
-                print(f"\n[ingest-processor]: {nbp.filename} not in target format but CWA Auto-Convert is deactivated so importing the file anyway...", flush=True)
-                nbp.add_book_to_library(filepath)
+                if is_a_book_format(nbp.input_format):
+                    print(f"\n[ingest-processor]: {nbp.filename} not in target format but CWA Auto-Convert is deactivated so importing the file anyway...", flush=True)
+                    nbp.add_book_to_library(filepath)
+                else:
+                    _fail_not_a_book_input(nbp, filepath)
             else:
                 print(f"[ingest-processor]: Cannot convert {nbp.filepath}. {nbp.input_format} is currently unsupported / is not a known ebook format.", flush=True)
 

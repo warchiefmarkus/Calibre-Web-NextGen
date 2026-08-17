@@ -26,6 +26,7 @@ export function AnnotationPanel({ annotations, onCreateStandalone, onOpen, onEdi
               title={t('A note about the book, not tied to a passage')}>
               <StickyNote size={15} aria-hidden="true" />
               <span className={styles.annotationNote}>{annotation.note}</span>
+              {annotation.sourceLabel && <span className={styles.annotationSource}>{annotation.sourceLabel}</span>}
             </div>
           ) : (
             <button onClick={() => onOpen(annotation)}>
@@ -35,6 +36,7 @@ export function AnnotationPanel({ annotations, onCreateStandalone, onOpen, onEdi
                 {annotation.text || t('Highlight')}
               </span>
               {annotation.note && <span className={styles.annotationNote}>{annotation.note}</span>}
+              {annotation.sourceLabel && <span className={styles.annotationSource}>{annotation.sourceLabel}</span>}
             </button>
           )}
           <div className={styles.itemActions}>

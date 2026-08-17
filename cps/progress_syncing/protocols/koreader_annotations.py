@@ -91,7 +91,8 @@ def build_pull_payload(user_id: int, book_id: int, session) -> dict:
 
 
 def apply_push(annotations, *, user, book, session, commit,
-               deleted_ids=None, delete_source="koreader") -> dict:
+               deleted_ids=None, delete_source="koreader",
+               origin_device_id=None) -> dict:
     """Upsert each pushed portable annotation, fan out to enabled sync targets,
     and return a counts summary keyed by action (created/updated/deleted/skipped).
 
@@ -109,6 +110,7 @@ def apply_push(annotations, *, user, book, session, commit,
     for payload in annotations:
         row, action = apply_portable(
             payload, user_id=user.id, book=book, session=session, commit=commit,
+            origin_device_id=origin_device_id,
         )
         summary[action] = summary.get(action, 0) + 1
         if row is None or action == "skipped":
@@ -270,13 +272,34 @@ def pull_annotations(document: str):
         # it is the usual shape of a book that was never checksum-registered.
         log.info(
             "KOReader annotation pull: user=%s document=%s no matching book "
-            "(returning empty set)", user.id, _loggable(document),
+            "(returning empty set, book_known=false)", user.id, _loggable(document),
         )
-        return create_sync_response({"document": document, "annotations": [], "annotation_count": 0})
+        # `book_known` is the discriminator that makes "I don't know this book"
+        # distinguishable from "this book genuinely has no annotations". Without
+        # it the two are identical on the wire, and a client that reconciles
+        # against an empty set would delete highlights that exist nowhere else --
+        # exactly how a Kobo lost 87 of them on 2026-08-15 (see
+        # notes/ANNOTATION-SYNC-PRINCIPLES-DESIGN.md, P1).
+        #
+        # Deliberately ADDITIVE rather than a status-code change: plugins already
+        # in the field parse this shape, and breaking them to fix a hazard none
+        # of them currently trip would trade a latent problem for a real one.
+        # Emitted on BOTH branches so a client can tell a server that knows the
+        # field from one that predates it -- absent means "cannot tell, be
+        # conservative", never "known".
+        return create_sync_response({
+            "document": document,
+            "annotations": [],
+            "annotation_count": 0,
+            "book_known": False,
+        })
 
     payload = build_pull_payload(user.id, book_id, ub.session)
     payload["document"] = document
     payload["calibre_book_id"] = book_id
+    # See the unmatched branch above: present-and-true is what lets a client
+    # trust an empty list here as a real "you have none".
+    payload["book_known"] = True
     log.info(
         "KOReader annotation pull: user=%s book=%s document=%s annotations=%s",
         user.id, book_id, _loggable(document), payload.get("annotation_count", 0),
@@ -366,15 +389,36 @@ def push_annotations():
         )
     from ...services.annotation_portable import validate_portable_payload
     for index, payload in enumerate(annotations):
-        error = validate_portable_payload(payload)
+        error = validate_portable_payload(
+            payload, book_uuid=getattr(book, "uuid", None),
+        )
         if error:
             return _reject(user, document, "invalid_annotation",
                            f"annotations[{index}]: {error}")
+
+    origin_device_id = None
+    try:
+        from ...services.device_registry import (
+            register_koreader_device_best_effort,
+            resolve_owned_device_best_effort,
+        )
+        if data.get("origin_device_id"):
+            origin_device_id = resolve_owned_device_best_effort(
+                user_id=user.id, public_id=data.get("origin_device_id"),
+            )
+        elif data.get("device_id"):
+            origin_device_id = register_koreader_device_best_effort(
+                user_id=user.id, device_id=data.get("device_id"),
+                device_name=data.get("device"),
+            )
+    except Exception:
+        log.warning("KOReader annotation attribution failed", exc_info=True)
 
     summary = apply_push(
         annotations, user=user, book=book,
         session=ub.session, commit=ub.session_commit,
         deleted_ids=deleted_ids, delete_source=delete_source,
+        origin_device_id=origin_device_id,
     )
     summary["document"] = document
     # `reconciled` means the device NAMED deletions on this push, not that any

@@ -32,7 +32,7 @@ except ImportError as e:
         OAuthConsumerMixin = BaseException
         oauth_support = False
 from sqlalchemy import create_engine, exc, exists, event, text
-from sqlalchemy import Column, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, UniqueConstraint
 from sqlalchemy import String, Integer, SmallInteger, Boolean, DateTime, Float, JSON, Text
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import func
@@ -865,9 +865,94 @@ class KoboSyncedBooks(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('user.id'))
     book_id = Column(Integer)
+    book_uuid = Column(String(64), nullable=True)
 
     __table_args__ = (
         UniqueConstraint('user_id', 'book_id', name='uq_kobo_synced_books_user_book'),
+    )
+
+
+class NoticeEvent(Base):
+    """Device-agnostic occurrence that may need to be shown to selected users.
+
+    Book ids belong to calibre's separate metadata database, so they deliberately
+    cannot be foreign keys here. ``occurrence_key`` makes recurrence explicit:
+    dismissing one occurrence never suppresses a later event of the same type.
+    """
+    __tablename__ = "notice_event"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    notice_type = Column(String(80), nullable=False)
+    occurrence_key = Column(String(64), nullable=False)
+    scope = Column(String(16), nullable=False)
+    book_id = Column(Integer, nullable=True)
+    book_uuid = Column(String(64), nullable=True)
+    title_snapshot = Column(String, nullable=True)
+    payload_json = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    active = Column(Boolean, nullable=False, default=True)
+
+    deliveries = relationship(
+        "UserNoticeDelivery", back_populates="event",
+        cascade="all, delete-orphan", passive_deletes=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("notice_type", "occurrence_key", name="uq_notice_event_occurrence"),
+        CheckConstraint(
+            "(scope = 'global' AND book_id IS NULL) OR "
+            "(scope = 'book' AND book_id IS NOT NULL)",
+            name="ck_notice_event_scope_book",
+        ),
+        Index("ix_notice_event_type_active", "notice_type", "active", "created_at"),
+        Index("ix_notice_event_book", "book_id", "active"),
+    )
+
+
+class UserNoticeDelivery(Base):
+    """Audience membership and permanent per-user dismissal for one event."""
+    __tablename__ = "user_notice_delivery"
+
+    event_id = Column(
+        Integer, ForeignKey("notice_event.id", ondelete="CASCADE"), primary_key=True,
+    )
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    first_presented_at = Column(DateTime, nullable=True)
+    dismissed_at = Column(DateTime, nullable=True)
+
+    event = relationship("NoticeEvent", back_populates="deliveries")
+
+    __table_args__ = (
+        Index("ix_user_notice_delivery_inbox", "user_id", "dismissed_at", "event_id"),
+    )
+
+
+class KepubPackageRepair(Base):
+    """Durable cross-database/file state for one detected package repair."""
+    __tablename__ = "kepub_package_repair"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    occurrence_key = Column(String(64), nullable=False, unique=True)
+    book_id = Column(Integer, nullable=False, index=True)
+    book_uuid = Column(String(64), nullable=True)
+    source_sha256 = Column(String(64), nullable=False)
+    repaired_sha256 = Column(String(64), nullable=True)
+    backup_path = Column(String, nullable=True)
+    status = Column(String(24), nullable=False)
+    error_message = Column(String, nullable=True)
+    detected_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    file_repaired_at = Column(DateTime, nullable=True)
+    metadata_bumped_at = Column(DateTime, nullable=True)
+    notice_event_id = Column(Integer, ForeignKey("notice_event.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('detected', 'file_repaired', 'metadata_bumped', "
+            "'completed', 'failed', 'unsupported')",
+            name="ck_kepub_package_repair_status",
+        ),
+        Index("ix_kepub_package_repair_book_status", "book_id", "status"),
     )
 
 
@@ -994,19 +1079,19 @@ class ExternalBookRatingCache(Base):
 
 class KoboDeletedBook(Base):
     """Tombstone table for books deleted from CW that need to be reported
-    to Kobo devices as DeletedEntitlement on next sync.
+    to Kobo devices as archived ChangedEntitlement entries on next sync.
 
     Why we need it: calibre's metadata.db row goes away the moment the
     book is deleted (cps/editbooks.py:delete_whole_book), and the
     KoboSyncedBooks table carries only (user_id, book_id) — no UUID. The
-    Kobo protocol needs the book's UUID to address the DeletedEntitlement
+    Kobo protocol needs the book's UUID to address the ChangedEntitlement
     on the device. So we snapshot (user_id, book_uuid, deleted_at) at
     delete time, before the book row is gone.
 
     Lifecycle: rows live as long as the deletion is "newer than" any
     device's sync cursor. With cursor-based emission (advance
-    archive_last_modified past deleted_at on emit), each device sees
-    each DeletedEntitlement exactly once. Rows can be GC'd by a
+    archive_last_modified past deleted_at on emit), each device cursor moves
+    beyond each ChangedEntitlement. Rows can be GC'd by a
     periodic cleanup once they're older than the oldest active sync
     token's archive_last_modified — left as a follow-up; current
     storage cost is one short row per deleted book per affected user.
@@ -1099,6 +1184,61 @@ class KoboStatistics(Base):
     spent_reading_minutes = Column(Integer)
 
 
+class Device(Base):
+    """User-visible device; raw hardware identifiers are never stored."""
+    __tablename__ = 'device'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    public_id = Column(String(36), nullable=False, unique=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    kind = Column(String(32), nullable=False)
+    display_name = Column(String(160), nullable=False)
+    model = Column(String(160), nullable=True)
+    platform = Column(String(80), nullable=True)
+    firmware_version = Column(String(64), nullable=True)
+    first_seen_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    last_seen_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    last_metadata_at = Column(DateTime, nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_by = Column(String(32), nullable=False, default="auto")
+
+    identities = relationship("DeviceIdentity", back_populates="device", cascade="all, delete-orphan")
+    __table_args__ = (
+        Index('ix_device_user_active_last_seen', 'user_id', 'active', 'last_seen_at'),
+        Index('ix_device_user_display_name', 'user_id', 'display_name'),
+    )
+
+
+class DeviceIdentity(Base):
+    """Versioned, keyed derivation of an upstream device identifier."""
+    __tablename__ = 'device_identity'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(Integer, ForeignKey('device.id', ondelete='CASCADE'), nullable=False)
+    scheme = Column(String(64), nullable=False)
+    key_version = Column(Integer, nullable=False)
+    fingerprint = Column(String(64), nullable=False)
+    first_seen_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    last_seen_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    device = relationship("Device", back_populates="identities")
+    __table_args__ = (
+        UniqueConstraint('scheme', 'key_version', 'fingerprint',
+                         name='uq_device_identity_scheme_version_fingerprint'),
+        Index('ix_device_identity_device', 'device_id'),
+    )
+
+
+class AnnotationContentIdMigration(Base):
+    """Exact undo journal for conservative content-id backfills."""
+    __tablename__ = 'annotation_content_id_migration'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    annotation_row_id = Column(Integer, ForeignKey('annotation.id', ondelete='CASCADE'), nullable=False, unique=True)
+    original_content_id = Column(Text, nullable=False)
+    normalized_content_id = Column(Text, nullable=False)
+    migrated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class Annotation(Base):
     """Per-user-per-annotation row. Canonical store for ALL highlight/note
     origins (Kobo device, web reader, KOReader plugin).
@@ -1158,6 +1298,12 @@ class Annotation(Base):
     # Lifecycle
     hidden = Column(Boolean, default=False, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Device-supplied modification clock. This is distinct from last_synced,
+    # which remains the server's receipt/dispatch time.
+    client_modified_at = Column(DateTime, nullable=True)
+    origin_device_id = Column(Integer, ForeignKey('device.id', ondelete='SET NULL'), nullable=True)
+    assigned_device_id = Column(Integer, ForeignKey('device.id', ondelete='SET NULL'), nullable=True)
+    routing_revision = Column(Integer, nullable=False, default=1)
     last_synced = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -1218,6 +1364,45 @@ class Annotation(Base):
 
     def __repr__(self):
         return f'<Annotation annotation_id={self.annotation_id} book_id={self.book_id}>'
+
+
+class AnnotationDeviceState(Base):
+    """Per-device delivery intent/telemetry; reassignment never deletes it."""
+    __tablename__ = 'annotation_device_state'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    annotation_id = Column(Integer, ForeignKey('annotation.id', ondelete='CASCADE'), nullable=False)
+    device_id = Column(Integer, ForeignKey('device.id', ondelete='CASCADE'), nullable=False)
+    native_annotation_id = Column(String, nullable=True)
+    desired = Column(Boolean, nullable=False, default=False)
+    delivery_status = Column(String(32), nullable=False, default='pending')
+    first_seen_revision = Column(Integer, nullable=True)
+    last_delivered_revision = Column(Integer, nullable=True)
+    last_ack_revision = Column(Integer, nullable=True)
+    last_seen_present_at = Column(DateTime, nullable=True)
+    content_fingerprint = Column(String(64), nullable=True)
+    native_metadata_json = Column(Text, nullable=True)
+    last_error_code = Column(String(64), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('annotation_id', 'device_id', name='uq_annotation_device_state'),
+        Index('ix_annotation_device_state_device_desired', 'device_id', 'desired'),
+    )
+
+
+class DeviceRetiredAssignment(Base):
+    """Undo snapshot for assignments cleared by a device soft-delete."""
+    __tablename__ = 'device_retired_assignment'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(Integer, ForeignKey('device.id', ondelete='CASCADE'), nullable=False)
+    annotation_id = Column(Integer, ForeignKey('annotation.id', ondelete='CASCADE'), nullable=False)
+    retired_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        UniqueConstraint('device_id', 'annotation_id', name='uq_device_retired_assignment'),
+    )
 
 
 class AnnotationSyncTarget(Base):
@@ -2032,6 +2217,31 @@ def migrate_magic_shelf_table(engine, _session):
         _run_ddl_with_retry(engine, "ALTER TABLE magic_shelf ADD column 'kobo_sync' Boolean DEFAULT 0")
 
 
+def migrate_kobo_synced_book_uuid(engine, _session):
+    """Add delivery-time UUID retention to the existing Kobo sync ledger."""
+    with engine.begin() as conn:
+        table = conn.execute(text(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type='table' AND name='kobo_synced_books'"
+        )).fetchone()
+        if table is None:
+            return
+        columns = {
+            row[1] for row in conn.execute(
+                text("PRAGMA table_info(kobo_synced_books)"))
+        }
+        if "book_uuid" in columns:
+            return
+    try:
+        _run_ddl_with_retry(
+            engine,
+            "ALTER TABLE kobo_synced_books ADD COLUMN book_uuid VARCHAR(64)",
+        )
+    except exc.OperationalError as error:
+        if "duplicate column" not in str(error).lower():
+            raise
+
+
 def migrate_kobo_unique_constraints(engine, _session):
     """One-time migration: dedupe + uniquify (user_id, book_id) on Kobo
     state tables (audit 2026-05-11).
@@ -2331,7 +2541,7 @@ def migrate_kobo_deleted_book(engine, _session):
 
     Why this table exists: see the KoboDeletedBook model docstring.
     Captures (user_id, book_uuid, deleted_at) at the moment a book is
-    deleted, so HandleSyncRequest can emit DeletedEntitlement on the
+    deleted, so HandleSyncRequest can emit an archived ChangedEntitlement on the
     next sync per affected user — the existing two-way deletion logic
     can only handle books removed from kobo_sync shelves, not hard
     deletes from the calibre library.
@@ -2550,6 +2760,19 @@ def migrate_book_cover_preview_table(engine, _session):
             )
         except Exception as e:
             print(f"[cover-preview-migration] Could not create idx_bcp_user_locked: {e}", flush=True)
+
+
+def migrate_notice_tables(engine, _session):
+    """Create the generic notice inbox and resumable repair journal idempotently."""
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            NoticeEvent.__table__,
+            UserNoticeDelivery.__table__,
+            KepubPackageRepair.__table__,
+        ],
+        checkfirst=True,
+    )
 
 
 def migrate_kobo_annotation_sync_h1_columns(engine, _session):
@@ -2851,6 +3074,190 @@ def migrate_annotation_device_origin(engine, _session):
                 raise
 
 
+def migrate_multi_device_annotation_safe_slice(engine, _session):
+    """Create the additive registry and timestamp schema.
+
+    The content-id backfill runs only after the Calibre database is available;
+    startup reaches this migration before ``calibre_db.init_db()``, so this
+    stage cannot prove an annotation's authoritative book UUID.
+    """
+    Base.metadata.create_all(
+        engine,
+        tables=[Device.__table__, DeviceIdentity.__table__, AnnotationContentIdMigration.__table__],
+        checkfirst=True,
+    )
+    with engine.begin() as conn:
+        if not conn.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='annotation'"
+        )).first():
+            return
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(annotation)"))}
+        if "client_modified_at" not in columns:
+            try:
+                conn.execute(text("ALTER TABLE annotation ADD COLUMN client_modified_at DATETIME"))
+            except exc.OperationalError as error:
+                if "duplicate column" not in str(error).lower():
+                    raise
+
+
+def backfill_annotation_content_ids(engine, book_uuid_lookup):
+    """Journal and normalize only book-verified legacy annotation ids.
+
+    ``book_uuid_lookup(book_id)`` reads Calibre's authoritative book record.
+    Missing books, lookup errors, malformed UUIDs, and filename/book mismatches
+    leave the stored value byte-for-byte unchanged. The repair block also
+    reverses an earlier unsafe migration when its journaled canonical UUID does
+    not belong to the row's actual book and nobody edited the value afterward.
+    """
+    from .services.annotation_content_id import (
+        ContentIdError,
+        normalize_content_id,
+        normalize_content_id_for_backfill,
+    )
+    with engine.begin() as conn:
+        tables = {row[0] for row in conn.execute(text(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ))}
+        if not {"annotation", "annotation_content_id_migration"} <= tables:
+            return
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(annotation)"))}
+        if not {"id", "book_id", "content_id"} <= columns:
+            return
+        rows = conn.execute(text(
+            "SELECT a.id, a.book_id, a.content_id, "
+            "m.original_content_id, m.normalized_content_id "
+            "FROM annotation a LEFT JOIN annotation_content_id_migration m "
+            "ON m.annotation_row_id=a.id WHERE a.content_id IS NOT NULL"
+        )).fetchall()
+        changed = 0
+        repaired = 0
+        for row_id, book_id, current, journal_original, journal_normalized in rows:
+            try:
+                book_uuid = book_uuid_lookup(book_id)
+            except Exception:
+                log.warning(
+                    "[annotation-content-id] book lookup failed for book %s",
+                    book_id, exc_info=True,
+                )
+                continue
+            if not book_uuid:
+                continue
+            if journal_normalized is not None:
+                if current != journal_normalized:
+                    continue
+                try:
+                    normalize_content_id(journal_normalized, book_uuid=book_uuid)
+                except ContentIdError:
+                    conn.execute(text(
+                        "UPDATE annotation SET content_id=:original "
+                        "WHERE id=:row_id AND content_id=:normalized"
+                    ), {"original": journal_original, "row_id": row_id,
+                        "normalized": journal_normalized})
+                    conn.execute(text(
+                        "DELETE FROM annotation_content_id_migration "
+                        "WHERE annotation_row_id=:row_id"
+                    ), {"row_id": row_id})
+                    current = journal_original
+                    repaired += 1
+                else:
+                    continue
+            normalized = normalize_content_id_for_backfill(
+                current, book_uuid=book_uuid,
+            )
+            if normalized == current:
+                continue
+            conn.execute(text(
+                "INSERT OR IGNORE INTO annotation_content_id_migration "
+                "(annotation_row_id, original_content_id, normalized_content_id, migrated_at) "
+                "VALUES (:row_id, :original, :normalized, :migrated_at)"
+            ), {"row_id": row_id, "original": current, "normalized": normalized,
+                "migrated_at": datetime.now(timezone.utc)})
+            result = conn.execute(text(
+                "UPDATE annotation SET content_id=:normalized "
+                "WHERE id=:row_id AND content_id=:original"
+            ), {"normalized": normalized, "row_id": row_id, "original": current})
+            changed += result.rowcount
+        if changed or repaired:
+            log.info(
+                "[annotation-content-id] normalized %d verified row(s); "
+                "repaired %d unsafe prior migration(s)", changed, repaired,
+            )
+
+
+def migrate_device_management_slice(engine, _session):
+    """Add nullable attribution/routing columns and per-device state."""
+    Base.metadata.create_all(
+        engine,
+        tables=[AnnotationDeviceState.__table__, DeviceRetiredAssignment.__table__],
+        checkfirst=True,
+    )
+    with engine.begin() as conn:
+        if not conn.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='annotation'"
+        )).first():
+            return
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(annotation)"))}
+        additions = (
+            ("origin_device_id", "origin_device_id INTEGER REFERENCES device(id) ON DELETE SET NULL"),
+            ("assigned_device_id", "assigned_device_id INTEGER REFERENCES device(id) ON DELETE SET NULL"),
+            ("routing_revision", "routing_revision INTEGER NOT NULL DEFAULT 1"),
+        )
+        for name, ddl in additions:
+            if name not in existing:
+                try:
+                    conn.execute(text(f"ALTER TABLE annotation ADD COLUMN {ddl}"))
+                except exc.OperationalError as error:
+                    if "duplicate column" not in str(error).lower():
+                        raise
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_annotation_origin_device ON annotation(origin_device_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_annotation_assigned_device ON annotation(assigned_device_id)"
+        ))
+
+
+def downgrade_device_management_slice(engine):
+    """Manual rollback for the additive, NULL-backfilled management schema."""
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS device_retired_assignment"))
+        conn.execute(text("DROP TABLE IF EXISTS annotation_device_state"))
+        conn.execute(text("DROP INDEX IF EXISTS ix_annotation_assigned_device"))
+        conn.execute(text("DROP INDEX IF EXISTS ix_annotation_origin_device"))
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(annotation)"))}
+        for name in ("routing_revision", "assigned_device_id", "origin_device_id"):
+            if name in existing:
+                conn.execute(text(f"ALTER TABLE annotation DROP COLUMN {name}"))
+
+
+def downgrade_multi_device_annotation_safe_slice(engine):
+    """Manual rollback; refuses to clobber content ids edited after migration."""
+    with engine.begin() as conn:
+        tables = {row[0] for row in conn.execute(text(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ))}
+        if "annotation_content_id_migration" in tables:
+            conflicts = conn.execute(text(
+                "SELECT COUNT(*) FROM annotation_content_id_migration m JOIN annotation a "
+                "ON a.id=m.annotation_row_id WHERE a.content_id != m.normalized_content_id"
+            )).scalar()
+            if conflicts:
+                raise RuntimeError("content ids changed after migration; refusing lossy downgrade")
+            conn.execute(text(
+                "UPDATE annotation SET content_id=(SELECT original_content_id FROM "
+                "annotation_content_id_migration m WHERE m.annotation_row_id=annotation.id) "
+                "WHERE id IN (SELECT annotation_row_id FROM annotation_content_id_migration)"
+            ))
+            conn.execute(text("DROP TABLE annotation_content_id_migration"))
+        if "device_identity" in tables:
+            conn.execute(text("DROP TABLE device_identity"))
+        if "device" in tables:
+            conn.execute(text("DROP TABLE device"))
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(annotation)"))}
+        if "client_modified_at" in columns:
+            conn.execute(text("ALTER TABLE annotation DROP COLUMN client_modified_at"))
+
+
 def migrate_annotation_koreader_identity(engine, _session):
     """Add KOReader-native locator columns and enforce merge identity.
 
@@ -3067,6 +3474,7 @@ def migrate_Database(_session):
     migrate_oauth_provider_table(engine, _session)
     migrate_config_table(engine, _session)
     migrate_magic_shelf_table(engine, _session)
+    migrate_kobo_synced_book_uuid(engine, _session)
     migrate_kobo_unique_constraints(engine, _session)
     migrate_kobo_deleted_book(engine, _session)
     migrate_kobo_bookmark_created_at(engine, _session)
@@ -3080,7 +3488,10 @@ def migrate_Database(_session):
     migrate_annotation_polymorphic_position(engine, _session)
     migrate_annotation_device_origin(engine, _session)
     migrate_annotation_koreader_identity(engine, _session)
+    migrate_multi_device_annotation_safe_slice(engine, _session)
+    migrate_device_management_slice(engine, _session)
     migrate_book_cover_preview_table(engine, _session)
+    migrate_notice_tables(engine, _session)
     migrate_dismissed_duplicate_groups_table(engine, _session)
     migrate_moonreader_progress_columns(engine, _session)
 

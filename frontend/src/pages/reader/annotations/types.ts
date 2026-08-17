@@ -10,6 +10,8 @@ export type ServerAnnotation = {
   highlight_color: string | null;
   note_text: string | null;
   position_type?: string | null;
+  source?: string | null;
+  origin_device_id?: string | null;
 };
 
 export type AnnotationEditorState =

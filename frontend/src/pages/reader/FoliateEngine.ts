@@ -22,6 +22,7 @@ export type FoliateAnnotation = {
   id?: string;
   text?: string | null;
   unanchored?: boolean;
+  sourceLabel?: string | null;
 };
 
 export type FoliateRenderer = HTMLElement & {

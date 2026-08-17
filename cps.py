@@ -17,26 +17,9 @@ sys.path.insert(0, path)
 if scripts_path not in sys.path:
     sys.path.insert(1, scripts_path)
 
-from cps.main import main
-
-
-def hide_console_windows():
-    import ctypes
-
-    kernel32 = ctypes.WinDLL('kernel32')
-    user32 = ctypes.WinDLL('user32')
-
-    SW_HIDE = 0
-
-    hWnd = kernel32.GetConsoleWindow()
-    if hWnd:
-        user32.ShowWindow(hWnd, SW_HIDE)
+from cps.main import hide_console_windows, main
 
 
 if __name__ == '__main__':
-    if os.name == "nt":
-        hide_console_windows()
+    hide_console_windows()
     main()
-
-
-

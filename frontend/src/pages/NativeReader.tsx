@@ -17,6 +17,13 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
   const t = useT();
   const fmt = format.toLowerCase();
   const src = apiUrl(`/show/${id}/${fmt}`);
+  // #1584 — never hand a PDF to the browser's native viewer. WebKit, which is
+  // every browser on iOS and iPadOS, renders only the first page of a PDF
+  // embedded in a subframe, so pointing this iframe at the raw file showed page
+  // one and nothing else on iPad. The bundled pdf.js viewer (what the classic
+  // reader has always used) paints to <canvas> and behaves the same on every
+  // engine. url_for inside that template keeps it correct behind a subpath.
+  const pdfSrc = apiUrl(`/read/${id}/pdf`);
   const [text, setText] = useState<string | null>(null);
   const [textErr, setTextErr] = useState(false);
 
@@ -40,6 +47,9 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
       </div>
 
       <div className={styles.body}>
+        {fmt === 'pdf' && (
+          <iframe className={styles.pdf} src={pdfSrc} title={t('PDF reader')} />
+        )}
         {AUDIO.has(fmt) && (
           <div className={styles.audioWrap}>
             <audio className={styles.audio} controls preload="metadata" src={src}>

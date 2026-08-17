@@ -35,6 +35,7 @@ export const SPA_ROUTES = {
   aiSearch: '/ai-search',
   account: '/account',
   moonReader: '/account/moonreader',
+  devices: '/account/devices',
   upload: '/upload',
   admin: '/admin',
   whatsNew: '/whats-new',

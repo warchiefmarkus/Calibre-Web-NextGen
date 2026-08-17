@@ -1,4 +1,8 @@
-#
+# Chinese (Simplified, China) translations for Calibre-Web.
+# Copyright (C) 2017 Calibre-Web
+# This file is distributed under the same license as the Calibre-Web
+# project.
+# FIRST AUTHOR dalin <dalin.lin@gmail.com>, 2017.
 msgid ""
 msgstr ""
 "Project-Id-Version: Calibre-Web NextGen\n"
@@ -51,8 +55,8 @@ msgstr ""
 
 #: cps/admin.py
 msgid ""
-"Error: No Hardcover token available. Set HARDCOVER_TOKEN environment variable"
-" or configure in Basic Configuration."
+"Error: No Hardcover token available. Set HARDCOVER_TOKEN environment "
+"variable or configure in Basic Configuration."
 msgstr "错误：没有可用的 Hardcover 令牌。请设置 HARDCOVER_TOKEN 环境变量或在基本配置中配置。"
 
 #: cps/admin.py
@@ -75,6 +79,7 @@ msgid "Error loading review queue: %(error)s"
 msgstr "加载审查队列出错：%(error)s"
 
 #: cps/admin.py
+#, fuzzy
 msgid "Hardcover ID applied successfully"
 msgstr "成功删除 {} 个用户"
 
@@ -112,6 +117,7 @@ msgid "Admin page"
 msgstr "管理页"
 
 #: cps/admin.py
+#, fuzzy
 msgid "Hardcover token expires"
 msgstr "Hardcover API token"
 
@@ -259,18 +265,21 @@ msgstr "您确定要修改选定用户的选定限制吗？"
 
 #: cps/admin.py
 msgid ""
-"Are you sure you want to change the selected visibility restrictions for the "
-"selected user(s)?"
+"Are you sure you want to change the selected visibility restrictions for the"
+" selected user(s)?"
 msgstr "您确定要修改选定用户的选定可视化限制吗？"
 
 #: cps/admin.py
 msgid ""
-"Are you sure you want to change shelf sync behavior for the selected user(s)?"
+"Are you sure you want to change shelf sync behavior for the selected "
+"user(s)?"
 msgstr "您确定要更改所选用户的书架同步行为吗？"
 
 #: cps/admin.py
+#, fuzzy
 msgid ""
-"Are you sure you want to change OPDS shelf exposure for the selected user(s)?"
+"Are you sure you want to change OPDS shelf exposure for the selected "
+"user(s)?"
 msgstr "您确定要更改所选用户的书架同步行为吗？"
 
 #: cps/admin.py
@@ -303,7 +312,7 @@ msgid "{} sync entries deleted"
 msgstr "{} 同步项目被删除"
 
 #: cps/admin.py
-#, python-brace-format
+#, fuzzy, python-brace-format
 msgid "Book {} not found"
 msgstr "找不到令牌"
 
@@ -317,8 +326,40 @@ msgstr ""
 #: cps/admin.py
 #, python-brace-format
 msgid ""
-"Book {0} was not in the sync record for user {1}; last_modified bumped so the"
-" device will receive on next sync"
+"Book {0} was not in the sync record for user {1}; last_modified bumped so "
+"the device will receive on next sync"
+msgstr ""
+
+#: cps/admin.py cps/templates/kobo_reconcile.html
+#, python-format
+msgid "Reconcile deleted Kobo books for %(user)s"
+msgstr ""
+
+#: cps/admin.py
+msgid "Choose a KoboReader.sqlite file."
+msgstr ""
+
+#: cps/admin.py
+msgid "The uploaded file is not a SQLite database."
+msgstr ""
+
+#: cps/admin.py
+#, python-format
+msgid "The file is larger than %(max)d MB."
+msgstr ""
+
+#: cps/admin.py
+msgid "This preview is invalid or expired. Upload the device database again."
+msgstr ""
+
+#: cps/admin.py
+msgid "Select at least one book to archive."
+msgstr ""
+
+#: cps/admin.py
+msgid ""
+"The selected books do not match this preview. Upload the device database "
+"again."
 msgstr ""
 
 #: cps/admin.py cps/api/browse.py cps/spa_strings.py
@@ -423,10 +464,12 @@ msgid "Email Server Settings updated"
 msgstr "邮件服务器设置已更新"
 
 #: cps/admin.py cps/templates/admin.html
+#, fuzzy
 msgid "Email Your Users"
 msgstr "管理用户"
 
 #: cps/admin.py
+#, fuzzy
 msgid ""
 "Please configure the email server under Edit Email Server Settings first."
 msgstr "请先配置 SMTP 邮箱设置..."
@@ -440,10 +483,12 @@ msgid "Please enter a message body for the announcement email."
 msgstr ""
 
 #: cps/admin.py
+#, fuzzy
 msgid "Please set an email address on your own account first..."
 msgstr "请先配置您的邮箱地址..."
 
 #: cps/admin.py
+#, fuzzy
 msgid "Please select at least one recipient."
 msgstr "新密码已发送到您的邮箱"
 
@@ -452,13 +497,13 @@ msgid "No valid recipients — nothing was sent."
 msgstr ""
 
 #: cps/admin.py
-#, python-format
+#, fuzzy, python-format
 msgid ""
 "Test announcement email queued to %(email)s — check Tasks for the result."
 msgstr "发送给 %(email)s 的测试邮件已加入队列。请检查任务结果"
 
 #: cps/admin.py
-#, python-format
+#, fuzzy, python-format
 msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
@@ -490,6 +535,7 @@ msgid "Oops! An unknown error occurred. Please try again later."
 msgstr "发生一个未知错误，请稍后再试"
 
 #: cps/admin.py cps/opds.py cps/web.py
+#, fuzzy
 msgid "title"
 msgstr "标题"
 
@@ -625,8 +671,8 @@ msgstr "自动创建用户需要有效的反向代理标头名称"
 
 #: cps/admin.py
 msgid ""
-"Invalid OAuth Redirect Host format. Please include the full URL with protocol"
-" (e.g., https://your-domain.com)"
+"Invalid OAuth Redirect Host format. Please include the full URL with "
+"protocol (e.g., https://your-domain.com)"
 msgstr "OAuth 重定向主机格式无效。请包含带有协议的完整 URL（例如，https://your-domain.com）"
 
 #: cps/admin.py
@@ -641,8 +687,8 @@ msgstr "密码长度必须在1到40之间"
 
 #: cps/admin.py
 msgid ""
-"KEPUB conversion was not queued. Check that the preference and Kepubify path "
-"are enabled."
+"KEPUB conversion was not queued. Check that the preference and Kepubify path"
+" are enabled."
 msgstr ""
 
 #: cps/admin.py
@@ -704,8 +750,8 @@ msgstr "连接成功！OIDC 发现端点可访问。%(endpoints)s"
 
 #: cps/admin.py
 msgid ""
-"Connection failed: OIDC discovery endpoint not found (404). Check if the base"
-" URL is correct."
+"Connection failed: OIDC discovery endpoint not found (404). Check if the "
+"base URL is correct."
 msgstr "连接失败：未找到 OIDC 发现端点 (404)。请检查基本 URL 是否正确。"
 
 #: cps/admin.py
@@ -714,40 +760,44 @@ msgid "Connection failed: Server returned status code %(code)s"
 msgstr "连接失败：服务器返回状态码 %(code)s"
 
 #: cps/admin.py
+#, fuzzy
 msgid ""
 "Connection failed: Could not connect to server. Check the URL and network "
 "connectivity."
 msgstr "连接失败：无法连接到服务器。"
 
 #: cps/admin.py
+#, fuzzy
 msgid ""
 "Connection failed: Request timed out. The server may be slow or unreachable."
 msgstr "连接失败：请求超时。"
 
 #: cps/admin.py
+#, fuzzy
 msgid ""
 "Connection failed: Server returned invalid JSON. This may not be an OIDC "
 "endpoint."
 msgstr "连接失败：响应中的 JSON 无效。"
 
 #: cps/admin.py
-#, python-format
+#, fuzzy, python-format
 msgid "Connection failed: %(error)s"
 msgstr "连接错误"
 
 #: cps/admin.py
-#, python-format
+#, fuzzy, python-format
 msgid ""
-"Metadata is missing required OIDC fields: %(fields)s. This may not be a valid"
-" OIDC metadata endpoint."
+"Metadata is missing required OIDC fields: %(fields)s. This may not be a "
+"valid OIDC metadata endpoint."
 msgstr "元数据缺少必填字段：%(fields)s"
 
 #: cps/admin.py
-#, python-format
+#, fuzzy, python-format
 msgid "Metadata URL is valid! Found %(count)s OAuth endpoints."
 msgstr "元数据 URL 有效！找到 %(count)s 个端点。"
 
 #: cps/admin.py
+#, fuzzy
 msgid " User info endpoint is available."
 msgstr "无可用发布信息"
 
@@ -761,6 +811,7 @@ msgid "Metadata URL not found (404). Please check the URL is correct."
 msgstr "未找到元数据 URL (404)。请检查 URL 是否正确。"
 
 #: cps/admin.py
+#, fuzzy
 msgid ""
 "Connection failed: Could not connect to metadata URL. Check the URL and "
 "network connectivity."
@@ -775,10 +826,12 @@ msgid "Connection failed: Invalid JSON in response."
 msgstr "连接失败：响应中的 JSON 无效。"
 
 #: cps/admin.py
+#, fuzzy
 msgid "An unknown error occurred."
 msgstr "发生一个未知错误，请稍后再试"
 
 #: cps/admin.py
+#, fuzzy
 msgid "Restore already in progress."
 msgstr "连接错误"
 
@@ -797,7 +850,7 @@ msgid "Restore failed: app.db not found at %(path)s"
 msgstr "还原失败：在 %(path)s 未找到 app.db"
 
 #: cps/admin.py
-#, python-format
+#, fuzzy, python-format
 msgid "Restore failed: %(err)s"
 msgstr "连接错误"
 
@@ -817,16 +870,17 @@ msgid "Import Kobo annotations"
 msgstr ""
 
 #: cps/annotations.py
+#, fuzzy
 msgid "No file uploaded."
 msgstr "文件 %(file)s 已上传"
 
 #: cps/annotations.py
-#, python-format
-msgid "File exceeds %(max)d MB."
+msgid "Uploaded file is not a SQLite database."
 msgstr ""
 
 #: cps/annotations.py
-msgid "Uploaded file is not a SQLite database."
+#, python-format
+msgid "File exceeds %(max)d MB."
 msgstr ""
 
 #: cps/annotations.py cps/templates/annotations_view.html
@@ -851,6 +905,7 @@ msgid "Spanish"
 msgstr "西班牙语"
 
 #: cps/constants.py
+#, fuzzy
 msgid "Finnish"
 msgstr "已完成"
 
@@ -895,6 +950,7 @@ msgid "Norwegian"
 msgstr "挪威语"
 
 #: cps/constants.py
+#, fuzzy
 msgid "Polish"
 msgstr "出版社"
 
@@ -959,7 +1015,7 @@ msgid "Back to book"
 msgstr ""
 
 #: cps/cover_picker.py
-#, python-format
+#, fuzzy, python-format
 msgid "Change cover — %(title)s"
 msgstr "交换作者和标题"
 
@@ -976,6 +1032,7 @@ msgid "This book doesn't have an embedded cover we can extract."
 msgstr ""
 
 #: cps/cover_picker.py
+#, fuzzy
 msgid "Unknown cover source."
 msgstr "连接错误"
 
@@ -988,6 +1045,7 @@ msgid "Only http(s) URLs can be previewed."
 msgstr ""
 
 #: cps/cover_picker.py
+#, fuzzy
 msgid "Could not render the e-reader preview."
 msgstr "找不到指定的目录"
 
@@ -1022,6 +1080,7 @@ msgid "Timestamp"
 msgstr "时间戳"
 
 #: cps/cwa_functions.py cps/templates/tasks.html cps/templates/user_edit.html
+#, fuzzy
 msgid "Book ID"
 msgstr "书籍 ID"
 
@@ -1031,6 +1090,7 @@ msgid "Book Title"
 msgstr "书名"
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "Book Author"
 msgstr "作者"
 
@@ -1039,10 +1099,12 @@ msgid "Trigger Type"
 msgstr "触发类型"
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "Filepath"
 msgstr "文件路径"
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "Filename"
 msgstr "文件名"
 
@@ -1067,10 +1129,12 @@ msgid "Original Format"
 msgstr "原始格式"
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "End Format"
 msgstr "上传格式"
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "Unknown User"
 msgstr "未知"
 
@@ -1107,11 +1171,13 @@ msgid "✅ All Monitoring Services are running as intended! 👍"
 msgstr "✅ 所有监控服务均按预期运行！ 👍"
 
 #: cps/cwa_functions.py
-msgid "🔴 The Ingest Service is running but the Metadata Change Detector is not"
+msgid ""
+"🔴 The Ingest Service is running but the Metadata Change Detector is not"
 msgstr "🔴 导入服务正在运行，但元数据更改检测器未运行"
 
 #: cps/cwa_functions.py
-msgid "🔴 The Metadata Change Detector is running but the Ingest Service is not"
+msgid ""
+"🔴 The Metadata Change Detector is running but the Ingest Service is not"
 msgstr "🔴 元数据更改检测器正在运行，但导入服务未运行"
 
 #: cps/cwa_functions.py
@@ -1136,6 +1202,7 @@ msgid "Single-book EPUB Fixer is not supported with Google Drive libraries."
 msgstr ""
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "Invalid book selection."
 msgstr "无效角色"
 
@@ -1144,14 +1211,17 @@ msgid "Book not found."
 msgstr ""
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "Selected book has no EPUB format."
 msgstr "合并选中的书籍"
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "EPUB file not found on disk."
 msgstr "硬盘上找不到 %(format)s 格式"
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "EPUB Fixer started for selected book."
 msgstr "合并选中的书籍"
 
@@ -1196,6 +1266,7 @@ msgid "Invalid Base64 image data."
 msgstr ""
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "Invalid image data format."
 msgstr "无效的邮箱格式"
 
@@ -1204,6 +1275,7 @@ msgid "Error validating image data."
 msgstr ""
 
 #: cps/cwa_functions.py
+#, fuzzy
 msgid "Profile picture updated successfully."
 msgstr "成功删除 {} 个用户"
 
@@ -1212,11 +1284,13 @@ msgid "Calibre-Web NextGen Profile Picture Management (WIP)"
 msgstr ""
 
 #: cps/db.py cps/spa_strings.py cps/templates/config_edit.html
-#: cps/templates/config_view_edit.html cps/templates/email_edit.html cps/web.py
+#: cps/templates/config_view_edit.html cps/templates/email_edit.html
+#: cps/web.py
 msgid "None"
 msgstr "无"
 
 #: cps/duplicates.py
+#, fuzzy
 msgid "Duplicate Books"
 msgstr "删除书籍"
 
@@ -1225,10 +1299,12 @@ msgid "Duplicate group already dismissed"
 msgstr ""
 
 #: cps/duplicates.py
+#, fuzzy
 msgid "Duplicate group dismissed"
 msgstr "删除书籍"
 
 #: cps/duplicates.py
+#, fuzzy
 msgid "Duplicate group restored"
 msgstr "删除书籍"
 
@@ -1237,6 +1313,7 @@ msgid "Duplicate group was not dismissed"
 msgstr ""
 
 #: cps/duplicates.py
+#, fuzzy
 msgid "Duplicate scan queued"
 msgstr "重复书籍"
 
@@ -1245,6 +1322,7 @@ msgid "Duplicate scan completed (fallback)"
 msgstr "重复扫描已完成（回退模式）"
 
 #: cps/duplicates.py
+#, fuzzy
 msgid "Invalid resolution strategy"
 msgstr "无效角色"
 
@@ -1268,6 +1346,7 @@ msgid "Upload done, processing, please wait..."
 msgstr "上传完成，正在处理，请稍候..."
 
 #: cps/editbooks.py
+#, fuzzy
 msgid "Failed to queue upload for processing"
 msgstr "创建封面路径失败"
 
@@ -1286,6 +1365,7 @@ msgid "There was an error converting this book: %(res)s"
 msgstr "转换此书籍时出现错误： %(res)s"
 
 #: cps/editbooks.py
+#, fuzzy
 msgid "File type isn't allowed to be uploaded to this server"
 msgstr "不能上传文件扩展名为“%(ext)s”的文件到此服务器"
 
@@ -1329,7 +1409,8 @@ msgstr "已成功更新元数据"
 msgid "Error editing book: {}"
 msgstr "编辑书籍时出错: {}"
 
-#: cps/editbooks.py cps/updater.py cps/uploader.py
+#: cps/editbooks.py cps/templates/kobo_reconcile.html cps/updater.py
+#: cps/uploader.py
 msgid "Unknown"
 msgstr "未知"
 
@@ -1366,7 +1447,7 @@ msgid "edit metadata"
 msgstr "编辑元数据"
 
 #: cps/editbooks.py
-#, python-format
+#, fuzzy, python-format
 msgid "Seriesindex: %(seriesindex)s is not a valid number, skipping"
 msgstr "%(seriesindex)s 不是一个有效的数值，忽略"
 
@@ -1390,6 +1471,7 @@ msgid "File format %(ext)s added to %(book)s"
 msgstr "已添加 %(ext)s 格式到 %(book)s"
 
 #: cps/editbooks.py
+#, fuzzy
 msgid "Book not found"
 msgstr "找不到令牌"
 
@@ -1398,7 +1480,7 @@ msgid "Book has no file formats on disk to reload from"
 msgstr ""
 
 #: cps/editbooks.py
-#, python-format
+#, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
 msgstr "硬盘上找不到 %(format)s 格式"
 
@@ -1429,8 +1511,8 @@ msgstr ""
 
 #: cps/gdrive.py
 msgid ""
-"Google Drive setup not completed, try to deactivate and activate Google Drive"
-" again"
+"Google Drive setup not completed, try to deactivate and activate Google "
+"Drive again"
 msgstr "Google Drive 设置未完成，请尝试停用并再次激活 Google 云端硬盘"
 
 #: cps/gdrive.py
@@ -1468,12 +1550,12 @@ msgid "Send to eReader"
 msgstr "发送到电子阅读器"
 
 #: cps/helper.py
-#, python-format
+#, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
 msgstr "找不到 ID 为 %(book)d 的书籍的 %(format)s 格式"
 
 #: cps/helper.py
-#, python-format
+#, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
 msgstr "找不到 ID 为 %(book)d 的书籍的 %(format)s 格式"
 
@@ -1549,7 +1631,8 @@ msgstr "Google Drive 上找不到文件 %(file)s"
 
 #: cps/helper.py
 #, python-format
-msgid "Rename title from: '%(src)s' to '%(dest)s' failed with error: %(error)s"
+msgid ""
+"Rename title from: '%(src)s' to '%(dest)s' failed with error: %(error)s"
 msgstr "将标题从“%(src)s”改为“%(dest)s”时失败，出错信息：%(error)s"
 
 #: cps/helper.py
@@ -1632,8 +1715,8 @@ msgstr "执行 UnRar 时出错"
 #: cps/helper.py
 #, python-format
 msgid ""
-"Unsupported architecture detected: %(arch)s. Calibre-Web NextGen is optimized"
-" for x86_64 and aarch64."
+"Unsupported architecture detected: %(arch)s. Calibre-Web NextGen is "
+"optimized for x86_64 and aarch64."
 msgstr ""
 
 #: cps/helper.py
@@ -1645,6 +1728,7 @@ msgid "Please specify a directory, not a file"
 msgstr "请指定一个目录，而不是文件"
 
 #: cps/helper.py
+#, fuzzy
 msgid "Calibre binaries not viable"
 msgstr "数据库不可写入"
 
@@ -1654,11 +1738,12 @@ msgid "Missing calibre binaries: %(missing)s"
 msgstr "缺少 Calibre 执行文件: %(missing)s"
 
 #: cps/helper.py
-#, python-format
+#, fuzzy, python-format
 msgid "Missing executable permissions: %(missing)s"
 msgstr "缺少执行权限"
 
 #: cps/helper.py
+#, fuzzy
 msgid "Error executing Calibre"
 msgstr "执行 UnRar 时出错"
 
@@ -1713,12 +1798,14 @@ msgid "Login failed: OAuth token expired. Please try logging in again."
 msgstr "登录失败：OAuth 令牌已过期。请尝试重新登录。"
 
 #: cps/oauth_bb.py
+#, fuzzy
 msgid ""
 "Login failed: Could not connect to the OAuth provider's user info endpoint. "
 "Please try again or contact your administrator."
 msgstr "登录失败：无法连接到用户信息端点。"
 
 #: cps/oauth_bb.py
+#, fuzzy
 msgid ""
 "Login failed: The OAuth provider returned invalid user profile data. Please "
 "contact your administrator."
@@ -1727,8 +1814,9 @@ msgstr "登录失败：OAuth 提供者返回了无效的用户资料。"
 #: cps/oauth_bb.py
 #, python-format
 msgid ""
-"Login failed: OAuth provider response is missing required fields: %(fields)s."
-" Please check your OAuth configuration or contact your administrator."
+"Login failed: OAuth provider response is missing required fields: "
+"%(fields)s. Please check your OAuth configuration or contact your "
+"administrator."
 msgstr "登录失败：OAuth 提供者响应中缺少必需的字段：%(fields)s。请检查您的 OAuth 配置或联系您的管理员。"
 
 #: cps/oauth_bb.py
@@ -1762,16 +1850,18 @@ msgstr "链接到 %(oauth)s 成功"
 #: cps/oauth_bb.py
 #, python-format
 msgid ""
-"Login failed: No user account is linked to your %(provider)s account. Please "
-"contact your administrator to create an account or link your existing "
+"Login failed: No user account is linked to your %(provider)s account. Please"
+" contact your administrator to create an account or link your existing "
 "account."
 msgstr "登录失败：没有用户帐户链接到您的 %(provider)s 帐户。请联系您的管理员以创建帐户或链接您现有的帐户。"
 
 #: cps/oauth_bb.py
-msgid "OAuth authentication failed. Please try again or contact administrator."
+msgid ""
+"OAuth authentication failed. Please try again or contact administrator."
 msgstr "OAuth 身份验证失败。请重试或联系管理员。"
 
 #: cps/oauth_bb.py
+#, fuzzy
 msgid "OAuth system error. Please contact administrator."
 msgstr "邮件服务未配置，请联系网站管理员！"
 
@@ -1807,6 +1897,7 @@ msgid "Failed to fetch user info from Google."
 msgstr "从 Google 获取用户信息失败"
 
 #: cps/oauth_bb.py
+#, fuzzy
 msgid "Failed to log in with Generic OAuth."
 msgstr "使用 Github 登录失败"
 
@@ -1847,7 +1938,7 @@ msgid "Google Oauth error: {}"
 msgstr "Google Oauth 错误: {}"
 
 #: cps/oauth_bb.py
-#, python-brace-format
+#, fuzzy, python-brace-format
 msgid "OAuth error: {}"
 msgstr "GitHub Oauth 错误: {}"
 
@@ -1876,6 +1967,7 @@ msgid "Popular publications from this catalog based on Rating."
 msgstr "基于评分的热门书籍"
 
 #: cps/opds.py
+#, fuzzy
 msgid "Recently added Books"
 msgstr "已下载书籍"
 
@@ -1896,6 +1988,7 @@ msgid "Read Books"
 msgstr "已读书籍"
 
 #: cps/opds.py
+#, fuzzy
 msgid "Books currently being read"
 msgstr "当前版本"
 
@@ -1978,14 +2071,17 @@ msgid "Books organized in shelves"
 msgstr "书架上的书"
 
 #: cps/opds.py
+#, fuzzy
 msgid "Magic Shelves"
 msgstr "同步所选书架到 Kobo"
 
 #: cps/opds.py
+#, fuzzy
 msgid "Books organized in magic shelves"
 msgstr "书架上的书"
 
 #: cps/opds.py
+#, fuzzy
 msgid "description"
 msgstr "简介"
 
@@ -2113,6 +2209,7 @@ msgid "Duplicates"
 msgstr "重复书籍"
 
 #: cps/render_template.py
+#, fuzzy
 msgid "Show Duplicate Books"
 msgstr "显示最高评分书籍"
 
@@ -2147,7 +2244,7 @@ msgid "Rating >= %(rating)s"
 msgstr "评分 >= %(rating)s"
 
 #: cps/search.py
-#, python-format
+#, fuzzy, python-format
 msgid "Read Status = '%(status)s'"
 msgstr "阅读状态 = %(status)s"
 
@@ -2202,21 +2299,22 @@ msgid "Could not add books to shelf: %(sname)s"
 msgstr "无法添加书籍到书架：%(sname)s"
 
 #: cps/shelf.py
+#, fuzzy
 msgid "Invalid series specified"
 msgstr "指定的书架无效"
 
 #: cps/shelf.py
-#, python-format
+#, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
 msgstr "无法添加书籍到书架：%(sname)s"
 
 #: cps/shelf.py
-#, python-format
+#, fuzzy, python-format
 msgid "All books of series '%(name)s' are already on shelf: %(sname)s"
 msgstr "书籍已经在书架 %(name)s 中了"
 
 #: cps/shelf.py
-#, python-format
+#, fuzzy, python-format
 msgid "%(count)d books of series '%(name)s' added to shelf: %(sname)s"
 msgstr "书籍已经被添加到书架 %(sname)s 中"
 
@@ -2305,6 +2403,7 @@ msgid "Could not save order"
 msgstr ""
 
 #: cps/shelf.py cps/templates/layout.html
+#, fuzzy
 msgid "Reorder Shelves"
 msgstr "排除书架"
 
@@ -2486,12 +2585,12 @@ msgid "Not rated"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/book_edit.html
-#: cps/templates/search_form.html
+#: cps/templates/kobo_reconcile.html cps/templates/search_form.html
 msgid "Yes"
 msgstr "确认"
 
 #: cps/spa_strings.py cps/templates/book_edit.html
-#: cps/templates/search_form.html
+#: cps/templates/kobo_reconcile.html cps/templates/search_form.html
 msgid "No"
 msgstr "没有"
 
@@ -2682,7 +2781,8 @@ msgid "App passwords"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/book_edit.html
-#: cps/templates/cwa_settings.html cps/templates/search_form.html
+#: cps/templates/cwa_settings.html cps/templates/kobo_reconcile.html
+#: cps/templates/search_form.html
 msgid "Author"
 msgstr "作者"
 
@@ -2811,8 +2911,8 @@ msgstr ""
 #: cps/spa_strings.py
 #, python-brace-format
 msgid ""
-"Delete \"{title}\"? This permanently removes the book and all its files from "
-"your library. This cannot be undone."
+"Delete \"{title}\"? This permanently removes the book and all its files from"
+" your library. This cannot be undone."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -3391,6 +3491,10 @@ msgid "Go to Upload"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Open Tasks"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Open search"
 msgstr ""
 
@@ -3464,7 +3568,8 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
-"Drag to reorder. Tap ✕ to hide a section. Arrow keys move the focused handle."
+"Drag to reorder. Tap ✕ to hide a section. Arrow keys move the focused "
+"handle."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -3554,6 +3659,80 @@ msgid "Dismiss help announcement"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Kobo book compatibility repaired"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Library notice"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Show affected books"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Untitled book"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} notices dismissed permanently."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid ""
+"CWNG repaired {count} books previously sent to your Kobo. Older highlights "
+"may still need to be recreated on the device."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"CWNG repaired a book previously sent to your Kobo. Older highlights may "
+"still need to be recreated on the device."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "There is new information about your library."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Dismiss all {count} notices permanently"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Dismiss all"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"This book was repaired after it had already been sent to a Kobo. Download "
+"the updated book; highlights created before the repair may remain invisible "
+"and may need to be recreated."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "There is new information about this book."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Notice dismissed permanently."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Dismiss permanently"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not dismiss the notices. Please try again."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not dismiss the notice. Please try again."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Open Ko-fi →"
 msgstr ""
 
@@ -3634,6 +3813,10 @@ msgid "(replace cover)"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "1 selected."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "2:3 (publisher cover — no padding for typical covers)"
 msgstr ""
 
@@ -3657,8 +3840,8 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
-"A one-time full duplicate scan is needed. Use “Scan for duplicates” above to "
-"run it."
+"A one-time full duplicate scan is needed. Use “Scan for duplicates” above to"
+" run it."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -3778,7 +3961,7 @@ msgid "Approve long OCR job"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/book_table.html
-#: cps/templates/duplicates.html
+#: cps/templates/duplicates.html cps/templates/kobo_reconcile.html
 msgid "Archive"
 msgstr ""
 
@@ -3788,6 +3971,19 @@ msgstr "归档"
 
 #: cps/spa_strings.py
 msgid "Ask in Discord"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Assign selected to device"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Assign to device"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Assigned to {name}."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -3879,6 +4075,10 @@ msgid "Book density"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Book order"
+msgstr ""
+
+#: cps/spa_strings.py
 #, python-brace-format
 msgid "Book {number}"
 msgstr ""
@@ -3907,10 +4107,6 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Built-in providers (leave blank to disable):"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Bulk actions"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4094,11 +4290,19 @@ msgid "Copy link"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Could not assign."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Could not create shelf."
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not create the shelf."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not delete annotation."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4126,11 +4330,15 @@ msgid "Could not load duplicates."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Could not load e-readers."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Could not load external ratings."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not load highlights."
+msgid "Could not load highlights and notes."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4196,6 +4404,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not save OCR settings."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not save annotation."
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/shelf_reorder.html
@@ -4366,6 +4578,10 @@ msgid "Delete failed."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Delete note"
+msgstr ""
+
+#: cps/spa_strings.py
 #, python-brace-format
 msgid "Delete shelf \"{name}\"? This cannot be undone."
 msgstr ""
@@ -4394,6 +4610,10 @@ msgid "Delete {name}"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Deleted device"
+msgstr ""
+
+#: cps/spa_strings.py
 #, python-brace-format
 msgid "Deleted tag {name}"
 msgstr ""
@@ -4418,6 +4638,31 @@ msgstr "简介"
 
 #: cps/spa_strings.py
 msgid "Detect automatically"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Device"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Device name"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Device renamed."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Device restored."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Device: {name}"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Devices appear here after their first sync."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4455,8 +4700,8 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
-"Documents above this limit require explicit confirmation and are not started "
-"automatically."
+"Documents above this limit require explicit confirmation and are not started"
+" automatically."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4490,12 +4735,16 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
-"Duplicate scan started. It runs in the background — this list updates when it"
-" finishes."
+"Duplicate scan started. It runs in the background — this list updates when "
+"it finishes."
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "E-reader preview"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "E-readers"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4517,6 +4766,10 @@ msgstr ""
 #: cps/templates/user_table.html
 msgid "Edit"
 msgstr "编辑书籍"
+
+#: cps/spa_strings.py
+msgid "Edit highlight"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Edit note"
@@ -4589,7 +4842,15 @@ msgid "Enter WebDAV password"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Exit full screen"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Expires in"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Export"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4636,6 +4897,10 @@ msgstr ""
 #: cps/spa_strings.py cps/templates/config_edit.html
 #: cps/templates/cover_picker.html
 msgid "Fill style"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Filter by device"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4724,6 +4989,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Groq"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Group by"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4827,13 +5096,22 @@ msgstr ""
 msgid "Image from {source}"
 msgstr ""
 
+#: cps/spa_strings.py cps/templates/annotations_import.html
+msgid "Import"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Import and export"
+msgstr ""
+
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Import errors ({count})"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Import reading positions from Moon+ Reader through a WebDAV connection."
+msgid ""
+"Import reading positions from Moon+ Reader through a WebDAV connection."
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/book_edit.html cps/templates/detail.html
@@ -4877,6 +5155,10 @@ msgid "Justify text"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "KOReader"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Key file path"
 msgstr ""
 
@@ -4885,11 +5167,19 @@ msgid "Key path"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Kobo"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Kobo Clara HD / 2E / BW / Colour (1072×1448)"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Kobo Libra Color / Libra 2 (1264×1680)"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Kobo setup"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4913,6 +5203,11 @@ msgstr ""
 #: cps/spa_strings.py cps/templates/detail.html
 msgid "Last modified"
 msgstr "最后修改时间"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Last seen {when}"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -5036,7 +5331,15 @@ msgid "Manage admin role from OAuth group"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Manage e-readers"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Manage shelves"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Manage your Kobo sync URL in the classic account page."
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/_book_organizer.html
@@ -5146,6 +5449,11 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Moon+ position sync queued."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "More actions for {name}"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5262,6 +5570,10 @@ msgid "No duplicate groups found."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "No e-readers yet."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "No excerpt available."
 msgstr ""
 
@@ -5336,6 +5648,10 @@ msgid "No {items} yet."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Not assigned"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Not checked"
 msgstr ""
 
@@ -5352,7 +5668,15 @@ msgid "Not enabled"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Not in current file"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Not indexed"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Not seen lately"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5361,6 +5685,10 @@ msgstr ""
 
 #: cps/spa_strings.py cps/templates/read.html
 msgid "Note"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Note (optional)"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5431,8 +5759,8 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
-"On another device where you’re already signed in, scan this code or open the "
-"link below to authorise this device."
+"On another device where you’re already signed in, scan this code or open the"
+" link below to authorise this device."
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/read.html
@@ -5441,6 +5769,10 @@ msgstr "单栏"
 
 #: cps/spa_strings.py
 msgid "Open Account"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Open administration"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/annotations_view.html
@@ -5554,8 +5886,8 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
-"Pages marked below open in the classic view. Changes there apply to the whole"
-" server."
+"Pages marked below open in the classic view. Changes there apply to the "
+"whole server."
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/admin.html cps/templates/login.html
@@ -5752,8 +6084,8 @@ msgstr ""
 #, python-brace-format
 msgid ""
 "Reload metadata for \"{title}\" from the file on disk? Any title, author or "
-"series you edited here is replaced by what the file contains. This cannot be "
-"undone."
+"series you edited here is replaced by what the file contains. This cannot be"
+" undone."
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/detail.html
@@ -5768,12 +6100,20 @@ msgstr ""
 msgid "Remember me"
 msgstr ""
 
+#: cps/spa_strings.py
+msgid "Remove device"
+msgstr ""
+
 #: cps/spa_strings.py cps/templates/detail.html
 msgid "Remove from favorites"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/detail.html
 msgid "Remove from shelf"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Remove highlight"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5785,7 +6125,17 @@ msgid "Remove rule"
 msgstr ""
 
 #: cps/spa_strings.py
+#, python-brace-format
+msgid "Remove {name}?"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Rename"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Rename {name}"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5888,11 +6238,12 @@ msgstr "SSL/TLS 协议"
 msgid "STARTTLS"
 msgstr "STARTTLS 协议"
 
-#: cps/spa_strings.py cps/templates/book_edit.html cps/templates/config_db.html
-#: cps/templates/config_edit.html cps/templates/config_view_edit.html
-#: cps/templates/email_edit.html cps/templates/read.html
-#: cps/templates/schedule_edit.html cps/templates/shelf_edit.html
-#: cps/templates/shelf_reorder.html cps/templates/user_edit.html
+#: cps/spa_strings.py cps/templates/book_edit.html
+#: cps/templates/config_db.html cps/templates/config_edit.html
+#: cps/templates/config_view_edit.html cps/templates/email_edit.html
+#: cps/templates/read.html cps/templates/schedule_edit.html
+#: cps/templates/shelf_edit.html cps/templates/shelf_reorder.html
+#: cps/templates/user_edit.html
 msgid "Save"
 msgstr "保存"
 
@@ -5980,7 +6331,26 @@ msgid "Select"
 msgstr "选择"
 
 #: cps/spa_strings.py
+msgid "Select all in group"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Select all {n}"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Select highlight: {text}"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Select multiple"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Select note: {text}"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6054,6 +6424,10 @@ msgstr ""
 #: cps/spa_strings.py
 msgid ""
 "Set a metadata URL to auto-fill the endpoints below, or enter them manually."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Set up Kobo sync"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6176,6 +6550,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Sources"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Start the only OAuth provider automatically"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6346,6 +6724,10 @@ msgid ""
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "This device will no longer sync."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "This magic link expired. Generate a new one to try again."
 msgstr ""
 
@@ -6355,8 +6737,8 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
-"This page ran into an error and could not be displayed. Your library is fine "
-"— reloading usually fixes it."
+"This page ran into an error and could not be displayed. Your library is fine"
+" — reloading usually fixes it."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6428,11 +6810,23 @@ msgid "Unchanged"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Undo"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Unhide"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Unknown device"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Unknown model"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Unknown source"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6454,6 +6848,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Update failed."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Upload a book"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/cover_picker.html
@@ -6529,6 +6927,14 @@ msgid "Waiting for you to authorise…"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Warning: this highlight can’t be shown in the book"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Web reader"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "WebDAV URL"
 msgstr ""
 
@@ -6558,6 +6964,13 @@ msgid "When locked, fetching metadata will not overwrite this cover."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid ""
+"With automatic start on, the login page goes straight to the provider. Add "
+"?local=1 to the login URL to reach the password form, which keeps working as"
+" long as standard password login is left enabled."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Working"
 msgstr ""
 
@@ -6571,9 +6984,9 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
-"Your Kobo is still set to sync your whole library, so marking this shelf does"
-" nothing on its own. Switch your account to shelf-only syncing to make it "
-"take effect."
+"Your Kobo is still set to sync your whole library, so marking this shelf "
+"does nothing on its own. Switch your account to shelf-only syncing to make "
+"it take effect."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6646,6 +7059,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "type (isbn, amazon, doi…)"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "unknown"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6723,12 +7140,60 @@ msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
+msgid "{done} of {total}"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
 msgid "{field} (comma separated)"
 msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
+msgid "{name} removed."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{name}, {n} highlights and notes"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{n} assigned to {name}."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{n} failed."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
 msgid "{n} found"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{n} highlights and notes"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid ""
+"{n} highlights and notes assigned to this device will become Unknown device."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid ""
+"{n} highlights and notes were made on this device. They are not deleted. "
+"Their origin history is kept."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{ok} of {total} assigned to {name}."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6786,8 +7251,8 @@ msgstr "无可用更新。您已经安装了最新版本"
 
 #: cps/updater.py
 msgid ""
-"A new update is available. Click on the button below to update to the latest "
-"version."
+"A new update is available. Click on the button below to update to the latest"
+" version."
 msgstr "有新的更新。单击下面的按钮以更新到最新版本"
 
 #: cps/updater.py
@@ -6862,14 +7327,17 @@ msgid "Language: %(name)s"
 msgstr "语言：%(name)s"
 
 #: cps/web.py
+#, fuzzy
 msgid "Favorite Books"
 msgstr "热门书籍"
 
 #: cps/templates/user_edit.html cps/web.py
+#, fuzzy
 msgid "Hidden Books"
 msgstr "隐藏书籍"
 
 #: cps/web.py
+#, fuzzy
 msgid "Error loading magic shelf"
 msgstr "删除书架时出错"
 
@@ -6883,6 +7351,7 @@ msgid "No rules provided"
 msgstr "未提供规则"
 
 #: cps/web.py
+#, fuzzy
 msgid "Invalid rules format"
 msgstr "无效的邮箱格式"
 
@@ -6891,10 +7360,12 @@ msgid "Error processing rules"
 msgstr "处理规则时出错"
 
 #: cps/web.py
+#, fuzzy
 msgid "Invalid request"
 msgstr "无效角色"
 
 #: cps/web.py
+#, fuzzy
 msgid "Name and rules are required"
 msgstr "用户名和图像数据均为必填项。"
 
@@ -6909,10 +7380,12 @@ msgid ""
 msgstr ""
 
 #: cps/web.py
+#, fuzzy
 msgid "Error creating shelf"
 msgstr "删除书架时出错"
 
 #: cps/templates/layout.html cps/web.py
+#, fuzzy
 msgid "Create Magic Shelf"
 msgstr "创建书架"
 
@@ -6921,18 +7394,22 @@ msgid "Permission denied to change public status"
 msgstr "拒绝更改公开状态的权限"
 
 #: cps/web.py
+#, fuzzy
 msgid "Shelf name is required"
 msgstr "此栏必须填写"
 
 #: cps/web.py
+#, fuzzy
 msgid "Error updating shelf"
 msgstr "删除书架时出错"
 
 #: cps/web.py
+#, fuzzy
 msgid "Edit Magic Shelf"
 msgstr "编辑书架"
 
 #: cps/web.py
+#, fuzzy
 msgid "Shelf not found"
 msgstr "找不到用户"
 
@@ -6941,10 +7418,12 @@ msgid "Permission denied"
 msgstr "没有权限"
 
 #: cps/web.py
+#, fuzzy
 msgid "Shelf duplicated successfully"
 msgstr "成功删除 {} 个用户"
 
 #: cps/web.py
+#, fuzzy
 msgid "Error duplicating shelf"
 msgstr "删除书架时出错"
 
@@ -6955,12 +7434,14 @@ msgid ""
 msgstr "系统书架无法删除。您可以在用户资料设置中隐藏它们。"
 
 #: cps/web.py
+#, fuzzy
 msgid "Error deleting shelf"
 msgstr "删除书架时出错"
 
 #: cps/web.py
 msgid ""
-"You cannot hide your own shelves. Delete them instead if you don't want them."
+"You cannot hide your own shelves. Delete them instead if you don't want "
+"them."
 msgstr "您无法隐藏自己的书架。如果不想要它们，请直接删除。"
 
 #: cps/web.py
@@ -6968,6 +7449,7 @@ msgid "Shelf already hidden"
 msgstr "书架已被隐藏"
 
 #: cps/web.py
+#, fuzzy
 msgid "Error hiding shelf"
 msgstr "删除书架时出错"
 
@@ -6976,6 +7458,7 @@ msgid "Shelf was not hidden"
 msgstr "书架未被隐藏"
 
 #: cps/web.py
+#, fuzzy
 msgid "Error unhiding shelf"
 msgstr "删除书架时出错"
 
@@ -7010,10 +7493,12 @@ msgid "No email addresses selected"
 msgstr "没有选择电子邮箱地址"
 
 #: cps/web.py
+#, fuzzy
 msgid "Additional email addresses are disabled for your account."
 msgstr "选择邮箱地址:"
 
 #: cps/web.py
+#, fuzzy
 msgid "Success! Book queued for sending to the selected address(es)!"
 msgstr "书籍已经成功加入 %(eReadermail)s 的发送队列"
 
@@ -7027,6 +7512,7 @@ msgid "Register"
 msgstr "注册"
 
 #: cps/web.py
+#, fuzzy
 msgid "Connection error to limiter backend, please contact your administrator"
 msgstr "邮件服务未配置，请联系网站管理员！"
 
@@ -7044,12 +7530,14 @@ msgid "Success! Confirmation Email has been sent."
 msgstr "确认邮件已经发送到您的邮箱"
 
 #: cps/web.py
+#, fuzzy
 msgid ""
 "Authentication loop detected. If you're experiencing login issues, please "
 "contact your administrator."
 msgstr "Calibre-Web 实例未配置，请联系您的管理员！"
 
 #: cps/web.py
+#, fuzzy
 msgid ""
 "OAuth authentication is not properly configured. Please contact "
 "administrator."
@@ -7077,13 +7565,14 @@ msgid "you are now logged in as: '%(nickname)s'"
 msgstr "您现在已以“%(nickname)s”身份登录"
 
 #: cps/web.py
-#, python-format
+#, fuzzy, python-format
 msgid ""
 "Welcome! Your account has been automatically created. You are now logged in "
 "as: '%(nickname)s'"
 msgstr "您现在已以“%(nickname)s”身份登录"
 
 #: cps/web.py
+#, fuzzy
 msgid ""
 "Authentication successful, but account creation failed. Please contact your "
 "administrator."
@@ -7146,6 +7635,7 @@ msgid "App password '%(label)s' revoked."
 msgstr ""
 
 #: cps/web.py
+#, fuzzy
 msgid "Invalid book ID."
 msgstr "无效角色"
 
@@ -7174,6 +7664,7 @@ msgid "Auto-fetching Hardcover IDs"
 msgstr ""
 
 #: cps/tasks/auto_send.py
+#, fuzzy
 msgid "Preparing to send to eReader..."
 msgstr "%(book)s 发送到电子阅读器"
 
@@ -7182,14 +7673,17 @@ msgid "Checking available formats..."
 msgstr ""
 
 #: cps/tasks/auto_send.py
+#, fuzzy
 msgid "Sending to eReader..."
 msgstr "发送到电子阅读器"
 
 #: cps/tasks/auto_send.py
+#, fuzzy
 msgid "Auto-send completed successfully"
 msgstr "成功删除 {} 个用户"
 
 #: cps/tasks/auto_send.py
+#, fuzzy
 msgid "Auto-Send"
 msgstr "发送"
 
@@ -7249,6 +7743,7 @@ msgid "Clean archived book references"
 msgstr "清理已归档书籍的引用"
 
 #: cps/tasks/duplicate_scan.py
+#, fuzzy
 msgid "Duplicate scan"
 msgstr "重复书籍"
 
@@ -7270,14 +7765,17 @@ msgid "Building duplicate index: no books"
 msgstr ""
 
 #: cps/tasks/duplicate_scan.py
+#, fuzzy
 msgid "Finding duplicate groups"
 msgstr "选择重复项"
 
 #: cps/tasks/duplicate_scan.py
+#, fuzzy
 msgid "Updating duplicate cache"
 msgstr "正在解压更新包"
 
 #: cps/tasks/duplicate_scan.py
+#, fuzzy
 msgid "Duplicate scan pending: manual scan required"
 msgstr "重复书籍"
 
@@ -7314,6 +7812,7 @@ msgid "Syncing shelf additions to Hardcover"
 msgstr ""
 
 #: cps/tasks/hardcover_sync.py
+#, fuzzy
 msgid "Hardcover Sync"
 msgstr "启用 Kobo 同步"
 
@@ -7328,6 +7827,19 @@ msgstr ""
 #: cps/tasks/kepub_backfill.py
 #, python-format
 msgid "%(count)d KEPUB conversion(s) failed"
+msgstr ""
+
+#: cps/tasks/kepub_package_repair.py
+msgid "Repair existing KEPUB packages"
+msgstr ""
+
+#: cps/tasks/kepub_package_repair.py
+msgid "Google Drive KEPUB repair is not supported"
+msgstr ""
+
+#: cps/tasks/kepub_package_repair.py
+#, python-format
+msgid "%(count)d KEPUB repair(s) failed"
 msgstr ""
 
 #: cps/tasks/mail.py
@@ -7351,6 +7863,7 @@ msgid "Convert Library – full run"
 msgstr "转换书库 – 完整运行"
 
 #: cps/tasks/ops.py
+#, fuzzy
 msgid "Convert Library"
 msgstr "在书库"
 
@@ -7372,7 +7885,7 @@ msgid "Cover Thumbnails"
 msgstr "封面缩略图"
 
 #: cps/tasks/thumbnail.py
-#, python-brace-format
+#, fuzzy, python-brace-format
 msgid "Generated {0} series thumbnails"
 msgstr "生成了 %(count)s 个丛书缩略图"
 
@@ -7381,22 +7894,27 @@ msgid "Clearing cover thumbnail cache"
 msgstr "正在清理封面缩略图缓存"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Book organizer"
 msgstr "书架上的书"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Change sort order"
 msgstr "修改密码"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Select multiple books"
 msgstr "创建书架"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Display settings"
 msgstr "安全设置"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Cover Settings"
 msgstr "设置"
 
@@ -7405,10 +7923,12 @@ msgid "Hide shelf badges on covers"
 msgstr ""
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Selection actions"
 msgstr "选择一个选项"
 
 #: cps/templates/_book_organizer.html cps/templates/book_table.html
+#, fuzzy
 msgid "Add to Shelf"
 msgstr "添加到书架"
 
@@ -7424,18 +7944,22 @@ msgid "Mark"
 msgstr ""
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Downloads, fewest first"
 msgstr "下载次数"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Downloads, most first"
 msgstr "下载次数"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Date added, newest first"
 msgstr "按图书日期排序，最新优先"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Date added, oldest first"
 msgstr "按图书日期排序，最旧优先"
 
@@ -7448,18 +7972,22 @@ msgid "Title Z → A"
 msgstr ""
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Author A → Z"
 msgstr "作者"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Author Z → A"
 msgstr "作者"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Published, newest first"
 msgstr "出版时间早于 "
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Published, oldest first"
 msgstr "出版时间早于 "
 
@@ -7472,10 +8000,12 @@ msgid "Series number, descending"
 msgstr ""
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Added to shelf, newest first"
 msgstr "按图书日期排序，最新优先"
 
 #: cps/templates/_book_organizer.html
+#, fuzzy
 msgid "Added to shelf, oldest first"
 msgstr "按图书日期排序，最旧优先"
 
@@ -7488,6 +8018,7 @@ msgid "Send to eReader Email"
 msgstr "接收书籍的电子阅读器邮箱地址"
 
 #: cps/templates/admin.html cps/templates/user_edit.html
+#, fuzzy
 msgid "Send to eReader Subject"
 msgstr "发送到电子阅读器"
 
@@ -7508,6 +8039,7 @@ msgid "Import LDAP Users"
 msgstr "导入 LDAP 用户"
 
 #: cps/templates/admin.html
+#, fuzzy
 msgid "Email Server Settings&nbsp;&nbsp;📬"
 msgstr "SMTP 邮件服务器设置"
 
@@ -7596,6 +8128,7 @@ msgid "Edit Calibre Database Configuration"
 msgstr "编辑 Calibre 数据库配置"
 
 #: cps/templates/admin.html
+#, fuzzy
 msgid "Scheduled Tasks&nbsp;&nbsp;⌛"
 msgstr "计划任务"
 
@@ -7641,6 +8174,7 @@ msgid "Check NextGen Status"
 msgstr ""
 
 #: cps/templates/admin.html
+#, fuzzy
 msgid "Setup KOReader Sync"
 msgstr "epub 阅读器"
 
@@ -7665,10 +8199,12 @@ msgid "NextGen Discord Server"
 msgstr ""
 
 #: cps/templates/admin.html
+#, fuzzy
 msgid "Run Hardcover Auto-Fetch"
 msgstr "Hardcover API token"
 
 #: cps/templates/admin.html
+#, fuzzy
 msgid "Administration&nbsp;&nbsp;🚀"
 msgstr "管理"
 
@@ -7704,6 +8240,7 @@ msgid "Shutdown"
 msgstr "停止"
 
 #: cps/templates/admin.html
+#, fuzzy
 msgid "Version Information&nbsp;&nbsp;📜"
 msgstr "版本信息"
 
@@ -7716,10 +8253,12 @@ msgid "Details"
 msgstr "详情"
 
 #: cps/templates/admin.html
+#, fuzzy
 msgid "Update available"
 msgstr "更新失败："
 
 #: cps/templates/admin.html cps/templates/layout.html
+#, fuzzy
 msgid "Update now"
 msgstr "更新通道"
 
@@ -7770,12 +8309,8 @@ msgid ""
 "never stored on the server."
 msgstr ""
 
-#: cps/templates/annotations_import.html
+#: cps/templates/annotations_import.html cps/templates/kobo_reconcile.html
 msgid "KoboReader.sqlite"
-msgstr ""
-
-#: cps/templates/annotations_import.html
-msgid "Import"
 msgstr ""
 
 #: cps/templates/annotations_import.html
@@ -7791,6 +8326,7 @@ msgid "already imported (skipped)"
 msgstr ""
 
 #: cps/templates/annotations_import.html
+#, fuzzy
 msgid "for books not in this library (skipped)"
 msgstr "本书籍在此书库中"
 
@@ -7808,10 +8344,12 @@ msgid "Uploading..."
 msgstr "正在上传..."
 
 #: cps/templates/annotations_import.html
+#, fuzzy
 msgid "Import failed."
 msgstr "更新失败："
 
 #: cps/templates/annotations_import.html
+#, fuzzy
 msgid "Network error."
 msgstr "连接错误"
 
@@ -7842,7 +8380,7 @@ msgid "Chapter progress: %(pct)d%%"
 msgstr ""
 
 #: cps/templates/annotations_view.html
-#, python-format
+#, fuzzy, python-format
 msgid "Source: %(s)s"
 msgstr "丛书：%(serie)s"
 
@@ -7858,8 +8396,8 @@ msgstr "通过"
 msgid "In Library"
 msgstr "在书库"
 
-#: cps/templates/author.html cps/templates/index.html cps/templates/search.html
-#: cps/templates/shelf.html
+#: cps/templates/author.html cps/templates/index.html
+#: cps/templates/search.html cps/templates/shelf.html
 msgid "reduce"
 msgstr "减少"
 
@@ -7930,13 +8468,14 @@ msgstr "添加书号"
 
 #: cps/templates/book_edit.html
 msgid ""
-"Pick a cover from any source, paste a URL, upload a file, or use the embedded"
-" cover."
+"Pick a cover from any source, paste a URL, upload a file, or use the "
+"embedded cover."
 msgstr ""
 
 #: cps/templates/book_edit.html
 msgid ""
-"Fetch Cover from URL (JPEG - Image will be downloaded and stored in database)"
+"Fetch Cover from URL (JPEG - Image will be downloaded and stored in "
+"database)"
 msgstr "从 URL 获取封面（JPEG - 图片将下载并存储在数据库中）"
 
 #: cps/templates/book_edit.html
@@ -7944,6 +8483,7 @@ msgid "Upload Cover from Local Disk"
 msgstr "从本地磁盘上传封面"
 
 #: cps/templates/book_edit.html
+#, fuzzy
 msgid "Hardcover Sync Blacklist"
 msgstr "启用 Kobo 同步"
 
@@ -8023,10 +8563,12 @@ msgid "This Field is Required"
 msgstr "此栏必须填写"
 
 #: cps/templates/book_table.html
+#, fuzzy
 msgid " Exchange author & title"
 msgstr "交换作者和标题"
 
 #: cps/templates/book_table.html
+#, fuzzy
 msgid "Select all"
 msgstr "全选"
 
@@ -8035,6 +8577,7 @@ msgid "Clear all"
 msgstr "清除所有"
 
 #: cps/templates/book_table.html
+#, fuzzy
 msgid "Update Title Sort automatically  "
 msgstr "自动更新书名排序"
 
@@ -8091,14 +8634,17 @@ msgid "Enter comments"
 msgstr "输入简介"
 
 #: cps/templates/book_table.html
+#, fuzzy
 msgid "Comments"
 msgstr "简介"
 
 #: cps/templates/book_table.html
+#, fuzzy
 msgid "Archived?"
 msgstr "归档"
 
 #: cps/templates/book_table.html
+#, fuzzy
 msgid "Read?"
 msgstr "已读"
 
@@ -8154,6 +8700,7 @@ msgid ""
 msgstr "作者、标签/类别、语言和出版社均支持多个值。请使用逗号分隔的值（例如：“Name1, Name2”）。"
 
 #: cps/templates/book_table.html
+#, fuzzy
 msgid "Select a Shelf"
 msgstr "创建书架"
 
@@ -8166,14 +8713,15 @@ msgid "-- Select a Shelf --"
 msgstr "-- 选择一个书架 --"
 
 #: cps/templates/broadcast_email.html
+#, fuzzy
 msgid ""
 "The email server is not configured yet, so announcements cannot be sent."
 msgstr "邮件服务未配置，请联系网站管理员！"
 
 #: cps/templates/broadcast_email.html
 msgid ""
-"Compose a message and send it by email to your users. Messages are queued and"
-" sent in the background — check Tasks for delivery status."
+"Compose a message and send it by email to your users. Messages are queued "
+"and sent in the background — check Tasks for delivery status."
 msgstr ""
 
 #: cps/templates/broadcast_email.html
@@ -8181,6 +8729,7 @@ msgid "Subject"
 msgstr ""
 
 #: cps/templates/broadcast_email.html cps/templates/tasks.html
+#, fuzzy
 msgid "Message"
 msgstr "合并"
 
@@ -8203,6 +8752,7 @@ msgid "Recipients"
 msgstr ""
 
 #: cps/templates/broadcast_email.html
+#, fuzzy
 msgid "Select all users with an email address"
 msgstr "新密码已发送到您的邮箱"
 
@@ -8215,6 +8765,7 @@ msgid "Send announcement"
 msgstr ""
 
 #: cps/templates/broadcast_email.html
+#, fuzzy
 msgid "Send test to me"
 msgstr "发送到电子阅读器"
 
@@ -8294,7 +8845,8 @@ msgstr ""
 
 #: cps/templates/config_db.html
 msgid ""
-"The Calibre Database path (metadata.db) is correct and accessible to NextGen."
+"The Calibre Database path (metadata.db) is correct and accessible to "
+"NextGen."
 msgstr ""
 
 #: cps/templates/config_db.html
@@ -8309,8 +8861,8 @@ msgstr ""
 
 #: cps/templates/config_db.html
 msgid ""
-"If the problem remains after checking all of the above, restore your Calibre "
-"Database from a backup or create a new one."
+"If the problem remains after checking all of the above, restore your Calibre"
+" Database from a backup or create a new one."
 msgstr ""
 
 #: cps/templates/config_db.html
@@ -8320,6 +8872,7 @@ msgid ""
 msgstr ""
 
 #: cps/templates/config_db.html
+#, fuzzy
 msgid "Location of Calibre Database (metadata.db file)"
 msgstr "Calibre 数据库路径"
 
@@ -8389,27 +8942,31 @@ msgid "Revoke"
 msgstr "撤回"
 
 #: cps/templates/config_db.html
+#, fuzzy
 msgid "Last Resort: Restore Calibre Database (experimental)"
 msgstr "重新连接到 Calibre 库"
 
 #: cps/templates/config_db.html
 msgid ""
-"If your Calibre library is corrupted and cannot be opened, you can attempt to"
-" restore it from the OPF files in your library. This will <b>erase all per-"
-"book data</b> (reading progress, bookmarks, shelf links, downloads, etc.) in "
-"the app database, but will not affect user accounts or settings. <b>Both "
-"databases will be automatically backed up in /config/backup before any "
-"destructive action.</b> A restore log will be saved alongside the backups."
+"If your Calibre library is corrupted and cannot be opened, you can attempt "
+"to restore it from the OPF files in your library. This will <b>erase all "
+"per-book data</b> (reading progress, bookmarks, shelf links, downloads, "
+"etc.) in the app database, but will not affect user accounts or settings. "
+"<b>Both databases will be automatically backed up in /config/backup before "
+"any destructive action.</b> A restore log will be saved alongside the "
+"backups."
 msgstr ""
 "如果您的 Calibre 书库损坏且无法打开，您可以尝试从书库中的 OPF "
 "文件恢复它。这将<b>清除应用程序数据库中的所有书籍相关数据</b>（阅读进度、书签、书架链接、下载等），但不会影响用户帐户或设置。<b>在执行任何破坏性操作之前，这两个数据库都将自动备份在"
 " /config/backup 中。</b>恢复日志将与备份一起保存。"
 
 #: cps/templates/config_db.html
+#, fuzzy
 msgid "Are you sure? This cannot be undone."
 msgstr "您确定要关闭吗？"
 
 #: cps/templates/config_db.html
+#, fuzzy
 msgid "Restore Calibre Database (Last Resort)"
 msgstr "重新连接到 Calibre 库"
 
@@ -8466,6 +9023,7 @@ msgid "Logfile Configuration"
 msgstr "日志文件配置"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Location and name of logfile (/dev/stdout for no entry)"
 msgstr "访问日志路径和名称 (默认为 access.log)"
 
@@ -8478,11 +9036,13 @@ msgid "Location and name of access logfile (access.log for no entry)"
 msgstr "访问日志路径和名称 (默认为 access.log)"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Feature Configuration"
 msgstr "服务器配置"
 
 #: cps/templates/config_edit.html
-msgid "Convert non-English characters in title and author while saving to disk"
+msgid ""
+"Convert non-English characters in title and author while saving to disk"
 msgstr "保存到磁盘时转换标题和作者中的非英文字符"
 
 #: cps/templates/config_edit.html
@@ -8560,6 +9120,7 @@ msgid "Server External Port (for port forwarded API calls)"
 msgstr "服务器扩展端口 (用于转发的 API 调用的端口)"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Sync Kobo annotations to Hardcover (Requires API key per user)"
 msgstr "将 Kobo 阅读进度同步到 Hardcover (每个用户需要 API 密钥)"
 
@@ -8615,6 +9176,7 @@ msgid "Goodreads API Key"
 msgstr "Goodreads API Key"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Enable Hardcover Sync"
 msgstr "启用 Kobo 同步"
 
@@ -8625,8 +9187,8 @@ msgstr ""
 
 #: cps/templates/config_edit.html
 msgid ""
-"Managed by HARDCOVER_SYNC_ENABLED; change the environment variable to enable "
-"or disable Hardcover sync."
+"Managed by HARDCOVER_SYNC_ENABLED; change the environment variable to enable"
+" or disable Hardcover sync."
 msgstr ""
 
 #: cps/templates/config_edit.html
@@ -8641,8 +9203,8 @@ msgstr ""
 
 #: cps/templates/config_edit.html
 msgid ""
-"A token from the HARDCOVER_TOKEN environment variable is currently active. It"
-" is not shown here; a key entered in this field would override it."
+"A token from the HARDCOVER_TOKEN environment variable is currently active. "
+"It is not shown here; a key entered in this field would override it."
 msgstr ""
 
 #: cps/templates/config_edit.html
@@ -8660,6 +9222,7 @@ msgid "Token status: valid."
 msgstr ""
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Token status: rejected or expired."
 msgstr "令牌已过期"
 
@@ -8672,15 +9235,16 @@ msgid "Expiry: not provided by this token."
 msgstr ""
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Google Books API Key"
 msgstr "Goodreads API Key"
 
 #: cps/templates/config_edit.html
 msgid ""
-"Optional. Without a key, Google Books is rate-limited to ~1,000 requests / IP"
-" / day, which is easily exhausted on shared servers (HTTP 429). Free key at "
-"https://console.cloud.google.com — enable the \"Books API\" and create an API"
-" key."
+"Optional. Without a key, Google Books is rate-limited to ~1,000 requests / "
+"IP / day, which is easily exhausted on shared servers (HTTP 429). Free key "
+"at https://console.cloud.google.com — enable the \"Books API\" and create an"
+" API key."
 msgstr ""
 
 #: cps/templates/config_edit.html
@@ -8784,8 +9348,8 @@ msgstr "从 LDAP 自动创建用户"
 
 #: cps/templates/config_edit.html
 msgid ""
-"Automatically create user accounts when LDAP authentication succeeds for new "
-"users. Recommended for enterprise environments."
+"Automatically create user accounts when LDAP authentication succeeds for new"
+" users. Recommended for enterprise environments."
 msgstr "当新用户通过 LDAP 身份验证时自动创建用户帐户。推荐在企业环境中使用。"
 
 #: cps/templates/config_edit.html
@@ -8839,6 +9403,7 @@ msgid "OAuth Metadata URL (for auto-discovery)"
 msgstr "OAuth 元数据 URL (用于自动发现)"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Test Metadata"
 msgstr "获取元数据"
 
@@ -8852,11 +9417,12 @@ msgstr "使用手动端点 URL（覆盖自动发现）"
 
 #: cps/templates/config_edit.html
 msgid ""
-"Check this to manually configure individual OAuth endpoints instead of using "
-"auto-discovery"
+"Check this to manually configure individual OAuth endpoints instead of using"
+" auto-discovery"
 msgstr "选中此项以手动配置单个 OAuth 端点，而不是使用自动发现"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Manual Endpoint Configuration"
 msgstr "手动端点配置"
 
@@ -8869,6 +9435,7 @@ msgid "Authorization Endpoint"
 msgstr "授权端点"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Token Endpoint"
 msgstr "令牌端点"
 
@@ -8877,10 +9444,12 @@ msgid "UserInfo Endpoint"
 msgstr "用户信息端点"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Test Connection"
 msgstr "连接错误"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "OAuth Scopes"
 msgstr "OAuth 设置"
 
@@ -8906,18 +9475,22 @@ msgid ""
 msgstr "需要满足以下条件之一：通过多个主机名访问、位于反向代理之后或遇到“无效的重定向 URI”错误。"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "OAuth Client Id"
 msgstr "%(provider)s OAuth 客户端 Id"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "OAuth Client Secret"
 msgstr "%(provider)s OAuth 客户端 Secret"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Field Mapping Configuration"
 msgstr "查看配置"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Username Field"
 msgstr "用户名"
 
@@ -8926,6 +9499,7 @@ msgid "JWT field to extract username from"
 msgstr "JWT 字段以提取用户名"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Email Field"
 msgstr "电子邮件服务"
 
@@ -8934,6 +9508,7 @@ msgid "JWT field to extract email from"
 msgstr "JWT 字段以提取电子邮件"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "OAuth Group Claim"
 msgstr "OAuth 管理组"
 
@@ -8969,12 +9544,13 @@ msgstr "OAuth 管理组"
 
 #: cps/templates/config_edit.html
 msgid ""
-"Name of the OAuth group that grants admin privileges. Leave empty to disable "
-"group-based admin management, or use the global setting in Security Settings "
-"for more control."
+"Name of the OAuth group that grants admin privileges. Leave empty to disable"
+" group-based admin management, or use the global setting in Security "
+"Settings for more control."
 msgstr "授予管理权限的 OAuth 组的名称。留空以禁用基于组的管理，或在“安全设置”中使用全局设置以获得更多控制。"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Default Permissions for New Generic OAuth Users"
 msgstr "新用户默认权限设置"
 
@@ -9016,8 +9592,8 @@ msgstr "允许编辑公共书架"
 #: cps/templates/config_edit.html
 msgid ""
 "These permissions are applied only when a new user is created via Generic "
-"OAuth. Admin group membership still grants admin privileges when OAuth group-"
-"based admin management is enabled. Existing users are not changed."
+"OAuth. Admin group membership still grants admin privileges when OAuth "
+"group-based admin management is enabled. Existing users are not changed."
 msgstr ""
 
 #: cps/templates/config_edit.html
@@ -9044,10 +9620,12 @@ msgid "External binaries"
 msgstr "扩展程序配置"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Path to Calibre Binaries"
 msgstr "Calibre 电子书转换器路径"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Calibre E-Book Converter Settings"
 msgstr "Calibre 电子书转换器设置"
 
@@ -9056,6 +9634,7 @@ msgid "Path to Kepubify E-Book Converter"
 msgstr "KEpubify 电子书转换器路径"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Location of Unrar binary"
 msgstr "UnRar 程序路径"
 
@@ -9074,13 +9653,25 @@ msgid ""
 msgstr "隐藏标准登录表单。用户必须通过 OAuth 或 LDAP 登录。在启用之前，请确保您有可用的备用登录方法。"
 
 #: cps/templates/config_edit.html
+msgid "Automatically forward to the only OAuth provider"
+msgstr ""
+
+#: cps/templates/config_edit.html
+msgid ""
+"When enabled and exactly one OAuth provider is active, visiting the login "
+"page starts it automatically. Add ?local=1 to the login URL to open the "
+"normal login page instead. That page still accepts a username and password "
+"only while the setting above is left off."
+msgstr ""
+
+#: cps/templates/config_edit.html
 msgid "Enable OAuth Group-Based Admin Role Management"
 msgstr "启用基于 OAuth 组的管理员角色管理"
 
 #: cps/templates/config_edit.html
 msgid ""
-"When enabled, admin privileges are automatically granted or revoked based on "
-"OAuth group membership. Disable this to manually manage admin roles in the "
+"When enabled, admin privileges are automatically granted or revoked based on"
+" OAuth group membership. Disable this to manually manage admin roles in the "
 "user management panel, preventing OAuth logins from overriding local role "
 "assignments."
 msgstr ""
@@ -9104,6 +9695,7 @@ msgid "Check if file extensions matches file content on upload"
 msgstr "检查上传时文件扩展名是否与文件内容匹配"
 
 #: cps/templates/config_edit.html
+#, fuzzy
 msgid "Session protection"
 msgstr "会话保护"
 
@@ -9169,11 +9761,12 @@ msgstr "主页中书籍作者的最大显示数量（0=不隐藏）"
 
 #: cps/templates/config_view_edit.html
 msgid ""
-"Maximum number of authors to show in book details before truncating. Set to 0"
-" to disable."
+"Maximum number of authors to show in book details before truncating. Set to "
+"0 to disable."
 msgstr "书籍详细信息中显示的最大作者数，超过将截断。设置为 0 以禁用。"
 
 #: cps/templates/config_view_edit.html
+#, fuzzy
 msgid "Default Theme"
 msgstr "删除数据"
 
@@ -9200,6 +9793,7 @@ msgid "Link Read/Unread Status to Calibre Column"
 msgstr "选择自定义栏目作为阅读状态"
 
 #: cps/templates/config_view_edit.html
+#, fuzzy
 msgid "Sync read/unread status with a Calibre boolean custom column."
 msgstr "选择自定义栏目作为阅读状态"
 
@@ -9218,11 +9812,12 @@ msgstr "按规则提取书名后排序（正则表达式）"
 
 #: cps/templates/config_view_edit.html
 msgid ""
-"Regex to strip prefixes from titles for proper sorting (e.g., \"The\", \"A\","
-" \"An\")."
+"Regex to strip prefixes from titles for proper sorting (e.g., \"The\", "
+"\"A\", \"An\")."
 msgstr ""
 
 #: cps/templates/config_view_edit.html
+#, fuzzy
 msgid "Site Customization"
 msgstr "查看配置"
 
@@ -9243,6 +9838,7 @@ msgid ""
 msgstr ""
 
 #: cps/templates/config_view_edit.html
+#, fuzzy
 msgid "Custom CSS"
 msgstr "自定义过滤器"
 
@@ -9253,8 +9849,8 @@ msgstr ""
 
 #: cps/templates/config_view_edit.html
 msgid ""
-"Injected into every page as the last stylesheet, so it overrides the built-in"
-" themes. Applies to all users. Leave blank to disable."
+"Injected into every page as the last stylesheet, so it overrides the built-"
+"in themes. Applies to all users. Leave blank to disable."
 msgstr ""
 
 #: cps/templates/config_view_edit.html
@@ -9266,6 +9862,7 @@ msgid "These settings will be applied to all newly created user accounts."
 msgstr ""
 
 #: cps/templates/config_view_edit.html
+#, fuzzy
 msgid "Permissions"
 msgstr "版本"
 
@@ -9274,6 +9871,7 @@ msgid "Admin User"
 msgstr "管理员用户"
 
 #: cps/templates/config_view_edit.html
+#, fuzzy
 msgid "Language & Display"
 msgstr "单页显示"
 
@@ -9282,6 +9880,7 @@ msgid "Default Language"
 msgstr "默认语言"
 
 #: cps/templates/config_view_edit.html
+#, fuzzy
 msgid "Default interface language for new users."
 msgstr "新用户默认权限设置"
 
@@ -9290,6 +9889,7 @@ msgid "Default Visible Language of Books"
 msgstr "默认显示书籍语言"
 
 #: cps/templates/config_view_edit.html
+#, fuzzy
 msgid "Default book language filter for new users."
 msgstr "新用户默认显示权限"
 
@@ -9334,14 +9934,15 @@ msgid "Use a URL"
 msgstr ""
 
 #: cps/templates/cover_picker.html
+#, fuzzy
 msgid "Upload a file"
 msgstr "上传书籍"
 
 #: cps/templates/cover_picker.html
 msgid ""
-"Some metadata sources need an API key. Adding one here improves cover quality"
-" and unblocks rate-limited services. Keys are stored once for the whole "
-"instance — admins only."
+"Some metadata sources need an API key. Adding one here improves cover "
+"quality and unblocks rate-limited services. Keys are stored once for the "
+"whole instance — admins only."
 msgstr ""
 
 #: cps/templates/cover_picker.html
@@ -9350,8 +9951,8 @@ msgstr ""
 
 #: cps/templates/cover_picker.html
 msgid ""
-"Adjust how covers preview here. Defaults live in Admin → Configuration → Kobo"
-" sync."
+"Adjust how covers preview here. Defaults live in Admin → Configuration → "
+"Kobo sync."
 msgstr ""
 
 #: cps/templates/cover_picker.html
@@ -9370,18 +9971,22 @@ msgstr ""
 msgid "Rendering e-reader previews:"
 msgstr ""
 
-#: cps/templates/cwa_convert_library.html cps/templates/cwa_cover_enforcer.html
-#: cps/templates/cwa_epub_fixer.html
+#: cps/templates/cwa_convert_library.html
+#: cps/templates/cwa_cover_enforcer.html cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "Run Archive"
 msgstr "归档"
 
-#: cps/templates/cwa_convert_library.html cps/templates/cwa_cover_enforcer.html
-#: cps/templates/cwa_epub_fixer.html cps/templates/cwa_read_log.html
+#: cps/templates/cwa_convert_library.html
+#: cps/templates/cwa_cover_enforcer.html cps/templates/cwa_epub_fixer.html
+#: cps/templates/cwa_read_log.html
+#, fuzzy
 msgid "Download Log"
 msgstr "下载书籍"
 
-#: cps/templates/cwa_convert_library.html cps/templates/cwa_cover_enforcer.html
-#: cps/templates/cwa_epub_fixer.html cps/templates/index.xml
+#: cps/templates/cwa_convert_library.html
+#: cps/templates/cwa_cover_enforcer.html cps/templates/cwa_epub_fixer.html
+#: cps/templates/index.xml
 msgid "Start"
 msgstr "开始"
 
@@ -9404,8 +10009,8 @@ msgstr "安排转换书库时出错"
 #: cps/templates/cwa_cover_enforcer.html
 msgid ""
 "This service rewrites the covers and metadata stored inside the ebook files "
-"themselves for every book in your library, so the files on disk always match "
-"what you see in Calibre-Web. It is the library-wide version of the on-edit "
+"themselves for every book in your library, so the files on disk always match"
+" what you see in Calibre-Web. It is the library-wide version of the on-edit "
 "NextGen Automatic Cover & Metadata Enforcement Service toggled in CWA "
 "Settings."
 msgstr ""
@@ -9413,14 +10018,14 @@ msgstr ""
 #: cps/templates/cwa_cover_enforcer.html
 msgid ""
 "Upon loading this page, if you have previously started a run of the NextGen "
-"Cover & Metadata Enforcement service either here in the Web UI or through the"
-" CLI, you will see the output of the most recent previous run below."
+"Cover & Metadata Enforcement service either here in the Web UI or through "
+"the CLI, you will see the output of the most recent previous run below."
 msgstr ""
 
 #: cps/templates/cwa_cover_enforcer.html
 msgid ""
-"Once you start a run, you are free to leave the page and return whenever you "
-"want to check on the run's progress. If you wish to cancel a run that is "
+"Once you start a run, you are free to leave the page and return whenever you"
+" want to check on the run's progress. If you wish to cancel a run that is "
 "still in progress, simply press the Cancel button above and the run will "
 "terminate ASAP."
 msgstr ""
@@ -9460,42 +10065,52 @@ msgid "Search by title/author"
 msgstr "按书名/作者搜索"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "Run on selected book"
 msgstr "合并选中的书籍"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "EPUB Fixer scheduled successfully"
 msgstr "成功删除 {} 个用户"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "Error scheduling EPUB Fixer"
 msgstr "删除书架时出错"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "No matches found"
 msgstr "无搜索结果"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "Enter a search term"
 msgstr "输入用户名"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "Failed to search library"
 msgstr "搜索书库"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "Select a book first"
 msgstr "创建书架"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "EPUB Fixer started for selected book"
 msgstr "合并选中的书籍"
 
 #: cps/templates/cwa_epub_fixer.html
+#, fuzzy
 msgid "Error starting EPUB Fixer"
 msgstr "删除书架时出错"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Enable/Disable Calibre-Web NextGen Services"
 msgstr "Calibre-Web 日志: "
 
@@ -9539,8 +10154,8 @@ msgid ""
 "href=\"https://github.com/innocenat\">innocenat</a>."
 msgstr ""
 "此工具改编自 <a href=\"https://github.com/innocenat\">innocenat</a> 制作的 <a "
-"href=\"https://kindle-epub-fix.netlify.app/\">kindle-epub-fix.netlify.app</a>"
-" 工具。"
+"href=\"https://kindle-epub-fix.netlify.app/\">kindle-epub-"
+"fix.netlify.app</a> 工具。"
 
 #: cps/templates/cwa_settings.html
 msgid "Enable KOReader Sync (NextGen Plugin)"
@@ -9566,11 +10181,13 @@ msgstr "启用激进型 EPUB 修复模式 (风险较高)"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Aggressive mode applies more invasive fixes and will attempt lower-confidence"
-" encoding conversions. Safe mode is recommended for most libraries."
+"Aggressive mode applies more invasive fixes and will attempt lower-"
+"confidence encoding conversions. Safe mode is recommended for most "
+"libraries."
 msgstr "激进模式会应用更具侵入性的修复，并将尝试置信度较低的编码转换。建议大多数库使用安全模式。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Enable Archived Book Cleanup"
 msgstr "归档书籍"
 
@@ -9692,8 +10309,8 @@ msgstr "为新书启用自动元数据获取"
 #: cps/templates/cwa_settings.html
 msgid ""
 "When active, NextGen will automatically attempt to fetch and apply metadata "
-"(title, author, description, cover, etc.) for newly ingested books using the "
-"configured metadata provider hierarchy. This helps improve the quality of "
+"(title, author, description, cover, etc.) for newly ingested books using the"
+" configured metadata provider hierarchy. This helps improve the quality of "
 "book information, especially for books with poor or missing metadata."
 msgstr ""
 
@@ -9703,22 +10320,23 @@ msgstr "启用智能元数据应用"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"When enabled, fetched metadata will only replace existing data if it appears "
-"to be better quality (e.g., longer descriptions, higher resolution covers). "
-"When disabled, fetched metadata will replace existing data as-is from the "
+"When enabled, fetched metadata will only replace existing data if it appears"
+" to be better quality (e.g., longer descriptions, higher resolution covers)."
+" When disabled, fetched metadata will replace existing data as-is from the "
 "preferred provider."
 msgstr ""
 "启用后，仅当获取到的元数据质量似乎更好（例如，更长的简介、更高分辨率的封面）时，才会替换现有数据。禁用后，将按原样使用首选提供商获取到的元数据替换现有数据。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Metadata Fields to Update"
 msgstr "已成功更新元数据"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Select which metadata fields should be updated when auto-fetching. Unchecked "
-"fields will never be modified during automatic metadata fetching, preserving "
-"your existing data."
+"Select which metadata fields should be updated when auto-fetching. Unchecked"
+" fields will never be modified during automatic metadata fetching, "
+"preserving your existing data."
 msgstr "选择自动获取时应更新哪些元数据字段。未选中的字段在自动获取元数据期间绝不会被修改，从而保留您的现有数据。"
 
 #: cps/templates/cwa_settings.html
@@ -9726,10 +10344,12 @@ msgid "Tags/Genres"
 msgstr "标签/类型"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Identifiers (ISBN, etc.)"
 msgstr "书号"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Cover Image"
 msgstr "封面"
 
@@ -9740,8 +10360,8 @@ msgstr "提示"
 #: cps/templates/cwa_settings.html
 msgid ""
 "These field selections apply to both Smart and Direct replacement modes. "
-"Smart mode will additionally apply quality criteria to selected fields, while"
-" Direct mode will replace all selected fields with provider data."
+"Smart mode will additionally apply quality criteria to selected fields, "
+"while Direct mode will replace all selected fields with provider data."
 msgstr "这些字段选择同时适用于智能和直接替换模式。智能模式还将对选定字段应用质量标准，而直接模式将使用提供商数据替换所有选定字段。"
 
 #: cps/templates/cwa_settings.html
@@ -9749,13 +10369,14 @@ msgid "Cover File Max Size (MB):"
 msgstr "封面文件最大大小 (MB)："
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Range: 1-200 MB (default: 15)"
 msgstr "范围: 5-120 分钟（默认: 15）"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Limits the maximum size of cover images downloaded from metadata providers or"
-" URLs to prevent slow or stalled saves."
+"Limits the maximum size of cover images downloaded from metadata providers "
+"or URLs to prevent slow or stalled saves."
 msgstr "限制从元数据提供程序或 URL 下载的封面图片的最大大小，以防保存缓慢或停滞。"
 
 #: cps/templates/cwa_settings.html
@@ -9764,8 +10385,8 @@ msgstr "导入处理超时时间"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Maximum time (in minutes) to allow for processing a single book before timing"
-" out. Files that timeout are moved to the failed backup folder for "
+"Maximum time (in minutes) to allow for processing a single book before "
+"timing out. Files that timeout are moved to the failed backup folder for "
 "investigation."
 msgstr "处理单本书籍的最大时间（以分钟为单位），超时后将被移动到失败备份文件夹以供调查。"
 
@@ -9783,18 +10404,20 @@ msgstr "过时临时文件清理"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Ignored temporary upload files (.uploading, .part, etc.) can be cleaned after"
-" a set age. Setting either value to 0 disables cleanup. Changes apply on the "
-"next cleanup cycle."
+"Ignored temporary upload files (.uploading, .part, etc.) can be cleaned "
+"after a set age. Setting either value to 0 disables cleanup. Changes apply "
+"on the next cleanup cycle."
 msgstr ""
 "被忽略的临时上传文件（.uploading, .part 等）可以在达到设定期限后被清理。将任意一个值设置为 0 "
 "即可禁用清理功能。更改将在下一个清理周期生效。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Stale temp age (minutes):"
 msgstr "超时时间（分钟）:"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Range: 0-10080 minutes (default: 120)"
 msgstr "范围: 5-120 分钟（默认: 15）"
 
@@ -9803,6 +10426,7 @@ msgid "Stale temp cleanup interval (seconds):"
 msgstr "清理过时临时文件的时间间隔（秒）："
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Range: 0-86400 seconds (default: 600)"
 msgstr "范围: 5-120 分钟（默认: 15）"
 
@@ -9814,16 +10438,18 @@ msgstr "新书自动发送延迟"
 msgid ""
 "Delay (in minutes) before automatically sending newly ingested books to "
 "eReaders. This allows time for metadata fetching and other processing to "
-"complete before sending. Only applies to users who have enabled auto-send in "
-"their profile."
+"complete before sending. Only applies to users who have enabled auto-send in"
+" their profile."
 msgstr ""
 "自动将新导入的书籍发送到电子阅读器之前的延迟（以分钟为单位）。这允许在发送之前留出时间完成元数据获取和其他处理。仅适用于在个人资料中启用了自动发送的用户。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Delay (minutes):"
 msgstr "超时时间（分钟）:"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Range: 1-60 minutes (default: 5)"
 msgstr "范围: 5-120 分钟（默认: 15）"
 
@@ -9851,6 +10477,7 @@ msgid "Unchecked providers are disabled globally."
 msgstr "未选中的提供程序将被全局禁用。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Hardcover Auto-Fetch Settings"
 msgstr "Hardcover API token"
 
@@ -9864,13 +10491,14 @@ msgstr ""
 "同步阅读进度和批注。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Hardcover Token Required"
 msgstr "Hardcover API token"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"To enable Hardcover auto-fetch, you must set a valid HARDCOVER_TOKEN in your "
-"docker-compose environment variables or configure a global token in Basic "
+"To enable Hardcover auto-fetch, you must set a valid HARDCOVER_TOKEN in your"
+" docker-compose environment variables or configure a global token in Basic "
 "Configuration. Without a valid token, this feature will remain disabled."
 msgstr ""
 "要启用 Hardcover 自动获取功能，您必须在 docker-compose 环境变量中设置有效的 "
@@ -9878,7 +10506,8 @@ msgstr ""
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Hardcover sync is enabled. The schedule below controls automatic ID fetching."
+"Hardcover sync is enabled. The schedule below controls automatic ID "
+"fetching."
 msgstr ""
 
 #: cps/templates/cwa_settings.html
@@ -9907,6 +10536,7 @@ msgid "Minimum Confidence Threshold:"
 msgstr "最小置信度阈值："
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Range: 0.50-1.00 (default: 0.85)"
 msgstr "范围: 5-120 分钟（默认: 15）"
 
@@ -9922,13 +10552,14 @@ msgid "Batch Size:"
 msgstr "批次大小："
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Range: 10-200 books per run (default: 50)"
 msgstr "范围: 5-120 分钟（默认: 15）"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Number of books to process in each scheduled run. Smaller batches reduce API "
-"load; larger batches process your library faster."
+"Number of books to process in each scheduled run. Smaller batches reduce API"
+" load; larger batches process your library faster."
 msgstr "每次计划运行要处理的书籍数量。较小的批次可降低 API 负载；较大的批次可更快地处理书库。"
 
 #: cps/templates/cwa_settings.html
@@ -9936,13 +10567,14 @@ msgid "Rate Limit Delay (seconds):"
 msgstr "速率限制延迟 (秒)："
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Range: 0-60 seconds (default: 5.0)"
 msgstr "范围: 5-120 分钟（默认: 15）"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Delay between API requests to Hardcover. Prevents rate limiting and protects "
-"your API key. Uses exponential backoff on errors."
+"Delay between API requests to Hardcover. Prevents rate limiting and protects"
+" your API key. Uses exponential backoff on errors."
 msgstr "向 Hardcover 发出 API 请求之间的延迟。防止速率限制并保护您的 API 密钥。遇到错误时使用指数退避。"
 
 #: cps/templates/cwa_settings.html
@@ -9953,6 +10585,7 @@ msgid ""
 msgstr ""
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Web UI Settings"
 msgstr "设置"
 
@@ -9962,20 +10595,22 @@ msgstr ""
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"When active, you will receive notifications in the Web UI when a new version "
-"of NextGen is released"
+"When active, you will receive notifications in the Web UI when a new version"
+" of NextGen is released"
 msgstr ""
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Automatic updates"
 msgstr "OAuth 设置"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"New versions ship regularly — often weekly. Calibre-Web NextGen cannot update"
-" itself from inside its container (nothing running inside a container can), "
-"so a small companion called Watchtower does it for you: it watches for a new "
-"image and swaps NextGen in safely, leaving your other containers alone."
+"New versions ship regularly — often weekly. Calibre-Web NextGen cannot "
+"update itself from inside its container (nothing running inside a container "
+"can), so a small companion called Watchtower does it for you: it watches for"
+" a new image and swaps NextGen in safely, leaving your other containers "
+"alone."
 msgstr ""
 
 #: cps/templates/cwa_settings.html
@@ -10014,6 +10649,7 @@ msgid ""
 msgstr "当禁用时，如果您选择的语言的翻译不完整，您将不再收到 Web UI 中的通知。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Sync Magic Shelves to Kobo"
 msgstr "同步所选书架到 Kobo"
 
@@ -10034,6 +10670,7 @@ msgid ""
 msgstr "启用后，模糊封面背景效果也会在小屏幕上呈现。如果您注意到滚动或动画延迟，请禁用该功能。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Automatic Backup Settings"
 msgstr "OAuth 设置"
 
@@ -10053,8 +10690,8 @@ msgstr ""
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"When active, the originals of ingested files that undergo conversion will be "
-"stored in /config/processed_books/converted"
+"When active, the originals of ingested files that undergo conversion will be"
+" stored in /config/processed_books/converted"
 msgstr "启用后，进行转换的导入文件的原始文件将存储在 /config/processed_books/converted"
 
 #: cps/templates/cwa_settings.html
@@ -10073,9 +10710,9 @@ msgstr ""
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"When active, just before midnight each day, the cwa-auto-zipper service will "
-"make zip archives of all the backed up converted, imported and failed files "
-"from that day. This is to help keep the subdirectories of "
+"When active, just before midnight each day, the cwa-auto-zipper service will"
+" make zip archives of all the backed up converted, imported and failed files"
+" from that day. This is to help keep the subdirectories of "
 "/config/processed_books organised and to minimise disk space usage."
 msgstr ""
 "激活后，每天午夜前，cwa-auto-zipper 服务会将当天所有备份的已转换、已导入和失败的文件打包成 zip 压缩文件。这有助于保持 "
@@ -10093,14 +10730,15 @@ msgid ""
 msgstr "当启用自动转换功能时，所有导入的书籍都将自动转换为此处选择的格式（下面的忽略列表中选择的格式除外）"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Choose a target format:"
 msgstr "书籍格式转换:"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Note: NextGen's Metadata Enforcement service can currently only support file "
-"in either EPUB and AZW3 format. Files in other formats will simply be ignored"
-" by the service"
+"Note: NextGen's Metadata Enforcement service can currently only support file"
+" in either EPUB and AZW3 format. Files in other formats will simply be "
+"ignored by the service"
 msgstr ""
 
 #: cps/templates/cwa_settings.html
@@ -10121,8 +10759,8 @@ msgstr ""
 msgid ""
 "The formats selected here will always be added to the library, even after "
 "they have been converted to the target format. However, if the format is in "
-"the \"NextGen Auto-Ingest - Ignored Formats\" list, it will not be imported. "
-"Note that the target format is always retained."
+"the \"NextGen Auto-Ingest - Ignored Formats\" list, it will not be imported."
+" Note that the target format is always retained."
 msgstr ""
 
 #: cps/templates/cwa_settings.html
@@ -10130,7 +10768,8 @@ msgid "NextGen Auto-Ingest Automerge"
 msgstr ""
 
 #: cps/templates/cwa_settings.html
-msgid "Calibre can detect Duplicate Book Titles on Import and depending on the"
+msgid ""
+"Calibre can detect Duplicate Book Titles on Import and depending on the"
 msgstr "Calibre 可以在导入时检测重复的书名，并根据"
 
 #: cps/templates/cwa_settings.html
@@ -10139,8 +10778,8 @@ msgstr "自动合并"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"setting. It can be set to delete either instance of a duplicated book or keep"
-" both (default)."
+"setting. It can be set to delete either instance of a duplicated book or "
+"keep both (default)."
 msgstr "设置删除重复书籍的任一实例或保留两者（默认）。"
 
 #: cps/templates/cwa_settings.html
@@ -10177,6 +10816,7 @@ msgid ""
 msgstr ""
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Enable Duplicate Detection"
 msgstr "启用注册"
 
@@ -10202,11 +10842,12 @@ msgstr "仅传统 SQL (实验性)"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Hybrid mode uses a fast SQL pre-filter to narrow candidates, then applies the"
-" robust Python logic for final results."
+"Hybrid mode uses a fast SQL pre-filter to narrow candidates, then applies "
+"the robust Python logic for final results."
 msgstr "混合模式使用快速 SQL 预过滤器缩小候选范围，然后应用健壮的 Python 逻辑获得最终结果。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Automatic Duplicate Scanning"
 msgstr "OAuth 设置"
 
@@ -10229,6 +10870,7 @@ msgid "Run after each import (debounced)"
 msgstr "每次导入后运行（去抖动）"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Manual only"
 msgstr "手动？"
 
@@ -10252,8 +10894,8 @@ msgstr "留空以禁用计划扫描。例如："
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"If enabled, after-import scans and cron scans can both run. Use “Manual only”"
-" to disable after-import scans while keeping cron schedules."
+"If enabled, after-import scans and cron scans can both run. Use “Manual "
+"only” to disable after-import scans while keeping cron schedules."
 msgstr "如果启用，导入后扫描和 cron 扫描都可以运行。使用“仅手动”可禁用导入后扫描，同时保留 cron 计划。"
 
 #: cps/templates/cwa_settings.html cps/templates/duplicates.html
@@ -10297,8 +10939,8 @@ msgstr "在检测重复项时考虑文件格式"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"At least one criterion must be selected. Title and Author are recommended as "
-"core criteria."
+"At least one criterion must be selected. Title and Author are recommended as"
+" core criteria."
 msgstr "必须选择至少一个标准。建议将书名和作者作为核心标准。"
 
 #: cps/templates/cwa_settings.html
@@ -10334,17 +10976,19 @@ msgid ""
 msgstr "配置如何接收有关重复书籍的通知，并可选择启用自动解决。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Enable Duplicate Notifications"
 msgstr "启用 CWA 更新通知"
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Show popup notifications when unresolved duplicates are detected. Admins and "
-"users with edit rights will see a badge on the Duplicates sidebar button and "
-"a notification popup when they login."
+"Show popup notifications when unresolved duplicates are detected. Admins and"
+" users with edit rights will see a badge on the Duplicates sidebar button "
+"and a notification popup when they login."
 msgstr "检测到未解决的重复项时显示弹出通知。管理员和具有编辑权限的用户在登录时，将在“重复项”侧边栏按钮上看到一个徽章，并会看到一个弹出通知。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Enable Automatic Duplicate Resolution"
 msgstr "启用注册"
 
@@ -10379,6 +11023,7 @@ msgid "Delete newer copies, keep the earliest added"
 msgstr "删除较新的副本，保留最早添加的"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Merge Formats"
 msgstr "原始格式"
 
@@ -10395,6 +11040,7 @@ msgid "Prefer formats based on your Duplicate Format Priority Ranking"
 msgstr "根据您的重复格式优先级排序首选格式"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Keep Most Metadata"
 msgstr "获取元数据"
 
@@ -10415,6 +11061,7 @@ msgid "Choose which book to keep when duplicates are automatically resolved."
 msgstr "选择自动解决重复项时要保留的书籍。"
 
 #: cps/templates/cwa_settings.html
+#, fuzzy
 msgid "Rate Limiting"
 msgstr "评分"
 
@@ -10525,7 +11172,8 @@ msgid "Anonymize my feedback"
 msgstr ""
 
 #: cps/templates/cwng_feedback_popup.html
-msgid "No account, name, IP address, version or device info is sent or stored."
+msgid ""
+"No account, name, IP address, version or device info is sent or stored."
 msgstr ""
 
 #: cps/templates/cwng_feedback_popup.html
@@ -10537,8 +11185,8 @@ msgstr ""
 
 #: cps/templates/cwng_feedback_popup.html
 msgid ""
-"Because you turned off anonymizing, your app version will be included to help"
-" us reproduce issues."
+"Because you turned off anonymizing, your app version will be included to "
+"help us reproduce issues."
 msgstr ""
 
 #: cps/templates/detail.html cps/templates/listenmp3.html
@@ -10550,18 +11198,22 @@ msgid "Mark As Read"
 msgstr "标为已读"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Marked as read"
 msgstr "标为未读"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Marked as unread"
 msgstr "标为未读"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Added to favorites"
 msgstr "添加到归档"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Removed from favorites"
 msgstr "从档案还原"
 
@@ -10574,6 +11226,7 @@ msgid "Add to archive"
 msgstr "添加到归档"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Restored from archive"
 msgstr "从档案还原"
 
@@ -10590,6 +11243,7 @@ msgid "Unhide from your library"
 msgstr ""
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Hide from your library"
 msgstr "搜索书库"
 
@@ -10598,10 +11252,12 @@ msgid "Unhidden"
 msgstr ""
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Rating updated"
 msgstr "数据库设置已更新"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Rating cleared"
 msgstr "评分大于"
 
@@ -10631,6 +11287,7 @@ msgid "Copy UUID"
 msgstr "复制 UUID"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "File sizes"
 msgstr "字体大小"
 
@@ -10655,6 +11312,7 @@ msgid "Description:"
 msgstr "简介:"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Select eReader Email Addresses"
 msgstr "接收书籍的电子阅读器邮箱地址"
 
@@ -10663,6 +11321,7 @@ msgid "Choose email addresses:"
 msgstr "选择邮箱地址:"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Select All"
 msgstr "创建书架"
 
@@ -10671,10 +11330,12 @@ msgid "Other users' eReaders:"
 msgstr ""
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Additional email addresses:"
 msgstr "选择邮箱地址:"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Enter additional email addresses (separated by commas):"
 msgstr "选择邮箱地址:"
 
@@ -10687,14 +11348,17 @@ msgid "Enter one or more email addresses separated by commas"
 msgstr "输入一个或多个电子邮件地址，用逗号分隔"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Select format:"
 msgstr "删除格式:"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Failed to update tags"
 msgstr "创建封面路径失败"
 
 #: cps/templates/detail.html
+#, fuzzy
 msgid "Failed to update shelves"
 msgstr "创建封面路径失败"
 
@@ -10703,16 +11367,19 @@ msgid "NextGen Duplicates Manager"
 msgstr ""
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid ""
 "Books with matching titles, authors, and languages. Books in different "
 "languages are not considered duplicates."
 msgstr "具有匹配标题和作者的书籍。建议通过可视化检查来识别真正的重复项。"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Run Full Duplicate Scan"
 msgstr "重复书籍"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Scan for Duplicates Now"
 msgstr "显示最高评分书籍"
 
@@ -10721,10 +11388,12 @@ msgid "Select Duplicates"
 msgstr "选择重复项"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Select None"
 msgstr "选择"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Delete Selected"
 msgstr "合并选中的书籍"
 
@@ -10741,11 +11410,12 @@ msgstr ""
 
 #: cps/templates/duplicates.html
 msgid ""
-"Click \"Run Full Duplicate Scan\" to build it. This may take several minutes "
-"on large libraries, and you can keep using CWA while it runs."
+"Click \"Run Full Duplicate Scan\" to build it. This may take several minutes"
+" on large libraries, and you can keep using CWA while it runs."
 msgstr ""
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Duplicate scan is running."
 msgstr "重复书籍"
 
@@ -10758,6 +11428,7 @@ msgid "View Background Tasks"
 msgstr ""
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Auto-Resolve Duplicates"
 msgstr "选择重复项"
 
@@ -10797,7 +11468,8 @@ msgstr "保留最多元数据 - 保留信息最完整的书籍"
 msgid "Keep Largest File Size - Keep book with largest total file size"
 msgstr "保留最大文件大小 - 保留总文件大小最大的书籍"
 
-#: cps/templates/duplicates.html
+#: cps/templates/duplicates.html cps/templates/kobo_reconcile.html
+#, fuzzy
 msgid "Preview"
 msgstr "上一个"
 
@@ -10806,10 +11478,12 @@ msgid "Execute Resolution"
 msgstr "执行解决"
 
 #: cps/templates/duplicates.html
-msgid "This will permanently delete books. Original files will be backed up to"
+msgid ""
+"This will permanently delete books. Original files will be backed up to"
 msgstr "这将永久删除书籍。原始文件将备份到"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Merge Selected"
 msgstr "合并选中的书籍"
 
@@ -10818,29 +11492,34 @@ msgid "Dismiss this duplicate group"
 msgstr "忽略此重复组"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "View book details"
 msgstr "书籍详情"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Edit book metadata"
 msgstr "编辑元数据"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Archive/delete book"
 msgstr "合并选中的书籍"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "No Duplicate Books Found"
 msgstr "无搜索结果"
 
 #: cps/templates/duplicates.html
-msgid "Your library has no books with duplicate title and author combinations."
+msgid ""
+"Your library has no books with duplicate title and author combinations."
 msgstr "您的书库中没有标题和作者组合重复的书籍。"
 
 #: cps/templates/duplicates.html
 msgid ""
-"This search looks for books with identical titles AND authors to avoid false "
-"positives."
+"This search looks for books with identical titles AND authors to avoid false"
+" positives."
 msgstr "此搜索查找标题和作者完全相同的书籍，以避免误报。"
 
 #: cps/templates/duplicates.html
@@ -10849,11 +11528,12 @@ msgstr ""
 
 #: cps/templates/duplicates.html
 msgid ""
-"CWA will resolve duplicate groups using the selected strategy and permanently"
-" delete duplicate books."
+"CWA will resolve duplicate groups using the selected strategy and "
+"permanently delete duplicate books."
 msgstr ""
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "Selected strategy:"
 msgstr "删除格式:"
 
@@ -10862,18 +11542,22 @@ msgid "This action cannot be undone!"
 msgstr "此操作无法撤销！"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "The following books will be permanently deleted:"
 msgstr "此书籍将从数据库中永久删除"
 
 #: cps/templates/duplicates.html cps/templates/layout.html
+#, fuzzy
 msgid "Merge Books"
 msgstr "未读书籍"
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "The following book will be kept:"
 msgstr "以下书籍将被删除："
 
 #: cps/templates/duplicates.html
+#, fuzzy
 msgid "The following books will be merged into it (and then deleted):"
 msgstr "此书籍将从数据库中永久删除"
 
@@ -10994,8 +11678,8 @@ msgstr "需要审核"
 #: cps/templates/hardcover_review_matches.html
 #, python-format
 msgid ""
-"%(count)s book(s) have ambiguous Hardcover matches. Please review each match "
-"and select the correct result, or skip/reject if no good match exists."
+"%(count)s book(s) have ambiguous Hardcover matches. Please review each match"
+" and select the correct result, or skip/reject if no good match exists."
 msgstr "%(count)s 本书存在模糊的 Hardcover 匹配项。请查看每个匹配项并选择正确结果，如果没有合适的匹配项，请跳过/拒绝。"
 
 #: cps/templates/hardcover_review_matches.html
@@ -11010,10 +11694,12 @@ msgid ""
 msgstr "审核并批准书籍的模糊 Hardcover ID 匹配项。高置信度匹配项会自动应用；这些需要手动验证。"
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid "Reject All Pending"
 msgstr "创建书架"
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid "Search Query"
 msgstr "搜索项："
 
@@ -11035,6 +11721,7 @@ msgid "Match Reason"
 msgstr ""
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid "View on Hardcover"
 msgstr "查看保存书籍"
 
@@ -11043,6 +11730,7 @@ msgid "Select This Match"
 msgstr ""
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid "Reject All"
 msgstr "创建书架"
 
@@ -11051,6 +11739,7 @@ msgid "Skip for Now"
 msgstr ""
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid "Processing..."
 msgstr "加载中..."
 
@@ -11063,6 +11752,7 @@ msgid "Failed to apply match"
 msgstr ""
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid ""
 "Are you sure you want to reject all matches for this book? This cannot be "
 "undone."
@@ -11073,19 +11763,23 @@ msgid "✗ Reject All Matches"
 msgstr "✗ 拒绝所有匹配项"
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid "Failed to reject match"
 msgstr "创建封面路径失败"
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid ""
 "Are you sure you want to reject all pending matches? This cannot be undone."
 msgstr "您确定要修改选定用户的选定角色吗？"
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid "✗ Reject All Pending"
 msgstr "创建书架"
 
 #: cps/templates/hardcover_review_matches.html
+#, fuzzy
 msgid "Failed to reject all pending matches"
 msgstr "创建封面路径失败"
 
@@ -11098,6 +11792,7 @@ msgid "Failed to skip match"
 msgstr "跳过匹配项失败"
 
 #: cps/templates/http_error.html
+#, fuzzy
 msgid ""
 "Calibre-Web NextGen Instance is unconfigured, please contact your "
 "administrator"
@@ -11134,6 +11829,7 @@ msgid "Refresh shelf to update with latest changes"
 msgstr "刷新书架以使用最新更改进行更新"
 
 #: cps/templates/index.html
+#, fuzzy
 msgid "Edit shelf rules"
 msgstr "编辑书架"
 
@@ -11142,29 +11838,175 @@ msgid "Hide this shelf from your sidebar"
 msgstr "从侧边栏隐藏此书架"
 
 #: cps/templates/index.html
+#, fuzzy
 msgid "Show this shelf in your sidebar"
 msgstr "同步这个书架到 Kobo device"
 
 #: cps/templates/index.html
+#, fuzzy
 msgid "Show Shelf"
 msgstr "显示全部"
 
 #: cps/templates/index.html
+#, fuzzy
 msgid "Hide Shelf"
 msgstr "公共书架"
 
 #: cps/templates/index.html
+#, fuzzy
 msgid "Add Series to Shelf"
 msgstr "添加到书架"
 
+#: cps/templates/kobo_reconcile.html
+msgid ""
+"Upload this user's KoboReader.sqlite to find device books whose UUID no "
+"longer exists in this library."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid ""
+"Preview and sample entries are excluded automatically when Kobo marks them "
+"with Accessibility -1."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid ""
+"No genuine Kobo Store purchase was available for validation. Kobo Store "
+"books may appear in the preview, and the evidence shown is not proof that "
+"this server delivered a book."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid ""
+"Select only books you know came from this server. Selecting a book schedules"
+" its device copy for archival on the next sync."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid ""
+"Recorded sync means this server retained a UUID-bearing delivery record. No "
+"does not prove the book was never delivered by an older version."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "The uploaded database is deleted as soon as the preview is built."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid ""
+"%(count)d deleted books were scheduled to be archived the next time this "
+"user's Kobo syncs."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d were already scheduled."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d are currently in the library and were not changed."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d could not be verified and were not changed."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d device books are not in the library and require your review."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "Device title"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "ISBN"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "Recorded sync"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "File size"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "Book UUID"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "Archive %(title)s"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d bytes"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "Archive selected books on the next Kobo sync"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "Excluded from this action"
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d preview or sample entries were excluded."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid ""
+"%(count)d device entries could not be classified because Accessibility was "
+"unavailable."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d device volume rows had no usable UUID."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d books are still in the library."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d library lookups could not be completed."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "%(count)d books were already scheduled for archival."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+#, python-format
+msgid "Maximum file size: %(max)d MB."
+msgstr ""
+
+#: cps/templates/kobo_reconcile.html
+msgid "Build preview"
+msgstr ""
+
 #: cps/templates/kosync_plugin.html
+#, fuzzy
 msgid "KOReader Sync is disabled."
 msgstr "KOReader 同步插件"
 
 #: cps/templates/kosync_plugin.html
 msgid ""
-"Enable it in NextGen Settings to activate the /kosync endpoints and checksum "
-"generation."
+"Enable it in NextGen Settings to activate the /kosync endpoints and checksum"
+" generation."
 msgstr ""
 
 #: cps/templates/kosync_plugin.html
@@ -11172,7 +12014,8 @@ msgid "Open NextGen Settings"
 msgstr ""
 
 #: cps/templates/kosync_plugin.html
-msgid "Download is available after enabling KOReader Sync in NextGen Settings."
+msgid ""
+"Download is available after enabling KOReader Sync in NextGen Settings."
 msgstr ""
 
 #: cps/templates/layout.html cps/templates/login.html
@@ -11188,6 +12031,7 @@ msgid "Search Library"
 msgstr "搜索书库"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Switch to the new Calibre-Web NextGen interface"
 msgstr "Caliebre-Web 电子书路径"
 
@@ -11203,11 +12047,14 @@ msgstr "注销"
 msgid "Support Calibre-Web NextGen"
 msgstr ""
 
-#: cps/templates/layout.html cps/templates/read.html cps/templates/readcbr.html
+#: cps/templates/layout.html cps/templates/read.html
+#: cps/templates/readcbr.html
+#, fuzzy
 msgid "Settings"
 msgstr "设置"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Refresh Library"
 msgstr "搜索书库"
 
@@ -11216,10 +12063,12 @@ msgid "Support"
 msgstr ""
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "New interface available"
 msgstr "无可用发布信息"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "A faster, redesigned Calibre-Web NextGen interface is ready."
 msgstr "Caliebre-Web 电子书路径"
 
@@ -11236,6 +12085,7 @@ msgid "See Changelog"
 msgstr "查看更新日志"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Open Duplicates"
 msgstr "重复书籍"
 
@@ -11248,6 +12098,7 @@ msgid "Please do not refresh the page"
 msgstr "请不要刷新页面"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Create Shelf"
 msgstr "创建书架"
 
@@ -11264,14 +12115,17 @@ msgid "Book Details"
 msgstr "书籍详情"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "This cannot be undone."
 msgstr "此操作无法撤销！"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Will be deleted"
 msgstr "合并选中的书籍"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Formats:"
 msgstr "上传格式"
 
@@ -11284,6 +12138,7 @@ msgid "Format conflicts — choose what to do:"
 msgstr ""
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Result will have formats:"
 msgstr "删除格式:"
 
@@ -11292,6 +12147,7 @@ msgid "Merge &amp; Delete Source"
 msgstr ""
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Duplicate Books Detected"
 msgstr "删除书籍"
 
@@ -11300,6 +12156,7 @@ msgid "You have unresolved duplicate books in your library"
 msgstr "您的书库中有未解决的重复书籍"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Duplicate Groups Found"
 msgstr "无搜索结果"
 
@@ -11308,23 +12165,27 @@ msgid "Remind Me Later"
 msgstr "稍后提醒我"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "View & Resolve Duplicates"
 msgstr "选择重复项"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Scroll to top"
 msgstr "缩放到最佳"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Top"
 msgstr "到："
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Confirm"
 msgstr "配置"
 
 #: cps/templates/layout.html
-#, python-brace-format
+#, fuzzy, python-brace-format
 msgid "Added {n} books to {shelf}"
 msgstr "添加到书架"
 
@@ -11339,21 +12200,22 @@ msgid "All {n} book(s) were already on {shelf}."
 msgstr ""
 
 #: cps/templates/layout.html
-#, python-brace-format
+#, fuzzy, python-brace-format
 msgid "Marked {n} books as read"
 msgstr "合并选中的书籍"
 
 #: cps/templates/layout.html
-#, python-brace-format
+#, fuzzy, python-brace-format
 msgid "Marked {n} books as unread"
 msgstr "标为未读"
 
 #: cps/templates/layout.html
-#, python-brace-format
+#, fuzzy, python-brace-format
 msgid "Deleted {n} books"
 msgstr "删除书籍"
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Delete books?"
 msgstr "删除书籍"
 
@@ -11365,11 +12227,12 @@ msgid ""
 msgstr ""
 
 #: cps/templates/layout.html
+#, fuzzy
 msgid "Select at least one book first."
 msgstr "创建书架"
 
 #: cps/templates/layout.html
-#, python-brace-format
+#, fuzzy, python-brace-format
 msgid "Request failed: {err}"
 msgstr "连接错误"
 
@@ -11382,6 +12245,7 @@ msgid "Grid"
 msgstr "网格"
 
 #: cps/templates/login.html
+#, fuzzy
 msgid "Show Password"
 msgstr "SMTP 密码"
 
@@ -11394,12 +12258,14 @@ msgid "Forgot Password?"
 msgstr "忘记密码？"
 
 #: cps/templates/login.html
+#, fuzzy
 msgid ""
 "Log in with Magic\n"
 "      Link"
 msgstr "通过魔法链接登录"
 
 #: cps/templates/login.html
+#, fuzzy
 msgid "Log in with SSO"
 msgstr "通过魔法链接登录"
 
@@ -11413,6 +12279,7 @@ msgid "Show Calibre-Web Log: "
 msgstr "显示 Calibre-Web 日志： "
 
 #: cps/templates/logviewer.html
+#, fuzzy
 msgid "Calibre-Web Log: "
 msgstr "显示 Calibre-Web 日志： "
 
@@ -11441,6 +12308,7 @@ msgid "This is a pre-configured template shelf. You can edit it freely."
 msgstr "这是一个预配置的模板书架。您可以自由编辑它。"
 
 #: cps/templates/magic_shelf_edit.html
+#, fuzzy
 msgid "Share with Everyone (Public)"
 msgstr "书架将被公开"
 
@@ -11488,14 +12356,10 @@ msgstr "，包括从硬盘中"
 
 #: cps/templates/modal_dialogs.html
 msgid ""
-"Important Kobo Note: deleted books will remain on any paired Kobo device."
-msgstr "Kobo 重要提示：被删除的书籍将保留在任何配对的 Kobo 设备上"
-
-#: cps/templates/modal_dialogs.html
-msgid ""
-"Books must first be archived and the device synced before a book can safely "
-"be deleted."
-msgstr "在安全删除图书之前，必须先将图书归档并与设备同步"
+"Deleting this book also tries to archive its copy on paired Kobo devices the"
+" next time they sync. If that update cannot be recorded, the book may remain"
+" on a device."
+msgstr ""
 
 #: cps/templates/modal_dialogs.html
 msgid "Choose File Location"
@@ -11522,6 +12386,7 @@ msgid "Ok"
 msgstr "完成"
 
 #: cps/templates/osd.xml
+#, fuzzy
 msgid "Calibre-Web NextGen eBook Catalog"
 msgstr "Caliebre-Web 电子书路径"
 
@@ -11530,6 +12395,7 @@ msgid "epub Reader"
 msgstr "epub 阅读器"
 
 #: cps/templates/read.html
+#, fuzzy
 msgid "Annotations"
 msgstr "活动"
 
@@ -11542,10 +12408,12 @@ msgid "Font Sizes"
 msgstr "字体大小"
 
 #: cps/templates/read.html
+#, fuzzy
 msgid "Text margin"
 msgstr "下一页"
 
 #: cps/templates/read.html
+#, fuzzy
 msgid "Default"
 msgstr "删除数据"
 
@@ -11558,14 +12426,17 @@ msgid "SimSun"
 msgstr "宋体"
 
 #: cps/templates/read.html
+#, fuzzy
 msgid "KaiTi"
 msgstr "楷体"
 
 #: cps/templates/read.html
+#, fuzzy
 msgid "Arial"
 msgstr "Arial"
 
 #: cps/templates/read.html
+#, fuzzy
 msgid "Spread"
 msgstr "已读"
 
@@ -11682,6 +12553,7 @@ msgid "Vertical"
 msgstr "垂直"
 
 #: cps/templates/readcbr.html
+#, fuzzy
 msgid "Direction"
 msgstr "简介"
 
@@ -11694,10 +12566,12 @@ msgid "Right to Left"
 msgstr "从右到左"
 
 #: cps/templates/readcbr.html
+#, fuzzy
 msgid "Reset to Top"
 msgstr "回到首页"
 
 #: cps/templates/readcbr.html
+#, fuzzy
 msgid "Remember Position"
 msgstr "记住我"
 
@@ -11751,8 +12625,8 @@ msgstr "此验证链接将在10分钟后失效"
 
 #: cps/templates/schedule_edit.html
 msgid ""
-"Automatically refresh all thumbnails during scheduled maintenance. Thumbnails"
-" are always generated on-demand regardless of this setting."
+"Automatically refresh all thumbnails during scheduled maintenance. "
+"Thumbnails are always generated on-demand regardless of this setting."
 msgstr "在计划维护期间自动刷新所有缩略图。无论此设置如何，始终会按需生成缩略图。"
 
 #: cps/templates/schedule_edit.html
@@ -11832,6 +12706,7 @@ msgid "Edit Shelf Properties"
 msgstr "编辑书架属性"
 
 #: cps/templates/shelf.html
+#, fuzzy
 msgid "Add Books"
 msgstr "隐藏书籍"
 
@@ -11848,20 +12723,22 @@ msgid "Enable Change order"
 msgstr "允许改变顺序"
 
 #: cps/templates/shelf.html
-#, python-format
+#, fuzzy, python-format
 msgid "%(count)s selected"
 msgstr "合并选中的书籍"
 
 #: cps/templates/shelf.html
-#, python-format
+#, fuzzy, python-format
 msgid "Add %(count)s"
 msgstr "账号"
 
 #: cps/templates/shelf.html
+#, fuzzy
 msgid "No books found."
 msgstr "找不到令牌"
 
 #: cps/templates/shelf.html
+#, fuzzy
 msgid "Already on this shelf"
 msgstr "删除此书架"
 
@@ -11870,14 +12747,17 @@ msgid "Could not add the books. Please try again."
 msgstr ""
 
 #: cps/templates/shelf.html
+#, fuzzy
 msgid "Add books to"
 msgstr "添加到书架"
 
 #: cps/templates/shelf.html
+#, fuzzy
 msgid "Search your library…"
 msgstr "搜索书库"
 
 #: cps/templates/shelf.html
+#, fuzzy
 msgid "Search your library"
 msgstr "搜索书库"
 
@@ -11915,6 +12795,7 @@ msgid "Moved to position %(num)s of %(total)s"
 msgstr ""
 
 #: cps/templates/shelf_order.html
+#, fuzzy
 msgid "Shelf order"
 msgstr "找不到用户"
 
@@ -11979,6 +12860,7 @@ msgid "Run Time"
 msgstr "运行时间"
 
 #: cps/templates/tasks.html
+#, fuzzy
 msgid "Actions"
 msgstr "活动"
 
@@ -11991,13 +12873,14 @@ msgid "Scheduled Time"
 msgstr "计划时间"
 
 #: cps/templates/tasks.html
+#, fuzzy
 msgid "State"
 msgstr "旋转"
 
 #: cps/templates/tasks.html
 msgid ""
-"Upcoming sends are persisted and will enqueue as tasks at the scheduled time."
-" You can cancel a pending send before it runs."
+"Upcoming sends are persisted and will enqueue as tasks at the scheduled "
+"time. You can cancel a pending send before it runs."
 msgstr "即将发送的邮件将被持久化，并在计划时间作为任务进入队列。您可以在运行之前取消待处理的发送。"
 
 #: cps/templates/tasks.html
@@ -12026,6 +12909,7 @@ msgid ""
 msgstr "如果这是计划任务，则将在下一个计划的时间内重新运行"
 
 #: cps/templates/tasks.html
+#, fuzzy
 msgid "Scheduled item cancelled successfully"
 msgstr "选中的重复书籍已成功删除！"
 
@@ -12034,6 +12918,7 @@ msgid "Error cancelling scheduled item"
 msgstr "取消计划项时出错"
 
 #: cps/templates/update_now_modal.html
+#, fuzzy
 msgid "Update Calibre-Web NextGen"
 msgstr "Caliebre-Web 电子书路径"
 
@@ -12105,13 +12990,14 @@ msgid ""
 msgstr ""
 
 #: cps/templates/update_now_modal.html
+#, fuzzy
 msgid "Portainer:"
 msgstr "重要："
 
 #: cps/templates/update_now_modal.html
 msgid ""
-"Images → pull the image below, then Containers → select Calibre-Web NextGen →"
-" Recreate with \"Re-pull image\" enabled."
+"Images → pull the image below, then Containers → select Calibre-Web NextGen "
+"→ Recreate with \"Re-pull image\" enabled."
 msgstr ""
 
 #: cps/templates/update_now_modal.html
@@ -12120,19 +13006,22 @@ msgstr ""
 
 #: cps/templates/update_now_modal.html
 msgid ""
-"Registry → download the image below (tag: latest), then stop the container → "
-"Action → Reset to recreate it."
+"Registry → download the image below (tag: latest), then stop the container →"
+" Action → Reset to recreate it."
 msgstr ""
 
 #: cps/templates/update_now_modal.html
+#, fuzzy
 msgid "Set up automatic updates"
 msgstr "启用自动重复扫描"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Your Profile"
 msgstr "您的邮箱地址"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "User Settings"
 msgstr "设置"
 
@@ -12150,10 +13039,12 @@ msgid "Reset user Password"
 msgstr "重置用户密码"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "eReader Configuration"
 msgstr "服务器配置"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Send to eReader Email Address"
 msgstr "接收书籍的电子阅读器邮箱地址"
 
@@ -12163,8 +13054,8 @@ msgstr "使用逗号分隔多个地址"
 
 #: cps/templates/user_edit.html
 msgid ""
-"Email address(es) for your eReader devices. Separate multiple addresses with "
-"commas."
+"Email address(es) for your eReader devices. Separate multiple addresses with"
+" commas."
 msgstr "用于您的电子阅读器设备的邮箱地址。使用逗号分隔多个地址。"
 
 #: cps/templates/user_edit.html
@@ -12199,6 +13090,7 @@ msgid "Language & Theme Preferences"
 msgstr "语言和主题偏好"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Interface Language"
 msgstr "输入语言"
 
@@ -12211,6 +13103,7 @@ msgid "Filter the library to only show books in a specific language."
 msgstr "过滤库以仅显示特定语言的书籍。"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Book Language Filter"
 msgstr "无有效书籍语言"
 
@@ -12231,6 +13124,7 @@ msgid "Unlink"
 msgstr "取消链接"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Hardcover API Token"
 msgstr "Hardcover API token"
 
@@ -12265,6 +13159,16 @@ msgid ""
 msgstr ""
 
 #: cps/templates/user_edit.html
+msgid "Reconcile books deleted before Kobo archival tracking"
+msgstr ""
+
+#: cps/templates/user_edit.html
+msgid ""
+"Upload this user's KoboReader.sqlite, then select only books you know this "
+"server delivered and that are no longer in the library."
+msgstr ""
+
+#: cps/templates/user_edit.html
 msgid "Sync only books in selected shelves with Kobo"
 msgstr "仅同步所选书架中的书籍到 Kobo"
 
@@ -12273,10 +13177,12 @@ msgid "OPDS Shelf Exposure"
 msgstr ""
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Expose only books in selected shelves to OPDS"
 msgstr "仅同步所选书架中的书籍到 Kobo"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Sidebar Display Settings"
 msgstr "安全设置"
 
@@ -12313,6 +13219,7 @@ msgid "Configure what actions this user is allowed to perform."
 msgstr "配置允许此用户执行哪些操作。"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Magic Shelves Order"
 msgstr "同步所选书架到 Kobo"
 
@@ -12353,6 +13260,7 @@ msgid "Created (oldest first)"
 msgstr "创建时间（最旧的在前）"
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Recently modified"
 msgstr "最近添加的书籍"
 
@@ -12370,8 +13278,8 @@ msgstr "魔法书架可见性"
 
 #: cps/templates/user_edit.html
 msgid ""
-"Uncheck shelves you want to hide from your sidebar. System shelves cannot be "
-"deleted, only hidden. Public shelves from other users can also be hidden."
+"Uncheck shelves you want to hide from your sidebar. System shelves cannot be"
+" deleted, only hidden. Public shelves from other users can also be hidden."
 msgstr "取消选中要从侧边栏隐藏的书架。系统书架无法删除，只能隐藏。来自其他用户的公共书架也可以隐藏。"
 
 #: cps/templates/user_edit.html
@@ -12379,6 +13287,7 @@ msgid "Default System Shelves:"
 msgstr "默认系统书架："
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Public Shelves:"
 msgstr "编辑公共书架"
 
@@ -12402,13 +13311,14 @@ msgstr ""
 
 #: cps/templates/user_edit.html
 msgid ""
-"OPDS readers and KOReader can't sign in through your IdP — they only support "
-"HTTP Basic auth. Create an app password here, label it for the device that'll"
-" use it, and copy the token shown after creation. You can revoke any app "
-"password at any time without affecting your active web session."
+"OPDS readers and KOReader can't sign in through your IdP — they only support"
+" HTTP Basic auth. Create an app password here, label it for the device "
+"that'll use it, and copy the token shown after creation. You can revoke any "
+"app password at any time without affecting your active web session."
 msgstr ""
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "New app password"
 msgstr "修改密码"
 
@@ -12427,6 +13337,7 @@ msgid "e.g. Kobo Forma, KOReader iPad"
 msgstr ""
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Create app password"
 msgstr "修改密码"
 
@@ -12435,6 +13346,7 @@ msgid "Label"
 msgstr ""
 
 #: cps/templates/user_edit.html
+#, fuzzy
 msgid "Created"
 msgstr "新建或查看"
 
@@ -12487,10 +13399,12 @@ msgid "eReader Email"
 msgstr "电子阅读器邮箱"
 
 #: cps/templates/user_table.html
+#, fuzzy
 msgid "Enter eReader Email Subject"
 msgstr "接收书籍的电子阅读器邮箱"
 
 #: cps/templates/user_table.html
+#, fuzzy
 msgid "eReader Email Subject"
 msgstr "电子阅读器邮箱"
 
@@ -12547,40 +13461,13 @@ msgid "Sync selected Shelves with Kobo"
 msgstr "同步所选书架到 Kobo"
 
 #: cps/templates/user_table.html
+#, fuzzy
 msgid "Expose selected Shelves to OPDS"
 msgstr "同步所选书架到 Kobo"
 
 #: cps/templates/user_table.html
 msgid "Show Read/Unread Section"
 msgstr "显示已读、未读栏目"
-
-#: cps/spa_strings.py
-msgid "Could not delete annotation."
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Could not save annotation."
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Delete note"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Edit highlight"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Exit full screen"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Note (optional)"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Remove highlight"
-msgstr ""
 
 #~ msgid "(no text captured)"
 #~ msgstr ""
@@ -12589,6 +13476,9 @@ msgstr ""
 #~ msgstr ""
 
 #~ msgid "Could not open that highlight."
+#~ msgstr ""
+
+#~ msgid "Could not open that search result."
 #~ msgstr ""
 
 #~ msgid "Could not save reader settings."
@@ -12600,7 +13490,10 @@ msgstr ""
 #~ msgid "Could not save your reading position."
 #~ msgstr ""
 
-#~ msgid "Exit full screen"
+#~ msgid "Could not search this book."
+#~ msgstr ""
+
+#~ msgid "Enter at least 2 characters"
 #~ msgstr ""
 
 #~ msgid "Font family"
@@ -12617,17 +13510,21 @@ msgstr ""
 #~ "reader for other formats."
 #~ msgstr ""
 
-#~ msgid ""
-#~ "No highlights yet. Highlight while reading, or import from a Kobo device."
+#~ msgid "No highlights yet. Select text in the book to make one."
 #~ msgstr ""
 
-#~ msgid "No highlights yet. Select text in the book to make one."
+#~ msgid "No matches found in this book."
 #~ msgstr ""
 
 #~ msgid "Note removed"
 #~ msgstr ""
 
 #~ msgid "Note saved"
+#~ msgstr ""
+
+#~ msgid ""
+#~ "Nothing here yet. Highlight or write a note while reading, or import from a "
+#~ "Kobo device."
 #~ msgstr ""
 
 #~ msgid "Open classic reader"
@@ -12645,13 +13542,26 @@ msgstr ""
 #~ msgid "Reading appearance"
 #~ msgstr ""
 
-#~ msgid "Remove highlight"
-#~ msgstr ""
-
 #~ msgid "Remove note"
 #~ msgstr ""
 
 #~ msgid "Save note"
+#~ msgstr ""
+
+#~ msgid "Search inside book"
+#~ msgstr ""
+
+#~ msgid "Search term"
+#~ msgstr ""
+
+#~ msgid "Search this book"
+#~ msgstr ""
+
+#~ msgid "Searching this book…"
+#~ msgstr ""
+
+#, python-brace-format
+#~ msgid "Showing the first {count} matches."
 #~ msgstr ""
 
 #~ msgid "This format opens in the full-screen reader."
@@ -12663,7 +13573,17 @@ msgstr ""
 #~ msgid "Write a note…"
 #~ msgstr ""
 
+#, python-brace-format
+#~ msgid "{count} matches"
+#~ msgstr ""
+
 #~ msgid "← Back to book"
+#~ msgstr ""
+
+#~ msgid "Bulk actions"
+#~ msgstr ""
+
+#~ msgid "Could not load highlights."
 #~ msgstr ""
 
 #~ msgid "Random Books"
@@ -12672,61 +13592,74 @@ msgstr ""
 #~ msgid "Sync Kobo read progress to Hardcover (Requires API key per user)"
 #~ msgstr "将 Kobo 阅读进度同步到 Hardcover (每个用户需要 API 密钥)"
 
+#, fuzzy
 #~ msgid "Enable Hardcover Auto-Fetch"
 #~ msgstr "启用 Kobo 同步"
 
+#, fuzzy
 #~ msgid "Log in with a magic link"
 #~ msgstr "通过魔法链接登录"
 
+#, fuzzy
 #~ msgid "enabled in your Docker Compose configuration."
 #~ msgstr "无法获取 OpenID 配置。"
 
+#, fuzzy
 #~ msgid "or"
 #~ msgstr "端口"
 
+#, fuzzy
 #~ msgid "enabled."
 #~ msgstr "更新失败："
 
+#, fuzzy
 #~ msgid "in your Docker Compose configuration."
 #~ msgstr "服务器配置"
 
+#, fuzzy
 #~ msgid "Search books"
 #~ msgstr "搜索"
 
-#, python-format
+#, fuzzy, python-format
 #~ msgid "Remove tag %(name)s"
 #~ msgstr "移除"
 
-#, python-brace-format
+#, fuzzy, python-brace-format
 #~ msgid "Hide {label}"
 #~ msgstr "撤回"
 
-#, python-brace-format
+#, fuzzy, python-brace-format
 #~ msgid "Show {label}"
 #~ msgstr "显示全部"
 
 #~ msgid "Drag to Rearrange Order"
 #~ msgstr "拖拽以重新排序"
 
+#, fuzzy
 #~ msgid "Switch Theme"
 #~ msgstr "标准主题"
 
+#, fuzzy
 #~ msgid "Calibre-Web Automated configuration updated"
 #~ msgstr "Calibre-Web 配置已更新"
 
+#, fuzzy
 #~ msgid ""
 #~ "Calibre-Web Automated will search for updated Covers and update Cover "
 #~ "Thumbnails, this may take a while?"
 #~ msgstr "Calibre-Web 将搜索更新封面，并更新缩略图，这可能需要一段时间"
 
+#, fuzzy
 #~ msgid ""
-#~ "Are you sure you want delete Calibre-Web Automated's sync database to force a"
-#~ " full sync with your Kobo Reader?"
+#~ "Are you sure you want delete Calibre-Web Automated's sync database to force "
+#~ "a full sync with your Kobo Reader?"
 #~ msgstr "您确定要删除 Calibre-Web 的同步数据库以强制与您的 Kobo Reader 进行完全同步吗"
 
+#, fuzzy
 #~ msgid "Calibre-Web Automated User Settings"
 #~ msgstr "Calibre 电子书转换器设置"
 
+#, fuzzy
 #~ msgid "Calibre-Web Automated Stats & Activity"
 #~ msgstr "Calibre-Web Automated Sever 统计与存档"
 
@@ -12751,50 +13684,60 @@ msgstr ""
 #~ msgid "Calibre-Web Automated - Convert Library"
 #~ msgstr "Calibre-Web Automated - 转换图书库"
 
+#, fuzzy
 #~ msgid "Calibre-Web Automated - EPUB Fixer Service"
 #~ msgstr "Calibre-Web Automated - 发送到 Kindle EPUB 修复服务"
 
 #~ msgid "CWA Profile Picture Management (WIP)"
 #~ msgstr "CWA 头像管理（开发中）"
 
+#, fuzzy
 #~ msgid "This Email has been sent via Calibre-Web Automated."
 #~ msgstr "此邮件已经通过 Calibre-Web 发送"
 
+#, fuzzy
 #~ msgid "Calibre-Web Automated Test Email"
 #~ msgstr "Calibre-Web 测试邮件"
 
+#, fuzzy
 #~ msgid "Get Started with Calibre-Web Automated"
 #~ msgstr "开启 Calibre-Web 之旅"
 
+#, fuzzy
 #~ msgid ""
 #~ "Please access Calibre-Web Automated from non localhost to get valid "
 #~ "api_endpoint for kobo device"
 #~ msgstr "请不要从 localhost 访问 Calibre-Web，以便 Kobo 设备能获取有效的 api_endpoint"
 
+#, fuzzy
 #~ msgid "CWA Settings"
 #~ msgstr "设置"
 
 #~ msgid "CWA Admin Functions&nbsp;&nbsp;⚡"
 #~ msgstr "CWA 管理功能&nbsp;&nbsp;⚡"
 
+#, fuzzy
 #~ msgid "Check CWA Status"
 #~ msgstr "存档状态"
 
 #~ msgid "CWA Library Conversion Service"
 #~ msgstr "CWA 书库转换服务"
 
+#, fuzzy
 #~ msgid "CWA EPUB Fixer Service"
 #~ msgstr "CWA 发送到 Kindle EPUB 修复服务"
 
 #~ msgid "CWA GitHub"
 #~ msgstr "CWA GitHub"
 
+#, fuzzy
 #~ msgid "CWA Discord Server"
 #~ msgstr "发现"
 
 #~ msgid "Enable CWA Auto-Convert"
 #~ msgstr "启用 CWA 自动转换"
 
+#, fuzzy
 #~ msgid "Enable KOReader Sync (CWA Plugin)"
 #~ msgstr "KOReader 同步插件"
 
@@ -12826,6 +13769,7 @@ msgstr ""
 #~ msgid "CWA Auto-Convert - Ignored Formats"
 #~ msgstr "CWA 自动转换 - 忽略格式"
 
+#, fuzzy
 #~ msgid "CWA Auto-Convert - Retained Formats"
 #~ msgstr "CWA 自动转换 - 忽略格式"
 
@@ -12835,9 +13779,11 @@ msgstr ""
 #~ msgid "CWA Auto-Ingest - Ignored Formats"
 #~ msgstr "CWA 自动导入 - 忽略格式"
 
+#, fuzzy
 #~ msgid "CWA Duplicate Detection System"
 #~ msgstr "CWA 重复书籍管理器"
 
+#, fuzzy
 #~ msgid "CWA Duplicate Detection Criteria"
 #~ msgstr "CWA 重复书籍管理器"
 
@@ -12886,9 +13832,11 @@ msgstr ""
 #~ msgid "Unable to fetch OAuth metadata from URL."
 #~ msgstr "无法从 URL 获取 OAuth 元数据。"
 
+#, fuzzy
 #~ msgid "Connection successful!"
 #~ msgstr "连接错误"
 
+#, fuzzy
 #~ msgid "This Email has been sent via Automated."
 #~ msgstr "此邮件已经通过 Calibre-Web 发送"
 
@@ -12907,8 +13855,8 @@ msgstr ""
 #~ msgstr "默认主题（用户可以选择自己喜欢的主题，但新用户默认将使用此主题）"
 
 #~ msgid ""
-#~ "Per-user theme switching enabled; this global default only affects new users "
-#~ "& anonymous"
+#~ "Per-user theme switching enabled; this global default only affects new users"
+#~ " & anonymous"
 #~ msgstr "启用用户主题切换；此全局默认值仅影响新用户和匿名用户"
 
 #~ msgid ""
@@ -12916,13 +13864,15 @@ msgstr ""
 #~ "eReaders"
 #~ msgstr "发送到电子阅读器邮箱地址。使用逗号分隔多个电子阅读器的邮箱"
 
+#, fuzzy
 #~ msgid "Unarchive selected books"
 #~ msgstr "合并选中的书籍"
 
+#, fuzzy
 #~ msgid "Mark Book as Read or Unread"
 #~ msgstr "标为未读"
 
-#, python-format
+#, fuzzy, python-format
 #~ msgid "%(seriesindex)s is not a valid number, skipping"
 #~ msgstr "%(seriesindex)s 不是一个有效的数值，忽略"
 
@@ -12930,8 +13880,8 @@ msgstr ""
 #~ msgstr "Calibre-Web 配置已更新"
 
 #~ msgid ""
-#~ "Are you sure you want delete Calibre-Web's sync database to force a full sync"
-#~ " with your Kobo Reader?"
+#~ "Are you sure you want delete Calibre-Web's sync database to force a full "
+#~ "sync with your Kobo Reader?"
 #~ msgstr "您确定要删除 Calibre-Web 的同步数据库以强制与您的 Kobo Reader 进行完全同步吗"
 
 #~ msgid "Calibre-Web Test Email"
@@ -12949,34 +13899,43 @@ msgstr ""
 #~ msgstr "请不要从 localhost 访问 Calibre-Web，以便 Kobo 设备能获取有效的 api_endpoint"
 
 #~ msgid ""
-#~ "Calibre-Web will search for updated Covers and update Cover Thumbnails, this "
-#~ "may take a while?"
+#~ "Calibre-Web will search for updated Covers and update Cover Thumbnails, this"
+#~ " may take a while?"
 #~ msgstr "Calibre-Web 将搜索更新封面，并更新缩略图，这可能需要一段时间"
 
+#, fuzzy
 #~ msgid "This Email has been sent via  Autmoated."
 #~ msgstr "此邮件已经通过 Calibre-Web 发送"
 
+#, fuzzy
 #~ msgid "This Email has been sent via  Automated."
 #~ msgstr "此邮件已经通过 Calibre-Web 发送"
 
+#, fuzzy
 #~ msgid "This Email has been sent via  Autoated."
 #~ msgstr "此邮件已经通过 Calibre-Web 发送"
 
+#, fuzzy
 #~ msgid "Could not open file {filename!r}: {message}"
 #~ msgstr "无法登录：%(message)s"
 
+#, fuzzy
 #~ msgid "{value!r} is not a valid boolean."
 #~ msgstr "邮箱不在有效域中"
 
+#, fuzzy
 #~ msgid "directory"
 #~ msgstr "方向"
 
+#, fuzzy
 #~ msgid "{name} {filename!r} is not writable."
 #~ msgstr "数据库不可写入"
 
+#, fuzzy
 #~ msgid "Repeat for confirmation"
 #~ msgstr "功能配置"
 
+#, fuzzy
 #~ msgid "Value must be an iterable."
 #~ msgstr "值必须为 true 或 false"
 
@@ -12985,6 +13944,19 @@ msgstr ""
 
 #~ msgid "Click the cover to load metadata to the form"
 #~ msgstr "单击封面将元数据加载到表单"
+
+#~ msgid ""
+#~ "Important Kobo Note: deleted books will remain on any paired Kobo device."
+#~ msgstr "Kobo 重要提示：被删除的书籍将保留在任何配对的 Kobo 设备上"
+
+#~ msgid ""
+#~ "Books must first be archived and the device synced before a book can safely "
+#~ "be deleted."
+#~ msgstr "在安全删除图书之前，必须先将图书归档并与设备同步"
+
+#~ msgid ""
+#~ "No highlights yet. Highlight while reading, or import from a Kobo device."
+#~ msgstr ""
 
 #~ msgid "Border fill style"
 #~ msgstr ""

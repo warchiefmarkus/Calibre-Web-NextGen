@@ -20,7 +20,7 @@ import re
 from datetime import datetime, timezone
 from functools import wraps
 from typing import TypedDict, NotRequired
-from flask import Blueprint, request, make_response, jsonify, abort
+from flask import Blueprint, request, make_response, jsonify, abort, g
 from werkzeug.datastructures import Headers
 import requests
 from lxml import etree
@@ -39,7 +39,6 @@ KOBO_READING_SERVICES_URL = "https://readingservices.kobo.com"
 
 # Constants for annotation processing
 MAX_PROGRESS_PERCENTAGE = 100  # Cap progress at 100%
-SYNC_CHECK_BATCH_SIZE = 50  # Batch size for checking existing syncs
 REQUEST_TIMEOUT = (2, 10)  # (connect, read) timeouts in seconds
 
 CONNECTION_SPECIFIC_HEADERS = [
@@ -62,7 +61,7 @@ def redact_headers(headers):
     return redacted
 
 
-def proxy_to_kobo_reading_services():
+def proxy_to_kobo_reading_services(data=None):
     """Proxy the request to Kobo's reading services API."""
     try:
         kobo_url = KOBO_READING_SERVICES_URL + request.path
@@ -76,14 +75,17 @@ def proxy_to_kobo_reading_services():
         outgoing_headers.remove("Host")
         # Remove CWA session cookie - Kobo doesn't need it and it causes issues
         outgoing_headers.pop("Cookie", None)
+        if data is not None:
+            # requests must calculate this again for a filtered request body.
+            outgoing_headers.pop("Content-Length", None)
         
         readingservices_response = requests.request(
             method=request.method,
             url=kobo_url,
             headers=outgoing_headers,
-            data=request.get_data(),
+            data=request.get_data() if data is None else data,
             allow_redirects=False,
-            timeout=(2, 10)
+            timeout=REQUEST_TIMEOUT
         )
         
         if readingservices_response.status_code >= 400:
@@ -123,9 +125,9 @@ def requires_reading_services_auth_and_config(f):
     enabled handlers (if any) to push to. This lets us capture annotations
     locally even when Hardcover is off, which is the whole point of (2).
 
-    Authentication still relies on the Kobo-sync cookie (set during the
-    Kobo sync handshake). If Kobo sync is off OR the user isn't logged in,
-    we proxy through to Kobo untouched.
+    Authentication uses the existing Flask session, whether it came from a
+    Kobo-sync handshake or a browser login. If Kobo sync is off OR the user
+    isn't logged in, we proxy through to Kobo untouched.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -133,20 +135,109 @@ def requires_reading_services_auth_and_config(f):
             log.debug("Kobo sync disabled, proxying to Kobo")
             return proxy_to_kobo_reading_services()
         if current_user.is_authenticated:
+            try:
+                from .services.device_registry import register_kobo_device_best_effort
+                g.annotation_origin_device_id = register_kobo_device_best_effort(
+                    user_id=current_user.id, headers=request.headers, return_internal=True,
+                )
+            except Exception:
+                log.warning("Best-effort Kobo device observation failed", exc_info=True)
             return f(*args, **kwargs)
         log.debug("Reading services request without auth, proxying to Kobo")
         return proxy_to_kobo_reading_services()
     return decorated_function
 
 
+#: Ownership could not be determined (e.g. the metadata DB errored). Distinct
+#: from ``None``, which means the exact-match lookup returned no row. Conflating
+#: the two is what makes a destructive fallback fire on a transient failure.
+OWNERSHIP_UNKNOWN = object()
+
+
 def get_book_by_entitlement_id(entitlement_id):
-    """Get book from database by UUID (entitlement_id)."""
+    """Get book from database by UUID (entitlement_id).
+
+    Returns ``None`` both for "not ours" and for a lookup failure. Callers whose
+    fallback is destructive must use :func:`resolve_entitlement_ownership`
+    instead, which keeps those two cases apart.
+    """
     try:
         book = calibre_db.get_book_by_uuid(entitlement_id)
         return book
     except Exception as e:
         log.error(f"Error getting book by entitlement ID {entitlement_id}: {e}")
         return None
+
+
+def resolve_entitlement_ownership(entitlement_id):
+    """Tri-state ownership: the Books row, ``None``, or ``OWNERSHIP_UNKNOWN``."""
+    # Normalize only for this ownership lookup; callers still forward the
+    # original ContentId unchanged. Stripping whitespace/braces and casefolding
+    # can only widen the set classified as owned, so representation drift fails
+    # in the safe direction instead of bypassing both containment layers.
+    normalized_id = entitlement_id.strip().strip("{}").strip().casefold()
+    try:
+        return calibre_db.get_book_by_uuid(normalized_id)
+    except Exception:
+        log.exception(
+            "Could not determine ownership of entitlement %s; treating as UNKNOWN",
+            entitlement_id,
+        )
+        return OWNERSHIP_UNKNOWN
+
+
+def _parse_check_for_changes_request(raw_body):
+    """Return a recognized check-for-changes request list, or ``None``."""
+    try:
+        entries = json.loads(raw_body)
+    except (TypeError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(entries, list):
+        return None
+    if any(
+        not isinstance(entry, dict)
+        or not isinstance(entry.get("ContentId"), str)
+        for entry in entries
+    ):
+        return None
+    return entries
+
+
+def _check_for_changes_response_content_ids(entries):
+    """Return ids from a recognized Kobo response list, or ``None``."""
+    if not isinstance(entries, list):
+        return None
+    content_ids = []
+    for entry in entries:
+        if isinstance(entry, str):
+            content_ids.append(entry)
+        elif isinstance(entry, dict) and isinstance(entry.get("ContentId"), str):
+            content_ids.append(entry["ContentId"])
+        else:
+            return None
+    return content_ids
+
+
+def _filter_check_for_changes_entries(entries, filtered_content_ids):
+    """Filter prevalidated string or dict-with-string-ContentId entries.
+
+    Callers must first validate with ``_parse_check_for_changes_request`` or
+    ``_check_for_changes_response_content_ids``.
+    """
+    filtered_content_ids = set(filtered_content_ids)
+    return [
+        entry for entry in entries
+        if (entry if isinstance(entry, str) else entry["ContentId"])
+        not in filtered_content_ids
+    ]
+
+
+def _check_for_changes_ownership_is_filtered(ownership):
+    """Whether an ownership result must be contained at the trigger boundary."""
+    # UNKNOWN is deliberately treated as owned here. During a DB outage this
+    # suppresses Kobo-cloud annotation sync for every affected batch until the
+    # DB recovers; a false negative can delete the user's only highlight copy.
+    return ownership is not None
 
 
 def get_book_identifiers(book):
@@ -355,15 +446,34 @@ def handle_annotations(entitlement_id):
     Readwise / Notion / etc.). All DB writes happen in the dispatcher; this
     handler is a thin orchestrator.
 
-    Sub-project (2) note: today this path only persists annotations when the
-    PATCH includes content (i.e. annotations come from Kobo).  An always-persist
-    path independent of any sync target lands in sub-project (2).
+    Sub-project (2) note: this path persists annotations whenever the PATCH
+    includes content (i.e. annotations come from Kobo). The dispatcher now
+    persists independently of whether any external sync target is enabled.
     """
     if request.method == "PATCH":
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                log.warning(
+                    "Ignoring local annotation capture for entitlement %s: "
+                    "PATCH body is not a JSON object", entitlement_id,
+                )
+                data = {}
+            book = resolve_entitlement_ownership(entitlement_id)
+            if book is OWNERSHIP_UNKNOWN:
+                log.error(
+                    "Cannot capture Kobo annotations for entitlement %s: "
+                    "ownership lookup failed; refusing the PATCH so the device "
+                    "does not treat an uncaptured upload as successful",
+                    entitlement_id,
+                )
+                # Do not proxy: checkforchanges containment prevents an owned
+                # book from healing this local gap by downloading from Kobo.
+                # A visible PATCH failure preserves the opportunity to retry.
+                return make_response(
+                    jsonify({"error": "Annotation capture temporarily unavailable"}), 503,
+                )
             log_annotation_data(entitlement_id, "PATCH", data)
-            book = get_book_by_entitlement_id(entitlement_id)
             if book is None:
                 log.warning(
                     "Book not found for entitlement %s; skipping local + Hardcover sync",
@@ -373,15 +483,30 @@ def handle_annotations(entitlement_id):
                 from cps.services import annotation_sync
                 updated = data.get("updatedAnnotations")
                 deleted = data.get("deletedAnnotationIds")
-                if updated:
-                    annotation_sync.dispatch_annotation_sync(updated, book, current_user)
-                if deleted:
+                if updated is not None and not isinstance(updated, list):
+                    log.warning(
+                        "Ignoring updatedAnnotations for entitlement %s: expected a list",
+                        entitlement_id,
+                    )
+                elif updated:
+                    annotation_sync.dispatch_annotation_sync(
+                        updated, book, current_user,
+                        origin_device_id=getattr(g, "annotation_origin_device_id", None),
+                    )
+                if deleted is not None and not isinstance(deleted, list):
+                    log.warning(
+                        "Ignoring deletedAnnotationIds for entitlement %s: expected a list",
+                        entitlement_id,
+                    )
+                elif deleted:
                     annotation_sync.dispatch_annotation_deletes(
                         deleted, current_user, book_id=book.id,
                     )
         except Exception:
             log.exception("Error processing PATCH annotations")
-    # Proxy to Kobo reading services for both GET + PATCH.
+    # Proxy both GET + PATCH. Do not refuse GET: hardware testing showed that a
+    # 503 (or a hung request) makes Nickel empty its local annotations. The safe
+    # containment point is checkforchanges, before Nickel decides to GET.
     return proxy_to_kobo_reading_services()
 
 
@@ -389,12 +514,43 @@ def handle_annotations(entitlement_id):
 @readingservices_api_v3.route("/content/checkforchanges", methods=["POST"])
 @requires_reading_services_auth_and_config
 def handle_check_for_changes():
-    """
-    Handle check for changes request.
-    Proxies to Kobo's reading services.
-    """
-    # Proxy to Kobo reading services
-    return proxy_to_kobo_reading_services()
+    """Keep locally-owned content out of Nickel's destructive GET trigger."""
+    entries = _parse_check_for_changes_request(request.get_data())
+    if entries is None:
+        log.warning("Not proxying an unrecognized Kobo checkforchanges request")
+        return jsonify([])
+
+    filtered_ids = {
+        entry["ContentId"] for entry in entries
+        if _check_for_changes_ownership_is_filtered(
+            resolve_entitlement_ownership(entry["ContentId"])
+        )
+    }
+    outbound_entries = _filter_check_for_changes_entries(entries, filtered_ids)
+    if not outbound_entries:
+        return jsonify([])
+
+    upstream = proxy_to_kobo_reading_services(
+        data=json.dumps(outbound_entries, separators=(",", ":")).encode("utf-8")
+    )
+    if upstream.status_code in (401, 403):
+        # An auth error is not a successful changed-ContentIds answer, even if
+        # its body happens to parse as a list. Propagate it so Nickel can
+        # re-authenticate without triggering a destructive annotation GET.
+        return upstream
+    upstream_entries = upstream.get_json(silent=True)
+    response_ids = _check_for_changes_response_content_ids(upstream_entries)
+    if response_ids is None:
+        log.warning("Discarding an unrecognized Kobo checkforchanges response")
+        return jsonify([])
+
+    filtered_ids.update(
+        content_id for content_id in response_ids
+        if _check_for_changes_ownership_is_filtered(
+            resolve_entitlement_ownership(content_id)
+        )
+    )
+    return jsonify(_filter_check_for_changes_entries(upstream_entries, filtered_ids))
 
 
 @csrf.exempt

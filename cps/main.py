@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
+import os
 import sys
 
 from . import create_app, limiter
@@ -15,6 +16,29 @@ from flask import request, g
 
 def request_username():
     return request.authorization.username
+
+
+def hide_console_windows():
+    """Hide the console window on Windows. No-op everywhere else.
+
+    Call this from a script entry point, never from main(). main() is also the
+    `cps` console script (pyproject [project.scripts]), and a Windows user who
+    types `cps` in a terminal wants that terminal: hiding it takes their server
+    output and their Ctrl-C with it while the process keeps running.
+    """
+    if os.name != "nt":
+        return
+
+    import ctypes
+
+    kernel32 = ctypes.WinDLL('kernel32')
+    user32 = ctypes.WinDLL('user32')
+
+    SW_HIDE = 0
+
+    hWnd = kernel32.GetConsoleWindow()
+    if hWnd:
+        user32.ShowWindow(hWnd, SW_HIDE)
 
 
 def main():
@@ -131,6 +155,13 @@ def main():
     except Exception as ex:
         from . import logger
         logger.create().error_or_exception(f"Could not queue startup KEPUB backfill: {ex}")
+
+    try:
+        from .tasks.kepub_package_repair import enqueue_startup_kepub_package_repair
+        enqueue_startup_kepub_package_repair()
+    except Exception as ex:
+        from . import logger
+        logger.create().error_or_exception(f"Could not queue startup KEPUB package repair: {ex}")
 
     success = web_server.start()
     sys.exit(0 if success else 1)

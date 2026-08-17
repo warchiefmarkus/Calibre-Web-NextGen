@@ -413,7 +413,7 @@ Plugins that need keys or an account (DeDRM wants your device keys, ACSM Input w
 To add another plugin **after** the first batch is registered, drop the zip in the same folder and run:
 
 ```
-docker exec -e HOME=/config calibre-web /app/calibre/calibre-customize -a "/config/.config/calibre/plugins/<plugin file>.zip"
+docker exec -e HOME=/config calibre-web /opt/calibre/calibre-customize -a "/config/.config/calibre/plugins/<plugin file>.zip"
 ```
 
 The feature is off by default because it runs third-party plugin code inside your container — only install plugins you trust, from their official release pages. Which plugins are appropriate to use is your call.
@@ -610,6 +610,41 @@ Read your CWA library on a Kobo e-reader, with reading progress syncing both way
 3. Plug the Kobo into a computer over USB and open `.kobo/Kobo/Kobo eReader.conf` in a text editor. Add or replace the `api_endpoint=` line with the one from the dialog, save, and eject the device cleanly.
 4. On the Kobo, sync. Books on your Kobo Sync shelves appear on the device, and progress flows back to CWA.
 
+> ### ℹ️ Where your highlights travel, and how to check
+>
+> `api_endpoint` routes **library sync**. Your **highlights and notes** travel over a separate
+> reading-services channel governed by a different key, `reading_services_host`.
+>
+> **You should not normally need to touch that key.** CWA advertises the right value during sync
+> initialization, and a device that performs a full initialization against your server adopts it on
+> its own. That is the supported path.
+>
+> 🚨 **Do not hand-edit `reading_services_host` in the conf file.** Doing so has been measured to
+> break syncing outright on at least one device — a Kobo Clara BW on firmware 4.42.23291 began
+> failing every sync with `FailedSync / WebRequestErr`, and recovered only when the key was set back
+> to `readingservices.kobo.com`. A Kobo Libra Colour on 4.45.23697 is unaffected and routes
+> annotations through CWA happily, so this is **not** universal — but we cannot yet predict which
+> devices tolerate it, and the failure leaves you with a reader that will not sync and no obvious
+> cause.
+>
+> **If your sync has already broken after editing that key:** set `reading_services_host` back to
+> `readingservices.kobo.com`, save, eject cleanly, and sync again.
+>
+> **To see whether annotations are reaching CWA**, make a highlight on the device, sync, and watch:
+>
+> ```bash
+> docker logs -f calibre-web 2>&1 | grep -iE "annotations|reading services"
+> ```
+>
+> Silence means your highlights are going to Kobo's servers rather than yours. The safe way to
+> change that is to get the device to perform a **full initialization** against CWA — re-generate
+> the Kobo Sync Token and re-pair — rather than editing the key by hand.
+>
+> This matters because CWA's protection against a Kobo deleting its own highlights after a sync
+> (upstream [calibre-web#2610](https://github.com/janeczku/calibre-web/issues/2610)) works by
+> answering that channel, and it cannot protect a request it never receives. Until the device is
+> routing annotations through CWA, treat highlights made on it as device-only and back them up.
+
 To confirm the device is reaching your server, watch the logs while you sync — you should see requests to `/kobo/<token>/v1/...`:
 
 ```bash
@@ -732,34 +767,34 @@ The interface ships with the locales below. Completion is auto-refreshed on ever
 | Language | Completion | Strings | Fuzzy |
 |---|---|---:|---:|
 | English (source) | 100% | source | — |
-| Spanish (`es`) | `████████████████████` 99% | 2644/2671 | 0 |
-| Russian (`ru`) | `████████████████████` 98% | 2621/2671 | 0 |
-| Polish (`pl`) | `████████████████████` 98% | 2608/2671 | 0 |
-| French (`fr`) | `█████████████████░░░` 83% | 2226/2671 | 128 |
-| German (`de`) | `██████████████░░░░░░` 71% | 1892/2671 | 122 |
-| Dutch (`nl`) | `█████████████░░░░░░░` 66% | 1762/2671 | 292 |
-| Hungarian (`hu`) | `████████████░░░░░░░░` 62% | 1646/2671 | 122 |
-| Portuguese (Brazil) (`pt_BR`) | `███████████░░░░░░░░░` 53% | 1410/2671 | 310 |
-| Japanese (`ja`) | `██████████░░░░░░░░░░` 49% | 1320/2671 | 248 |
-| Slovenian (`sl`) | `█████████░░░░░░░░░░░` 46% | 1214/2671 | 319 |
-| Chinese (Simplified, China) (`zh_Hans_CN`) | `█████████░░░░░░░░░░░` 44% | 1176/2671 | 348 |
-| Italian (`it`) | `███████░░░░░░░░░░░░░` 36% | 957/2671 | 269 |
-| Korean (`ko`) | `███████░░░░░░░░░░░░░` 36% | 948/2671 | 269 |
-| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `███████░░░░░░░░░░░░░` 34% | 918/2671 | 249 |
-| Arabic (`ar`) | `██████░░░░░░░░░░░░░░` 30% | 790/2671 | 286 |
-| Slovak (`sk`) | `██████░░░░░░░░░░░░░░` 28% | 749/2671 | 313 |
-| Portuguese (`pt`) | `█████░░░░░░░░░░░░░░░` 26% | 701/2671 | 360 |
-| Indonesian (`id`) | `█████░░░░░░░░░░░░░░░` 25% | 678/2671 | 362 |
-| Galician (`gl`) | `█████░░░░░░░░░░░░░░░` 25% | 677/2671 | 361 |
-| Swedish (`sv`) | `████░░░░░░░░░░░░░░░░` 22% | 584/2671 | 388 |
-| Greek (`el`) | `████░░░░░░░░░░░░░░░░` 19% | 506/2671 | 399 |
-| Czech (`cs`) | `████░░░░░░░░░░░░░░░░` 18% | 477/2671 | 408 |
-| Ukrainian (`uk`) | `███░░░░░░░░░░░░░░░░░` 16% | 442/2671 | 372 |
-| Norwegian (`no`) | `███░░░░░░░░░░░░░░░░░` 16% | 431/2671 | 435 |
-| Vietnamese (`vi`) | `███░░░░░░░░░░░░░░░░░` 16% | 421/2671 | 357 |
-| Finnish (`fi`) | `███░░░░░░░░░░░░░░░░░` 13% | 354/2671 | 388 |
-| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 11% | 289/2671 | 385 |
-| Khmer (`km`) | `██░░░░░░░░░░░░░░░░░░` 8% | 207/2671 | 343 |
+| Russian (`ru`) | `███████████████████░` 97% | 2717/2797 | 0 |
+| Spanish (`es`) | `███████████████████░` 94% | 2639/2797 | 0 |
+| Polish (`pl`) | `███████████████████░` 93% | 2603/2797 | 0 |
+| French (`fr`) | `█████████████████░░░` 83% | 2310/2797 | 127 |
+| German (`de`) | `███████████████░░░░░` 74% | 2069/2797 | 62 |
+| Dutch (`nl`) | `█████████████░░░░░░░` 66% | 1854/2797 | 292 |
+| Hungarian (`hu`) | `████████████░░░░░░░░` 59% | 1644/2797 | 121 |
+| Portuguese (Brazil) (`pt_BR`) | `██████████░░░░░░░░░░` 50% | 1406/2797 | 310 |
+| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `██████████░░░░░░░░░░` 49% | 1381/2797 | 182 |
+| Japanese (`ja`) | `█████████░░░░░░░░░░░` 47% | 1318/2797 | 247 |
+| Slovenian (`sl`) | `█████████░░░░░░░░░░░` 43% | 1212/2797 | 318 |
+| Chinese (Simplified, China) (`zh_Hans_CN`) | `████████░░░░░░░░░░░░` 42% | 1174/2797 | 348 |
+| Italian (`it`) | `███████░░░░░░░░░░░░░` 34% | 955/2797 | 269 |
+| Korean (`ko`) | `███████░░░░░░░░░░░░░` 34% | 946/2797 | 269 |
+| Arabic (`ar`) | `██████░░░░░░░░░░░░░░` 28% | 788/2797 | 286 |
+| Slovak (`sk`) | `█████░░░░░░░░░░░░░░░` 27% | 747/2797 | 313 |
+| Portuguese (`pt`) | `█████░░░░░░░░░░░░░░░` 25% | 699/2797 | 360 |
+| Indonesian (`id`) | `█████░░░░░░░░░░░░░░░` 24% | 676/2797 | 362 |
+| Galician (`gl`) | `█████░░░░░░░░░░░░░░░` 24% | 675/2797 | 361 |
+| Swedish (`sv`) | `████░░░░░░░░░░░░░░░░` 21% | 582/2797 | 388 |
+| Greek (`el`) | `████░░░░░░░░░░░░░░░░` 18% | 504/2797 | 399 |
+| Czech (`cs`) | `███░░░░░░░░░░░░░░░░░` 17% | 475/2797 | 408 |
+| Ukrainian (`uk`) | `███░░░░░░░░░░░░░░░░░` 16% | 442/2797 | 372 |
+| Norwegian (`no`) | `███░░░░░░░░░░░░░░░░░` 15% | 431/2797 | 435 |
+| Vietnamese (`vi`) | `███░░░░░░░░░░░░░░░░░` 15% | 421/2797 | 357 |
+| Finnish (`fi`) | `███░░░░░░░░░░░░░░░░░` 13% | 354/2797 | 388 |
+| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 10% | 289/2797 | 385 |
+| Khmer (`km`) | `█░░░░░░░░░░░░░░░░░░░` 7% | 207/2797 | 343 |
 <!-- TRANSLATION_STATUS_END -->
 
 ---

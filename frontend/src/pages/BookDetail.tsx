@@ -8,6 +8,7 @@ import {
   useSendToEreader, useMe, useAccount, useUpdateMetadata, useDeleteBook, useReloadMetadata,
   useBookOcrStatus, useStartBookOcr, useExternalBookRatings,
   useRefreshExternalBookRatings, useStartBookMoonReaderSync,
+  useBookShelves, useShelves,
 } from '../lib/queries';
 import { MetadataTypeahead } from '../components/MetadataTypeahead';
 import { Pill } from '../components/Pill';
@@ -26,6 +27,7 @@ import { CoverProgressBadge } from '../components/CoverProgressBadge';
 import { formatReadingProgress } from '../lib/readerProgress';
 import styles from './BookDetail.module.css';
 import { useCardActionsHidden } from '../lib/useCardActionsHidden';
+import { BookUserNotices } from '../components/UserNotices';
 
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -355,6 +357,11 @@ export function BookDetail() {
   );
   const ocrStatus = useBookOcrStatus(id, canRunOcr);
   const startOcr = useStartBookOcr(id);
+  // Shelf membership for the metadata list (#1254). Both queries are already
+  // in flight for the always-rendered AddToShelf popover below and share its
+  // cache keys, so reading them here costs no extra request.
+  const shelfMembership = useBookShelves(id).data;
+  const visibleShelves = useShelves().data;
 
   if (isLoading) return <SpinnerCentered size={40} />;
   if (error || !book) {
@@ -406,9 +413,17 @@ export function BookDetail() {
     );
   };
 
+  // The membership endpoint returns ids only, and both it and the shelf list
+  // apply the same server-side visibility filter (own shelves + public ones),
+  // so every id here resolves to a name the caller is allowed to see.
+  const onShelfIds = new Set(shelfMembership?.shelf_ids ?? []);
+  const bookShelves = (visibleShelves?.items ?? []).filter((s) => onShelfIds.has(s.id));
+
   return (
     <main className={styles.container}>
       <Link href="/" className={styles.back}>{t('← Library')}</Link>
+
+      <BookUserNotices bookId={book.id} />
 
       <div className={styles.layout}>
         {/* LEFT: cover */}
@@ -451,9 +466,12 @@ export function BookDetail() {
         {/* RIGHT: info */}
         <div className={styles.infoCol}>
           <div>
-            <h1 className={styles.title}>{book.title}</h1>
+            {/* dir="auto" per field (#1073): direction follows each string's own
+                first strong character, so a Hebrew title and a Latin series name
+                on the same page each render correctly. */}
+            <h1 className={styles.title} dir="auto">{book.title}</h1>
             {book.authors.length > 0 && (
-              <p className={styles.authors}>
+              <p className={styles.authors} dir="auto">
                 {book.authors.map((a, i) => (
                   <span key={a.id}>
                     {i > 0 && AUTHOR_SEPARATOR}
@@ -463,7 +481,7 @@ export function BookDetail() {
               </p>
             )}
             {book.series && (
-              <p className={styles.series}>
+              <p className={styles.series} dir="auto">
                 <Link href={`/series/${book.series.id}`} className={styles.metaLink}>
                   {book.series.name}
                 </Link>
@@ -870,6 +888,22 @@ export function BookDetail() {
                 </dd>
               </>
             )}
+            {bookShelves.length > 0 && (
+              <>
+                {/* Always the plural msgid: "Shelf" is translated in no locale
+                    today, so a count-switched label would render English for a
+                    single shelf everywhere. */}
+                <dt className={styles.metaLabel}>{t('Shelves')}</dt>
+                <dd className={styles.metaValue} data-testid="book-shelves">
+                  {bookShelves.map((s, i) => (
+                    <span key={s.id}>
+                      {i > 0 && ', '}
+                      <Link href={`/shelf/${s.id}`} className={styles.metaLink}>{s.name}</Link>
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
             {book.identifiers.map((id, i) => (
               <Fragment key={`id-${i}`}>
                 <dt className={styles.metaLabel}>{id.label || id.type.toUpperCase()}</dt>
@@ -883,7 +917,7 @@ export function BookDetail() {
             {(book.custom_columns ?? []).map((column) => (
               <Fragment key={`custom-${column.id}`}>
                 <dt className={styles.metaLabel}>{column.name}</dt>
-                <dd className={styles.metaValue}>
+                <dd className={styles.metaValue} dir="auto">
                   {column.datatype === 'comments' && column.values[0]?.value_html ? (
                     <span
                       // value_html is sanitized by the API serializer.
@@ -903,6 +937,7 @@ export function BookDetail() {
           {book.description_html && (
             <div
               className={styles.description}
+              dir="auto"
               // description_html is sanitized server-side in serialize_book_detail
               // (cps/clean_html.clean_string — bleach/nh3 allowlist, same as the
               // legacy templates), so it is safe to render here.

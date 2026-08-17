@@ -43,6 +43,7 @@ from .helper import check_valid_domain, check_email, check_username, \
     send_registration_mail, check_send_to_ereader, check_read_formats, tags_filters, reset_password, valid_email, \
     edit_book_read_status, valid_password, get_kosync_progress_display
 from .pagination import Pagination
+from .sort_orders import BOOK_SORT_ORDERS, book_sort_order
 from .redirect import get_redirect_location
 from .cw_babel import get_available_locale
 from .usermanagement import login_required_if_no_ano
@@ -507,45 +508,20 @@ def query_char_list(data_colum, db_link):
 
 
 def get_sort_function(sort_param, data):
-    order = [db.Books.timestamp.desc()]
     if sort_param == 'stored':
         sort_param = current_user.get_view_property(data, 'stored')
     else:
         current_user.set_view_property(data, 'stored', sort_param)
-    if sort_param == 'pubnew':
-        order = [db.Books.pubdate.desc()]
-    if sort_param == 'pubold':
-        order = [db.Books.pubdate]
-    if sort_param == 'abc':
-        order = [func.ng_sort_key(db.Books.sort), db.Books.sort, db.Books.id]
-    if sort_param == 'zyx':
-        order = [func.ng_sort_key(db.Books.sort).desc(), db.Books.sort.desc(), db.Books.id.desc()]
-    if sort_param == 'new':
-        order = [db.Books.timestamp.desc()]
-    if sort_param == 'old':
-        order = [db.Books.timestamp]
-    if sort_param == 'authaz':
-        order = [func.ng_sort_key(db.Books.author_sort), db.Books.author_sort,
-                 func.ng_sort_key(db.Series.name), db.Series.name, db.Books.series_index]
-    if sort_param == 'authza':
-        order = [func.ng_sort_key(db.Books.author_sort).desc(), db.Books.author_sort.desc(),
-                 func.ng_sort_key(db.Series.name).desc(), db.Series.name.desc(), db.Books.series_index.desc()]
-    if sort_param == 'seriesasc':
-        order = [db.Books.series_index.asc()]
-    if sort_param == 'seriesdesc':
-        order = [db.Books.series_index.desc()]
-    if sort_param == 'hotdesc':
-        order = [func.count(ub.Downloads.book_id).desc()]
-    if sort_param == 'hotasc':
-        order = [func.count(ub.Downloads.book_id).asc()]
     if sort_param is None:
         if data == "series":
             # A series page reads in series order by default — matching the
             # OPDS series feed — not newest-first. An explicitly chosen sort
             # is stored above and honored on the next visit. (fork #334 audit)
-            return [db.Books.series_index.asc()], "seriesasc"
+            return BOOK_SORT_ORDERS["seriesasc"], "seriesasc"
         sort_param = "new"
-    return order, sort_param
+    # The ORDER BY itself is shared with the new UI's /api/v1 lists so the two
+    # cannot disagree, and so every sort keeps its unique tiebreaker (#1331).
+    return book_sort_order(sort_param), sort_param
 
 
 def cwa_get_library_location() -> str:
@@ -725,7 +701,11 @@ def render_discover_books(book_id):
 def render_hot_books(page, order):
     if current_user.check_visibility(constants.SIDEBAR_HOT):
         if order[1] not in ['hotasc', 'hotdesc']:
-            order = [func.count(ub.Downloads.book_id).desc()], 'hotdesc'
+            # Through the shared map, not rebuilt here: an order spelled out at
+            # a second call site is a second place to forget the tiebreaker,
+            # and this one is reached by anyone opening /hot with some other
+            # sort stored (#1331).
+            order = BOOK_SORT_ORDERS['hotdesc'], 'hotdesc'
 
         random = false()
         if current_user.show_detail_random():
@@ -1882,7 +1862,7 @@ def list_books():
         else:
             order = [db.Books.sort.asc()]
     elif not state:
-        order = [db.Books.timestamp.desc()]
+        order = BOOK_SORT_ORDERS["new"]
 
     total_count = filtered_count = calibre_db.session.query(db.Books).filter(
         calibre_db.common_filters(allow_show_archived=True)).count()
@@ -2667,14 +2647,13 @@ def login():
     # only suppresses automatic startup; normal SPA-or-Classic routing below
     # still decides which login surface is shown.
     #
-    # ``config_disable_standard_login`` is required as well as the login type:
-    # the two are independent settings, and with the local form still enabled
-    # ``login_post`` below goes on accepting local credentials. Auto-starting
-    # in that state would hide a form whose handler still works, and would
-    # leave an admin with no way back in at the canonical URL if the provider
-    # is unreachable.
+    # Disabling standard login keeps the v4.1.33 auto-start behavior. The
+    # explicit auto-forward setting additionally allows an admin to auto-start
+    # the sole provider while retaining local credentials as a break-glass
+    # path through ``?local=1``.
     if (config.config_login_type == constants.LOGIN_OAUTH
-            and config.config_disable_standard_login
+            and (config.config_disable_standard_login
+                 or getattr(config, "config_enable_oauth_auto_forward", False))
             and feature_support['oauth']):
         oauth_endpoint, next_url = oauth_auto_redirect.auto_redirect_decision(
             request.args,

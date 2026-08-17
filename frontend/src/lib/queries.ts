@@ -14,6 +14,7 @@ import type {
   BookMetadata, MetadataUpdate, UploadResult, AdminUser, AboutInfo, TaskItem, AuthConfig,
   RagOcrConfig, RagSearchRequest, RagSearchResponse, RagStatus, BookOcrResponse,
   ExternalBookRatingsResponse, MoonReaderDiscoveryResult, MoonReaderSettings, MoonReaderSettingsUpdate,
+  NoticeInbox,
 } from './api';
 
 /** Entity kinds the catalog can be filtered by. Singular here; the browse-list
@@ -642,6 +643,7 @@ export interface SecurityConfig {
   ldap: SecurityLdap;
   oauth: {
     redirect_host: string; disable_standard_login: boolean;
+    enable_oauth_auto_forward: boolean;
     enable_group_admin_management: boolean; generic: SecurityOauthGeneric;
     providers: { name: string; client_id: string; has_secret: boolean; active: boolean }[];
   };
@@ -656,7 +658,8 @@ export interface SecurityUpdate {
   remote_login?: boolean;
   ldap?: Partial<Omit<SecurityLdap, 'has_password'>> & { serv_password?: string };
   oauth?: {
-    redirect_host?: string; disable_standard_login?: boolean; enable_group_admin_management?: boolean;
+    redirect_host?: string; disable_standard_login?: boolean; enable_oauth_auto_forward?: boolean;
+    enable_group_admin_management?: boolean;
     generic?: Partial<Omit<SecurityOauthGeneric, 'has_secret' | 'active'>> & { client_secret?: string };
     providers?: { name: string; client_id?: string; client_secret?: string }[];
   };
@@ -1695,6 +1698,36 @@ export function useDismissDuplicate() {
     mutationFn: (groupHash: string) =>
       apiPost(`/duplicates/dismiss/${encodeURIComponent(groupHash)}`),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['duplicates'] }),
+  });
+}
+
+// ── Generic user notices ───────────────────────────────────────────────────
+
+export function useNotices(bookId?: string | number) {
+  const suffix = bookId == null ? '' : `?book_id=${encodeURIComponent(String(bookId))}`;
+  return useQuery<NoticeInbox>({
+    queryKey: ['notices', bookId == null ? 'all' : String(bookId)],
+    queryFn: () => apiGet<NoticeInbox>(`/api/v1/notices${suffix}`),
+  });
+}
+
+export function useDismissNotice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (noticeId: number) =>
+      apiPost<{ dismissed: number; remaining: number }>(`/api/v1/notices/${noticeId}/dismiss`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['notices'] }),
+  });
+}
+
+export function useDismissNotices() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (noticeIds: number[]) =>
+      apiPost<{ dismissed: number; remaining: number }>('/api/v1/notices/dismiss', {
+        notice_ids: noticeIds,
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['notices'] }),
   });
 }
 

@@ -897,7 +897,7 @@ def find_duplicate_books_python(use_title, use_author, use_language, use_series,
     # than trying to do complex joins for duplicate detection
     books_query = (calibre_db.session.query(db.Books)
                    .filter(get_common_filters(user_id=user_id))  # Respect user permissions and library filtering
-                   .order_by(db.Books.title, db.Books.timestamp.desc()))
+                   .order_by(db.Books.title, db.Books.timestamp.desc(), db.Books.id.desc()))
 
     if candidate_ids is not None:
         if not candidate_ids:
@@ -1957,8 +1957,9 @@ def auto_resolve_duplicates(strategy='newest', dry_run=False, user_id=None, trig
                         # #708: record the Kobo deletion tombstone BEFORE anything
                         # touches kobo_synced_books. record_book_deletion reads this
                         # book's kobo_synced_books rows to learn which users had it on
-                        # a device (so their next sync emits a DeletedEntitlement that
-                        # removes it), but migrate_user_book_data below deletes exactly
+                        # a device (so their next sync emits an archived
+                        # ChangedEntitlement that removes it), but
+                        # migrate_user_book_data below deletes exactly
                         # those rows — and delete_whole_book's own tombstone call runs
                         # even later. Run in that order the tombstone is silently
                         # skipped and the removed duplicate lingers on the Kobo forever.

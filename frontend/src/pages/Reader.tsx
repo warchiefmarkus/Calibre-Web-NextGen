@@ -1070,9 +1070,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     const open = async () => {
       try {
         const formatName = selectedFormat.format.toUpperCase();
-        const annotationPromise = apiGet<{ annotations: ServerAnnotation[] }>(
+        const annotationPromise = apiGet<{ annotations: ServerAnnotation[]; devices?: Record<string, { label?: string }> }>(
           `/annotations/${id}/data.json?format=${encodeURIComponent(fmt)}`,
-        ).catch(() => ({ annotations: [] }));
+        ).catch(() => ({ annotations: [], devices: {} }));
         const response = await fetch(resourceUrl(`/show/${id}/${formatName.toLowerCase()}`), {
           credentials: 'include',
         });
@@ -1122,12 +1122,18 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         setReady(true);
         void annotationPromise.then((annotationPayload) => {
           if (cancelled) return;
+          const deviceMap: Record<string, { label?: string }> = annotationPayload.devices ?? {};
           const loaded = annotationPayload.annotations.map((row): FoliateAnnotation => {
             const unanchored = row.position_type === 'unanchored';
+            const deviceLabel = row.origin_device_id
+              ? deviceMap[row.origin_device_id]?.label
+              : undefined;
+            const sourceLabel = deviceLabel
+              || (row.source && row.source !== 'webreader' ? row.source : undefined);
             return {
               value: row.cfi_range ?? `unanchored:${row.annotation_id}`,
               color: annotationColor(row.highlight_color),
-              note: row.note_text, id: row.annotation_id, text: row.highlighted_text, unanchored,
+              note: row.note_text, id: row.annotation_id, text: row.highlighted_text, unanchored, sourceLabel,
             };
           });
           for (const annotation of loaded) annotationsRef.current.set(annotation.value, annotation);
@@ -1506,7 +1512,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           createStandaloneNote={openStandaloneNote}
           showAnnotation={(annotation) => {
             if (annotation.unanchored) return;
-            markReadingMovement();
+            // A jump to a highlight is inspection, not reading progress. Clear
+            // any previously armed movement before Foliate emits relocate.
+            resetReadingMovement();
             restoreInlineTranslations();
             void viewRef.current?.showAnnotation(annotation);
             closePanel();
