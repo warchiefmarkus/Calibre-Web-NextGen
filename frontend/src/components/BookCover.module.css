@@ -4,6 +4,7 @@
    the letterboxed matte from #660 is enclosed too, and so the fallback card
    inherits one border instead of stacking a second one inside it. */
 .wrap {
+  position: relative;
   aspect-ratio: 2 / 3;
   width: 100%;
   overflow: hidden;

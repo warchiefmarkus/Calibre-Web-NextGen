@@ -1,0 +1,151 @@
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
+import inspect
+import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import flask
+import pytest
+
+pytestmark = pytest.mark.unit
+
+
+def _ctx(path, body=None):
+    app = flask.Flask(__name__)
+    kwargs = {"method": "POST" if body is not None else "GET"}
+    if body is not None:
+        kwargs["json"] = body
+    return app.test_request_context(path, **kwargs)
+
+
+def _user():
+    return SimpleNamespace(is_authenticated=True, is_anonymous=False, id=1, name="alice")
+
+
+def _row(**changes):
+    values = dict(
+        enabled=True, base_url="http://host/books/", username="reader",
+        password_encrypted="encrypted", cache_path="", last_test_at=None,
+        last_test_status=None, last_test_error=None, last_sync_at=None,
+        sync_status="idle", last_sync_error=None, last_sync_summary={},
+    )
+    values.update(changes)
+    return SimpleNamespace(**values)
+
+
+def test_save_moonreader_password_is_encrypted_and_never_serialized():
+    from cps.api import moonreader as mod
+    row = _row(password_encrypted=None)
+    session = MagicMock()
+    with _ctx("/api/v1/account/moonreader", {
+        "enabled": True, "base_url": "http://host/books", "username": "reader",
+        "password": "secret", "cache_path": ".Moon+/Cache",
+    }), patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod, "encrypt_password", return_value="ciphertext") as encrypt, \
+         patch.object(mod.ub, "session", session):
+        response = inspect.unwrap(mod.save_moonreader_settings)()
+    body = json.loads(response.get_data())
+    assert row.password_encrypted == "ciphertext"
+    assert body["password_configured"] is True
+    assert "password" not in body
+    encrypt.assert_called_once_with("secret")
+    session.commit.assert_called_once()
+
+
+def test_connection_test_uses_stored_password_without_returning_it():
+    from cps.api import moonreader as mod
+    row = _row()
+    session = MagicMock()
+    expected = {"ok": True, "cache_found": False, "position_files": 0,
+                "base_url": row.base_url, "cache_path": ".Moon+/Cache"}
+    with _ctx("/api/v1/account/moonreader/test", {}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod, "decrypt_password", return_value="secret"), \
+         patch.object(mod, "test_connection", return_value=expected) as test, \
+         patch.object(mod.ub, "session", session):
+        response = inspect.unwrap(mod.test_moonreader_connection)()
+    body = json.loads(response.get_data())
+    assert body["test"] == expected
+    assert "password" not in body
+    test.assert_called_once_with(base_url=row.base_url, username="reader",
+                                 password="secret", cache_path="")
+
+
+def test_discovery_uses_current_form_credentials_without_saving_password():
+    from cps.api import moonreader as mod
+    row = _row()
+    expected = {"ok": True, "locations": [{"path": "Moon/.Moon+/Cache", "position_files": 1}],
+                "scanned_collections": 4, "max_depth": 5, "max_collections": 400,
+                "truncated": False, "base_url": row.base_url}
+    with _ctx("/api/v1/account/moonreader/discover", {"password": "typed"}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod, "find_cache_locations", return_value=expected) as discover:
+        response = inspect.unwrap(mod.discover_moonreader_caches)()
+    assert json.loads(response.get_data()) == expected
+    discover.assert_called_once_with(base_url=row.base_url, username="reader", password="typed")
+
+
+def test_book_sync_status_reports_pending_worker():
+    from cps.api import moonreader as mod
+    with _ctx("/api/v1/books/146/moonreader/sync"), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=146)), \
+         patch.object(mod, "moonreader_sync_pending", return_value=True) as pending:
+        response = inspect.unwrap(mod.get_book_moonreader_sync_status)(146)
+    assert json.loads(response.get_data()) == {"book_id": 146, "pending": True}
+    pending.assert_called_once_with(1, 146)
+
+
+def test_sync_requires_enabled_connection_and_queues_hidden_task():
+    from cps.api import moonreader as mod
+    row = _row(cache_path="Moon/.Moon+/Cache")
+    with _ctx("/api/v1/account/moonreader/sync", {}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod, "queue_moonreader_sync", return_value={"queued": True}) as queue:
+        response, status = inspect.unwrap(mod.start_moonreader_sync)()
+    assert status == 202
+    assert json.loads(response.get_data())["queued"] is True
+    queue.assert_called_once_with(1, "alice")
+
+def test_sync_rejects_empty_cache_path_until_user_selects_discovery_result():
+    from cps.api import moonreader as mod
+    row = _row(cache_path="")
+    with _ctx("/api/v1/account/moonreader/sync", {}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod, "queue_moonreader_sync") as queue:
+        response, status = inspect.unwrap(mod.start_moonreader_sync)()
+    assert status == 400
+    assert json.loads(response.get_data())["error"]["code"] == "cache_path_required"
+    queue.assert_not_called()
+
+
+def test_book_sync_queues_bidirectional_reconcile_for_visible_book():
+    from cps.api import moonreader as mod
+    row = _row(cache_path="Moon/.Moon+/Cache")
+    with _ctx("/api/v1/books/7/moonreader/sync", {}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod, "_row", return_value=row), \
+         patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=7)), \
+         patch.object(mod, "queue_moonreader_book_sync", return_value={"queued": True}) as queue:
+        response, status = inspect.unwrap(mod.start_book_moonreader_sync)(7)
+    assert status == 202
+    assert json.loads(response.get_data()) == {"book_id": 7, "queued": True, "pending": False}
+    queue.assert_called_once_with(1, 7, None, username="alice")
+
+
+def test_book_sync_rejects_book_outside_user_visibility():
+    from cps.api import moonreader as mod
+    with _ctx("/api/v1/books/7/moonreader/sync", {}), \
+         patch.object(mod, "current_user", _user()), \
+         patch.object(mod.calibre_db, "get_filtered_book", return_value=None), \
+         patch.object(mod, "queue_moonreader_book_sync") as queue:
+        response, status = inspect.unwrap(mod.start_book_moonreader_sync)(7)
+    assert status == 404
+    assert json.loads(response.get_data())["error"]["code"] == "not_found"
+    queue.assert_not_called()

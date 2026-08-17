@@ -14,7 +14,7 @@ from typing import Iterable
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
-from . import calibre_db, db, logger
+from . import calibre_db, constants, db, logger
 from .duplicates import (
     _AWARE_MIN,
     _timestamp_or_default,
@@ -25,7 +25,7 @@ from .duplicates import (
     normalize_text_for_duplicates,
 )
 
-sys.path.insert(1, "/app/calibre-web-automated/scripts/")
+sys.path.insert(1, constants.SCRIPTS_DIR)
 from cwa_db import CWA_DB
 
 
@@ -208,7 +208,7 @@ def _load_books_by_ids(book_ids=None, user_id=None):
     query = _book_query(book_ids)
     if user_id is not None:
         query = query.filter(get_common_filters(user_id=user_id))
-    return query.order_by(db.Books.title, db.Books.timestamp.desc()).all()
+    return query.order_by(db.Books.title, db.Books.timestamp.desc(), db.Books.id.desc()).all()
 
 
 def _current_max_book_id():
@@ -461,6 +461,15 @@ def _serialize_group_for_cache(group):
         "author": group.get("author", ""),
         "count": group.get("count", 0),
         "group_hash": group.get("group_hash", ""),
+        # D5: duplicate_key is the stable dismissal identity; group_hash drifts
+        # whenever an ingest or metadata edit changes which book supplies the
+        # display title/author. Dropping the key here (as this did until #1167)
+        # left every cache reader — the /duplicates/status badge and the
+        # page-render popup alike — falling back to hash matching, so a
+        # dismissed group resurfaced the moment its hash rotated. Groups
+        # serialized before this shipped simply have no key and degrade to the
+        # legacy hash path, which is what they did before anyway.
+        "duplicate_key": group.get("duplicate_key"),
         "book_ids": book_ids,
     }
 

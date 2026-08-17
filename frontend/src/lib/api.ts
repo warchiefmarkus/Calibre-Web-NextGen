@@ -48,6 +48,11 @@ export interface ServerFeatures {
   kobo_sync_magic_shelves?: boolean;
   /** Managed CalibreMCP full-text/semantic search proxy is available. */
   rag_search?: boolean;
+  /** #1288 — the admin's "Enable Uploads" switch. Classic gates its navbar
+   *  upload button on this; the SPA offered Upload regardless. Absent on older
+   *  servers → treat as ON, matching the server's column default (the other
+   *  flags here are opt-in features and default off; this one is not). */
+  uploading?: boolean;
 }
 
 export interface Me {
@@ -87,6 +92,19 @@ export interface Me {
   };
 }
 
+export interface ExternalRatingSummary {
+  source: 'goodreads' | 'hardcover' | 'google_books' | 'open_library';
+  rating: number;
+  ratings_count: number | null;
+  source_count: number;
+}
+
+export interface ReadingProgressSummary {
+  percentage: number;
+  updated_at: string | null;
+  source: 'moonreader' | 'calibre_web';
+}
+
 export interface Book {
   id: number;
   title: string;
@@ -100,10 +118,28 @@ export interface Book {
   tags?: string[];
   date_added?: string | null;
   last_modified?: string | null;
+  /** Compact cached aggregate for cover badges; null until background lookup completes. */
+  external_rating?: ExternalRatingSummary | null;
+  /** Newest per-user position from Moon+ or the Calibre-Web sync database. */
+  reading_progress?: ReadingProgressSummary | null;
   read?: boolean;
   archived?: boolean;
   /** Personal-library declutter state. Present on list items from current servers. */
   hidden?: boolean;
+}
+
+export interface UserNotice {
+  id: number;
+  type: string;
+  scope: 'global' | 'book';
+  occurred_at: string | null;
+  book: { id: number; uuid: string | null; title: string | null } | null;
+  payload: Record<string, unknown>;
+}
+
+export interface NoticeInbox {
+  notices: UserNotice[];
+  summary: { count: number };
 }
 
 export interface BookFormat {
@@ -133,6 +169,31 @@ export interface CustomColumn {
   datatype: string;
   is_multiple: boolean;
   values: CustomColumnValue[];
+}
+
+export interface ExternalBookRating {
+  source: 'goodreads' | 'hardcover' | 'google_books' | 'open_library';
+  source_id: string | null;
+  source_url: string | null;
+  matched_title: string | null;
+  matched_authors: string[];
+  matched_by: string | null;
+  match_confidence: number | null;
+  rating: number | null;
+  ratings_count: number | null;
+  reviews_count: number | null;
+  popularity_count: number | null;
+  ratings_distribution: Record<string, number> | null;
+  fetched_at: string | null;
+}
+
+export interface ExternalBookRatingsResponse {
+  items: ExternalBookRating[];
+  errors: { source: string; status: string; message: string }[];
+  warnings: { source: string; message: string }[];
+  cached: boolean;
+  fetched_at: string | null;
+  refreshing?: boolean;
 }
 
 export interface BookDetail {
@@ -175,6 +236,8 @@ export interface BookDetail {
    *  ISO date, or null when not synced or for progress that predates
    *  this field. */
   kosync_progress_created_at: string | null;
+  /** Newest reading position after comparing Moon+ .po and database timestamps. */
+  reading_progress: ReadingProgressSummary | null;
   /** Allowed conversion source/target formats for this book, derived from the
    *  configured converters and formats already present (mirror of the legacy
    *  edit page). Absent on older servers → no conversion UI. */
@@ -457,6 +520,71 @@ export interface Account {
   app_passwords: AppPassword[];
 }
 
+export interface MoonReaderSyncSummary {
+  cache_path: string | null;
+  cache_found: boolean;
+  files_found: number;
+  parsed: number;
+  matched: number;
+  updated: number;
+  uploaded: number;
+  downloaded: number;
+  deferred: number;
+  stored_only: number;
+  unchanged: number;
+  unmatched: string[];
+  errors: { file: string; message: string }[];
+}
+
+export interface MoonReaderSettings {
+  enabled: boolean;
+  base_url: string;
+  username: string;
+  password_configured: boolean;
+  cache_path: string;
+  last_test_at: string | null;
+  last_test_status: string | null;
+  last_test_error: string | null;
+  last_sync_at: string | null;
+  sync_status: 'idle' | 'queued' | 'running' | 'success' | 'error';
+  last_sync_error: string | null;
+  last_sync_summary: Partial<MoonReaderSyncSummary>;
+  queued?: boolean;
+  test?: {
+    ok: boolean;
+    base_url: string;
+    cache_path: string;
+    cache_found: boolean;
+    position_files: number;
+    selection_required?: boolean;
+  };
+}
+
+export interface MoonReaderSettingsUpdate {
+  enabled?: boolean;
+  base_url?: string;
+  username?: string;
+  password?: string;
+  clear_password?: boolean;
+  cache_path?: string;
+}
+
+export interface MoonReaderCacheLocation {
+  path: string;
+  position_files: number;
+  last_modified: string | null;
+}
+
+export interface MoonReaderDiscoveryResult {
+  ok: boolean;
+  base_url: string;
+  locations: MoonReaderCacheLocation[];
+  scanned_collections: number;
+  max_depth: number;
+  max_collections: number;
+  truncated: boolean;
+}
+
 export interface ProfileUpdate {
   email?: string;
   kindle_mail?: string;
@@ -568,11 +696,32 @@ export interface TaskItem {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** The parsed `error` object from the response body, when there was one.
+   *  Errors are shaped `{ error: { code, message, ...extra } }` and some carry
+   *  fields the UI must act on rather than merely display — #973's tag-rename
+   *  conflict names the colliding tag so the client can offer to merge into it.
+   *  Dropping the body left callers with nothing but the message string. */
+  detail?: Record<string, unknown>;
+  constructor(status: number, message: string, detail?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.detail = detail;
     this.name = 'ApiError';
   }
+}
+
+/** Read an error response into `{ message, detail }`. Single source of truth so
+ *  every verb surfaces structured error fields identically. */
+async function readApiError(res: Response): Promise<{ message: string; detail?: Record<string, unknown> }> {
+  try {
+    const d = await res.json() as { error?: string | Record<string, unknown> };
+    if (typeof d.error === 'string') return { message: d.error };
+    if (d.error && typeof d.error === 'object') {
+      const message = typeof d.error.message === 'string' ? d.error.message : res.statusText;
+      return { message, detail: d.error };
+    }
+  } catch { /* non-JSON body — fall through to statusText */ }
+  return { message: res.statusText };
 }
 
 /** Stable signal that a protected request has already started the canonical
@@ -766,15 +915,8 @@ function clearCsrf() {
 export async function apiGet<T>(path: string, options?: ApiRequestOptions): Promise<T> {
   const res = await classifiedFetch(path, { credentials: 'include' }, options);
   if (!res.ok) {
-    let msg = res.statusText;
-    // API errors are shaped { error: { code, message } }; fall back to a bare
-    // string error or the HTTP status text if the body isn't that shape.
-    try {
-      const d = await res.json() as { error?: string | { message?: string } };
-      if (typeof d.error === 'string') msg = d.error;
-      else if (d.error?.message) msg = d.error.message;
-    } catch { /* non-JSON body — keep statusText */ }
-    throw new ApiError(res.status, msg);
+    const parsed = await readApiError(res);
+    throw new ApiError(res.status, parsed.message, parsed.detail);
   }
   return res.json() as Promise<T>;
 }
@@ -782,7 +924,7 @@ export async function apiGet<T>(path: string, options?: ApiRequestOptions): Prom
 export async function apiPost<T>(
   path: string,
   body?: unknown,
-  requestOptions?: Pick<RequestInit, 'keepalive'> & ApiRequestOptions,
+  requestOptions?: Pick<RequestInit, 'keepalive' | 'signal'> & ApiRequestOptions,
 ): Promise<T> {
   const doPost = async (csrf: string): Promise<Response> => {
     const { auth: _auth, ...fetchOptions } = requestOptions ?? {};
@@ -816,15 +958,8 @@ export async function apiPost<T>(
   }
 
   if (!res.ok) {
-    let msg = res.statusText;
-    // API errors are shaped { error: { code, message } }; fall back to a bare
-    // string error or the HTTP status text if the body isn't that shape.
-    try {
-      const d = await res.json() as { error?: string | { message?: string } };
-      if (typeof d.error === 'string') msg = d.error;
-      else if (d.error?.message) msg = d.error.message;
-    } catch { /* non-JSON body — keep statusText */ }
-    throw new ApiError(res.status, msg);
+    const parsed = await readApiError(res);
+    throw new ApiError(res.status, parsed.message, parsed.detail);
   }
 
   if (res.status === 204) return undefined as unknown as T;
@@ -858,13 +993,8 @@ export async function apiDelete<T>(path: string, options?: ApiRequestOptions): P
   }
 
   if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const d = await res.json() as { error?: string | { message?: string } };
-      if (typeof d.error === 'string') msg = d.error;
-      else if (d.error?.message) msg = d.error.message;
-    } catch { /* non-JSON body — keep statusText */ }
-    throw new ApiError(res.status, msg);
+    const parsed = await readApiError(res);
+    throw new ApiError(res.status, parsed.message, parsed.detail);
   }
 
   // 204 No Content, or any empty body → resolve undefined. A JSON body is parsed.
@@ -903,13 +1033,8 @@ export async function apiPatch<T>(path: string, body?: unknown, options?: ApiReq
   }
 
   if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const d = await res.json() as { error?: string | { message?: string } };
-      if (typeof d.error === 'string') msg = d.error;
-      else if (d.error?.message) msg = d.error.message;
-    } catch { /* non-JSON body — keep statusText */ }
-    throw new ApiError(res.status, msg);
+    const parsed = await readApiError(res);
+    throw new ApiError(res.status, parsed.message, parsed.detail);
   }
 
   if (res.status === 204) return undefined as unknown as T;
@@ -938,13 +1063,8 @@ export async function apiPostForm<T>(path: string, fields: Record<string, string
     res = await doPost(csrf);
   }
   if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const d = await res.json() as { error?: string | { message?: string } };
-      if (typeof d.error === 'string') msg = d.error;
-      else if (d.error?.message) msg = d.error.message;
-    } catch { /* keep statusText */ }
-    throw new ApiError(res.status, msg);
+    const parsed = await readApiError(res);
+    throw new ApiError(res.status, parsed.message, parsed.detail);
   }
   return res.json() as Promise<T>;
 }
@@ -1011,13 +1131,8 @@ export async function apiUpload<T>(path: string, formData: FormData, options?: A
   }
 
   if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const d = await res.json() as { error?: string | { message?: string } };
-      if (typeof d.error === 'string') msg = d.error;
-      else if (d.error?.message) msg = d.error.message;
-    } catch { /* non-JSON body — keep statusText */ }
-    throw new ApiError(res.status, msg);
+    const parsed = await readApiError(res);
+    throw new ApiError(res.status, parsed.message, parsed.detail);
   }
   return res.json() as Promise<T>;
 }

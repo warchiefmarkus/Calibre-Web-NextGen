@@ -16,7 +16,1283 @@ is for things you can see or feel when running the app.
 
 ## [Unreleased]
 
+### Added
+
+- **A Kobo two-way annotation sync opt-in appears in settings, switched off, and
+  deliberately does nothing yet.** Work has started on letting the server hold the
+  authoritative copy of your Kobo highlights, so an edit made in the browser could
+  reach the device. That is a replace protocol — whatever the server answers becomes
+  the reader's entire set for that book — so it is being built in stages behind two
+  opt-ins that both default to off. This release adds only the storage and the
+  controls: nothing your Kobo receives changes, whether the opt-ins are on or off.
+  The setting explains the same thing where it appears, so a new checkbox in your
+  settings is not a feature you have missed.
+
+## [v4.1.37] - 2026-08-17
+
+### Added
+
+- **Your library now tells you when it has repaired a book, and which books were
+  affected.** Some KEPUB files were produced with a packaging defect that stops a
+  Kobo from holding highlights in them. The defect was fixed for new conversions
+  in the last release, but books converted before that stayed broken until
+  something happened to re-convert them. The server now repairs those files
+  itself and raises a notice naming the books, because there is one part it
+  cannot repair: highlights already made in an affected book are stored against
+  the broken structure on the device, and no server-side fix can put those back.
+  You should know that rather than discover it later. Dismissing a notice
+  dismisses that occurrence only — if the same book is affected again, you are
+  told again.
+- **Clear books off a Kobo that were deleted before the fix for it existed.**
+  Hard-deleting a book now tells paired Kobos to archive their copy, but books
+  deleted before that shipped are stranded on the device permanently — no amount
+  of syncing, re-pairing or a full resync clears them. Upload your device's
+  `KoboReader.sqlite` and CWNG lists what is on the reader but no longer in your
+  library, so you can pick which to clear. Nothing is sent until you tick it: the
+  list starts unchecked, Kobo store samples are excluded outright, and anything
+  the server cannot resolve with certainty is left alone. Purchased Kobo books
+  can still appear in the list, so read it before you confirm — that is why it
+  asks per book rather than deciding for you.
+
 ### Fixed
+
+- **Kobo highlights now stay on the device when it syncs — the v4.1.36 fix did
+  not work.** A Kobo first asks which books have changed; if that answer names a
+  book, the reader downloads its annotation list and replaces every local
+  highlight and note with exactly what came back. v4.1.36 refused that download,
+  but the Kobo treats a refusal just like an empty list and still deletes
+  everything. This release keeps books served by NextGen out of the earlier
+  changed-books answer, so the destructive download never starts. New highlights
+  and notes still upload normally.
+- **Uploading a Readium `.lcpl` licence file no longer fails with “File type
+  isn't allowed to be uploaded to this server”.** Installations that already
+  accept Adobe `.acsm` tickets inherit `lcpl` in their Upload Format Allowlist
+  once, without losing or reordering their current choices; an allowlist that
+  does not accept `.acsm` is left exactly as the administrator set it, and
+  removing `lcpl` afterward is respected. The ingest watcher now dispatches LCPL
+  files for processing without leaving upload sidecars behind. With Auto-Convert
+  disabled, ACSM tickets are no longer imported and checksummed as books; they
+  are preserved in `processed_books/failed` instead.
+- **A book you are reading no longer un-downloads itself from your Kobo over and
+  over.** Whichever book in your synced set was modified most recently could be
+  re-sent to the reader as "changed" on every single sync, so the Kobo threw away
+  the copy it had and downloaded it again — indefinitely, and usually to the book
+  you were in the middle of. One household reader fetched the same title six times
+  in three days while every other book on the same shelf was fetched once. The
+  cause was a comparison between the sync cursor and Calibre's own
+  `last_modified` column: Calibre stores that value as text with a `+00:00`
+  timezone suffix, the cursor was compared without one, and SQLite compares text
+  character by character — so the newest book always looked newer than the marker
+  meant to say "already sent". Books whose timestamp had no fractional seconds hit
+  the same bug in reverse and could be skipped instead. A book joined the affected
+  set whenever metadata or cover enforcement rewrote it, so this got more likely
+  the more you used the library. Both comparisons and the ordering they depend on
+  are now normalised, so the timestamp's stored format can no longer decide what
+  your reader receives.
+- **Basic Configuration now saves when you press Enter in a single-line field,
+  and "Convert missing KEPUBs now" works again.** Both did the same thing: that
+  page was the one settings screen that refused the save it was trying to make,
+  so it answered `405 Method Not Allowed` and dropped you on an error page whose
+  only link is back to the home page — taking every unsaved edit on the page with
+  it. Pressing Enter in a single-line field was enough to trigger it; so was the
+  KEPUB button, which meant the conversion never ran. That is awkward on both
+  counts, because converting to KEPUB is the usual first suggestion when a Kobo
+  is not showing books or holding highlights properly. Both now save through the
+  same path as the rest of the page, so you stay on Settings and get the normal
+  confirmation.
+  Reported by @pahamrick and @roquemore92.
+- **The log now warns when a book cannot show highlights on a Kobo.** Some books
+  have a table of contents that points partway into a chapter file rather than at
+  the file itself. On a Kobo, every highlight made in such a book is stored
+  correctly and drawn nowhere — there is no error and nothing looks wrong, the
+  marks simply never appear. On one real library this affects 42% of books. After
+  a KEPUB is produced, the log now names the book and how many of its navigation
+  targets are affected, so the problem is at least visible. This does not fix the
+  rendering; that needs a conversion change with a migration story for highlights
+  people already hold.
+- **The delete warning no longer tells you the wrong thing about your Kobo.**
+  It said deleted books would stay on any paired Kobo and that you had to
+  archive and sync first. That stopped being true when deletions started sending
+  the device an instruction to archive its copy. The warning now describes what
+  actually happens, including the honest caveat: the device is told on its next
+  sync, and if that instruction cannot be recorded the book may still remain.
+
+- **Covers are now shaped for the Kobo that is actually asking.** The server-side
+  cover padding had one aspect setting for the whole instance, so a household with
+  two different Kobos had to pick a winner — the other device got covers padded to
+  someone else's screen. Every authenticated Kobo request already announces its
+  model, and the server already records it, so the padding now follows the device.
+  An unrecognised model keeps the configured setting exactly as before.
+- **Kobo sync stopped counting formats as books.** With "Produce and prefer KEPUB"
+  on, most books hold both an EPUB and a KEPUB, and the full-library sync was
+  counting each one separately. Two visible effects: the log line reported a number
+  roughly double your library ("changed entries: 3481" on a much smaller shelf), and
+  each sync page carried only about half as many books as it should, so the device
+  needed twice the round trips to finish. Books were never sent twice — this was
+  throughput and reporting, not duplication.
+
+- **Kobo full-library sync now completes for libraries with more than about
+  100 pending books.** Large syncs could repeat the same first page forever,
+  adding thousands of duplicate entitlements to the reader until the server
+  failed. Each completed page now advances the device to the next one, so the
+  library drains normally instead of flooding the Kobo.
+- **A new Kobo no longer arrives with most of its books unable to hold
+  highlights.** The library converts books to Kobo's own format in the
+  background, and it tracked that work with a single "done" flag. Pairing a
+  device is exactly what adds more books to convert, so the flag said finished
+  while the newly-synced books had never been converted at all. On one real
+  library, 216 books were synced to a newly-paired Clara and 182 of them had no
+  converted copy. Those convert while the device waits, and if a conversion
+  fails the Kobo gets a plain EPUB, which cannot reliably hold highlights — so
+  this reached people as "highlighting doesn't work on my new Kobo". The
+  progress marker now moves with the library instead of latching once.
+- **Clearing a series now clears it on the Kobo too.** Setting or changing a
+  series already updated both copies of the book; removing one updated only the
+  EPUB. The Kobo kept displaying a series you had deleted, with nothing anywhere
+  to explain it. (The obvious shortcut — sending Kobo files through the same
+  polishing step as EPUBs — is deliberately not used, because it would re-cut
+  the internal position markers and move every Kobo reader's saved place in the
+  book.)
+- **An edit to a highlight is no longer thrown away when the device sends a
+  malformed timestamp.** A highlight arriving with an unreadable clock was kept
+  if it was new, but an edit to one you already had was silently ignored — the
+  changed text, note, colour and location were all discarded with no error. A
+  timestamp that is present but unreadable is now treated differently from one
+  that is genuinely absent, and the change is applied.
+- **A KOReader client can now tell "this book is unknown here" apart from "this
+  book has no highlights".** The server answered both with an empty list, which
+  is the same ambiguity that has twice destroyed highlights in this project —
+  once in each direction. Our own plugin was never at risk, but any other client
+  reading that answer had no way to distinguish them.
+
+## [v4.1.36] - 2026-08-15
+
+### Added
+
+- **The book page tells you which shelves the book is on again.** The classic
+  page has always shown a pill for each one; the new UI only knew about shelf
+  membership inside the "Add to shelf" menu, so answering "what shelves is this
+  book on?" meant opening a menu and reading it off the checkmarks. The shelves
+  are now listed on the page itself, next to the publisher and language, and
+  each one links through to that shelf. Adding or removing the book from the
+  menu updates the list straight away. Reported by @lguerard.
+
+### Fixed
+
+- **Clearing a series now removes it from Kobo book files (#1372).** Deleting
+  a book's series in the library now removes the old series name and index from
+  its KEPUB too, including KEPUBs whose navigation document or another asset
+  sits above the package directory, where clearing previously failed silently,
+  so a Kobo no longer keeps displaying metadata that was cleared.
+
+- **Deleted tags no longer stay behind in the Kobo copy.** Removing one tag
+  from a book updated the EPUB, but the KEPUB merged the shorter list with its
+  old tags and kept every deleted value. Tags are now replaced from the library
+  metadata instead, and clearing a publisher, description or publication date
+  now reaches the KEPUB too.
+
+- **Arabic, Hebrew and Farsi titles now read the right way round.** Book titles,
+  authors, series names, descriptions and custom column values written in a
+  right-to-left script were rendered left-to-right on the book page and on the
+  grid and shelf cards, so the text started from the wrong edge and punctuation
+  landed on the wrong side. Direction is now detected per field from the text
+  itself, so a library with no language metadata set gets it right too, and a
+  right-to-left title above a Latin author renders each correctly. The classic
+  book page is fixed as well. Reported by @raphaelbahat.
+
+- **Your Kobo no longer loses its highlights when it syncs.** Highlights and
+  notes made on a Kobo could vanish after a sync — a problem reporters have been
+  chasing upstream since 2022 without a root cause. Every time you open a book
+  the Kobo asks the server what annotations exist for it, and we forwarded that
+  question to Kobo's own cloud, which has never heard of a book you sideloaded.
+  It answered "none", the device believed it, and deleted the highlights it had.
+  For a sideloaded book the Kobo is usually the only copy, so they were gone. We
+  now decline to answer that question for books we serve rather than passing on
+  an answer that isn't true. Measured on real hardware: 88 highlights before a
+  sync, 1 uploaded and 87 deleted after it. This also explains the long-standing
+  workaround of removing a book from its shelf once synced — that stops the
+  sync, so the question is never asked.
+
+- **Highlights made on a Kobo are no longer discarded by the server.** A change
+  in v4.1.34 began validating the chapter location that arrives with each
+  highlight, and threw the whole highlight away when that location looked
+  unfamiliar — losing the text, the note and the colour over a field that is
+  only a pointer and can be recomputed. Some Kobo books legitimately report a
+  location the check didn't recognise, so on an affected library *every* Kobo
+  highlight was dropped. **If you are on v4.1.34 or v4.1.35 and highlight on a
+  Kobo, please update.** Highlights are now always kept; only the pointer is set
+  aside when it can't be understood, and the same is true of a malformed
+  timestamp.
+
+- **Books that silently refused to keep Kobo highlights now work.** Some EPUBs,
+  commonly from free ebook sites, point at their table of contents with a path
+  that steps outside its own folder. A Kobo doesn't tidy that path up, so it
+  ends up with two different names for the same chapter: it saves your highlight
+  under one and looks for it under the other. The highlight stays on the device
+  forever and is simply never drawn, which is why highlighting appears not to
+  work for one particular book while every other book is fine. Conversion to
+  Kobo format now tidies those paths, leaving the book's text and its Kobo page
+  markers untouched. On the library this was found in, 5 books of 216 were
+  affected — and none had ever managed to store a single highlight.
+
+- **Chapter locations containing a redundant `..` are understood rather than
+  rejected.** A Kobo can report a chapter as `OPS/../OPS/chapter-17.xml`, which
+  plainly means `OPS/chapter-17.xml`. That is now normalised, so those
+  highlights land in the right place and appear in the web reader instead of
+  being stored without a location.
+
+## [v4.1.35] - 2026-08-15
+
+### Changed
+
+- **Running it outside Docker no longer means hunting down `cps.py`.** If you
+  install Calibre-Web NextGen as a Python package — packaging it for a distro,
+  running it under systemd, or just off a checkout — you can now start it with
+  `python -m cps`, the ordinary way to start a Python application. Starting it
+  by the path to `cps.py` still works and is unchanged, so nothing you have set
+  up needs touching. Thanks to @chloeroform.
+
+### Fixed
+
+- **A conversion that never finished no longer blocks the queue.** Converting
+  some books, PDFs most often, started and then sat there forever with nothing
+  in the log but a line saying the target format did not exist yet. The
+  converter writes to two output streams and we only kept reading one of them
+  while it ran, so as soon as the other filled up the converter stopped and
+  waited for us while we waited for it. Both are now read together. The same
+  fault was in the KEPUB conversion path, where a failure also had no error
+  text to show, and in the check that reads Calibre's version. Reported by
+  @auspex.
+
+- **Typing a tag that already exists now offers that tag first, and Enter adds
+  what you actually typed.** Typing "Romance" pre-selected "Paranormal Romance",
+  and pressing Enter applied it, because suggestions came back in no particular
+  order and the menu always highlighted its first row. On a large library the
+  exact match could be missing altogether, since only the first 25 matches are
+  shown and nothing put the best one among them. Suggestions are now ordered
+  exact match, then values starting with what you typed, then the rest, and no
+  suggestion is highlighted until you arrow into the list — so Enter adds your
+  text and ArrowDown then Enter takes a suggestion. This also makes it possible
+  again to type a value that sits inside an existing one, like adding "foo" when
+  "Fools and Jesters" exists. Applies to tags, authors, series and publishers in
+  both the new and the classic editor. Reported by @magdalar.
+
+- **Books you just imported now show up at the top of "Newest".** Drop several
+  books into the ingest folder at once and most of them landed somewhere in the
+  middle of the library instead of at the front, sorted as if they had been
+  added years ago. `calibredb` takes a book's "date added" from the file's own
+  metadata, which for most EPUBs is its publication date, so a 1998 novel
+  imported today was filed under 1998. That was already corrected on the way
+  in, but only for the last book of each batch — every other book in the same
+  run kept its publication date. All of them are stamped now. Existing books
+  keep the dates they have; this applies to imports from here on. Reported by
+  @jdaybell, and @Oakwhisper caught that the earlier tie-break fix, while real,
+  was not the whole cause.
+
+- **Reading on a Kobo now moves KOReader too.** Read a few chapters on the
+  Kobo, open the same book in KOReader or a KOReader-based device, and it
+  stayed wherever that device last was. The book page showed the Kobo's
+  progress, so it looked like the sync had worked — but nothing ever reached
+  the other device, because the Kobo's position was never written to the place
+  KOReader pulls from. It is now. As with the web reader, the two sides share a
+  percentage rather than an exact spot: a Kobo describes a position inside the
+  copy of the file that device holds, which KOReader's engine cannot resolve,
+  so it lands near where you stopped. Needs the NextGen Progress Sync plugin on
+  the device; older plugins are served nothing rather than a position they
+  would mis-seek on. Reported by @IceSentry, and kept honest by @sroebert's
+  testing.
+
+- **"Newest" now actually opens on your newest book.** Books that arrived in the
+  same batch — an ingest run, a folder import, anything that adds more than one
+  book at once — all carry the same "date added", and the library had nothing to
+  break that tie with, so it handed them back in whatever order the database
+  happened to walk. A shelf of twenty books added together could come out
+  backwards, and switching sort and back could reorder them again. Every sort
+  now has a definite order all the way down, so a list stays put, pages line up
+  instead of repeating or skipping a book, and the newest thing you added is at
+  the top. The same fault was in the classic interface, in the OPDS feeds your
+  e-reader pulls, in shelves and magic shelves, and in the duplicate finder, and
+  it also affected sorting by publication date (where every book with no date
+  set ties), by last modified, by series position, and by downloads — all fixed
+  together. Reported by @jdaybell.
+
+- **A first start that fails no longer leaves you with a server you can't log
+  in to.** If creating the settings database failed on first run, startup went
+  on to create an empty one anyway. That empty file looked like an existing
+  install on the next boot, so the step that creates your admin account was
+  skipped and there was no way in — and no way to retry, because the file now
+  existed. The failure is now reported and the empty file is never created, so
+  the next start tries again properly.
+
+- **Metadata and cover enforcement no longer stops until the next restart if the
+  enforcer is killed.** The enforcer takes a lock so two copies can't run over
+  each other, and released it only on a clean exit. If it was killed instead —
+  an out-of-memory kill, a `docker stop` that ran out of patience — the lock
+  stayed behind and every later run cancelled itself, so edits you made in the
+  web interface kept appearing on screen but stopped being written into the book
+  files. Nothing said so; the message went to a log. A run now checks whether
+  the process that left the lock is still alive and takes over if it isn't, so
+  enforcement resumes on its own instead of waiting for a container restart.
+
+## [v4.1.34] - 2026-08-13
+
+### Fixed
+- **PDFs open past page one on iPad.** In the new interface a PDF showed its
+  first page and nothing else on iPadOS, in both Safari and Firefox, while the
+  same book was fine on a Mac, on Android and in the classic interface. The
+  reader was handing the file to whatever PDF viewer the browser ships, and on
+  iPhone and iPad that viewer only ever draws one page inside an embedded frame.
+  PDFs now open in the same viewer the classic interface has always used, which
+  draws every page the same way on every browser, and brings PDF text search,
+  thumbnails and annotations to the new reader with it. Reported by
+  [@chloeroform](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1584)
+  ([#1584](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1584)).
+- **Errors explain themselves again instead of turning into a blank 500.** Some
+  failures replaced their own explanation with `TypeError: '>' not supported
+  between instances of ... and 'int'` and took down the page that was handling
+  them. Uploading a book with an unwritable ingest folder was the clearest case:
+  the app already had the right sentence ready — "Ingest folder is not writable.
+  Check your /cwa-book-ingest volume permissions." — but the crash happened while
+  writing the log line, so nobody ever saw it and the upload returned a 500. The
+  same fault sat on the "reload metadata from disk" failure path and on ingest
+  folder creation. Reported by
+  [@Thovi98](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1556)
+  ([#1556](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1556)).
+- **"No results" no longer covers for a metadata source that is throttling you.**
+  Searching Get Metadata for the same book twice could find it on the first click
+  and not on the second, with nothing changed in between. Goodreads and bol.com
+  answer a real no-match with an ordinary empty page, so when they instead refuse
+  a repeated request the app was reading that refusal as "this book does not
+  exist" and printing "No results for this query" — the two were impossible to
+  tell apart. A refused search now says so, and says to wait a minute and try
+  again. Two related pieces of bad advice went with it: a refusal from Goodreads
+  or bol.com used to suggest setting an API key, which neither one has (Goodreads
+  closed its API in 2020, which is exactly why it is scraped), and an ordinary
+  "page not found" from a Goodreads book whose id happened to contain 403 was
+  misreported as a refusal. Reported by
+  [@briffaantoine](https://github.com/new-usemame/Calibre-Web-NextGen/issues/303)
+  ([#303](https://github.com/new-usemame/Calibre-Web-NextGen/issues/303)).
+- **Eight more settings read in Dutch.** Hiding books from a personal library,
+  "Convert missing KEPUBs now", syncing Kobo annotations to Hardcover,
+  auto-creating users from LDAP, "Important:", "Use a URL" in the cover picker,
+  "Starting..." in the cover enforcer, and the EPUB fixer's search box were all
+  showing in English on a Dutch interface. Contributed by
+  [@VHE1987](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1553)
+  ([#1553](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1553)).
+- **More of the interface reads in Russian.** Coverage went from 2,618 to 2,719
+  translated phrases: 101 phrases that had no Russian at all now have it,
+  including the cover and metadata enforcement screens, the notes and highlights
+  panel in the reader, assigning books to an e-reader, and the message you get
+  when a KEPUB conversion cannot be queued. Contributed by
+  [@standhaftsohnsergius](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1554)
+  ([#1554](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1554)).
+- **Opening one of your highlights no longer loses your place — or marks the book
+  finished.** Tapping a highlight in the "Highlights and notes" list jumped the
+  book to that passage and then saved *that* as your reading position, so closing
+  the book afterwards reopened at the highlight instead of where you had actually
+  read to. Worse, the same save reports how far through the book you are, and the
+  server treats 99% as finished — so glancing at a highlight near the end of a
+  book could mark the whole book read and pass that on to a connected Kobo or
+  Hardcover account. Jumping to a highlight is now treated as looking, not
+  reading: your place stays put until you turn a page yourself.
+- **More of the interface reads in German.** Coverage went from 1,891 to 2,071
+  translated phrases: 121 phrases that had no German at all now have it, and 59
+  entries that gettext had guessed and marked provisional — provisional entries
+  are dropped when the catalogue is compiled, so they were showing in English
+  regardless — are now confirmed translations. One of them was **Import**, which
+  had been guessed as "Wichtig:" ("Important:"). Contributed by
+  [@chaosblog](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1549)
+  ([#1549](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1549)).
+- **The highlights page admits it holds your notes too.** Notes you write about a
+  book — the ones not attached to any particular sentence — have been showing up
+  in the highlights list for a while, but the page still called everything a
+  highlight: the heading, the empty state, the per-device counts, and what a
+  screen reader announced. A book with three highlights and two notes reported
+  "5 highlights". It now reads **Highlights and notes** throughout, matching what
+  the reader already called it, and the counts say what they are counting.
+- **The reader's Black page theme is back, and it is actually black.** The
+  classic reader has four page themes; the new UI's reader only ever showed
+  three, and anyone who had chosen **Black** was quietly given the dark theme
+  instead — a warm near-black — with no way to get back to it. Black is now its
+  own choice with a true black page, which is what an OLED screen wants at
+  night (#325).
+- **The reader remembers whether you want one column or two.** The new UI's
+  reader always laid pages out in two columns on a wide screen, even if you had
+  chosen a single column in the classic view — the preference was being saved
+  and then ignored. Reading appearance now offers **One column** and **Two
+  columns**, the page re-flows as soon as you pick, and the choice follows you
+  to your next book and your next device (#325).
+- **The reader's buttons are big enough to hit on a phone.** Close, contents,
+  appearance, highlights and full screen were 34 pixels square in the new UI's
+  reader — reachable with a mouse, fiddly with a thumb while turning pages. They
+  are now 44, the size Apple and Google both recommend, and the book title
+  shortens to make room instead of the buttons shrinking (#325).
+- **Typing in the reader no longer loses your place in the box.** Opening a
+  panel in the new UI's reader — the contents list, the appearance controls, the
+  highlight popover or the note box — put the cursor back at the top of that
+  panel every time anything else on the page updated. In the note box the top is
+  the close button, so a note you were part-way through writing could quietly
+  stop receiving what you typed. The cursor now stays where you put it (#325).
+
+- **Kindle books get their high-resolution cover now, not just print editions.**
+  The high-resolution Amazon cover lookup was keyed only on a book's ISBN, and a
+  Kindle edition usually has no ISBN at all — it has an ASIN. So the books most
+  likely to need a better cover were the ones the lookup could never reach, in
+  both places it runs: the upgrade applied to metadata-search results, and the
+  standalone "Amazon (high-res)" card in the cover picker, which simply never
+  appeared for those books. A stored Amazon identifier is now used as a lookup
+  key too, tried after the ISBN so nothing about the existing path changes. This
+  also covers books whose ISBN is a 979-prefixed one, which has no ISBN-10 form
+  and was previously a dead end. Reported by @briffaantoine with two worked
+  examples (#304).
+- **The cover picker now tells you where a picture actually came from.** Covers
+  offered by Hardcover, Google and the rest get swapped for a higher-resolution
+  copy when one exists, and that copy often comes from Amazon or Apple Books —
+  but the card kept the name of the provider that supplied the *metadata*, so a
+  card reading "Hardcover" could be showing you an Amazon image with nothing on
+  screen saying so. Cards now carry a second line naming the image's actual
+  source when it differs. Asked by @briffaantoine (#304).
+- **Looking at a book's other editions no longer sends a meaningless search to
+  every other source.** The editions list is a Hardcover feature and searches by
+  a Hardcover id, but that id was being handed to every enabled provider, which
+  each searched for it as plain text and came back with nothing — Goodreads in
+  particular looked broken because of it. The editions lookup now asks only the
+  source that understands it. Reported by @briffaantoine (#303).
+- **The reading app's catalog now calls "Discover" by the same name the website
+  does — and shows it in your language.** In an OPDS reader the entry was
+  labelled "Random Books", while the sidebar, the new interface and the link
+  itself all said Discover. Worse, on a German, Khmer or Norwegian server that
+  one entry stayed in English while everything around it was translated, because
+  the old wording had never been signed off by a translator. It now reads
+  Discover, translated, in all 28 languages. Reported by @chloeroform (#1097).
+- **"Reload metadata from disk" no longer wipes out details you edited without
+  asking first.** It sits in the same row as the download buttons on a book's
+  page, so reaching for a download and landing one button over rewrote the
+  book's title, author and series from whatever the file itself said — with no
+  undo and no warning. It now asks first, naming the book, and does nothing if
+  you say no. Reported by @JamesHACS (#1496).
+- **Revoking an app password now asks first too.** Found while fixing the
+  above: the revoke buttons render as a column of identical trash icons, and a
+  misclick cut off whichever device still used that password with no way to get
+  it back. It now names the password you are about to revoke.
+
+- **Four small controls are easier to hit**, most noticeably the ☰ menu button
+  on phones — the main way you open navigation there, and narrower than the
+  minimum size accessibility guidance asks for. They all look exactly the same;
+  the area that responds to your finger or pointer around them is bigger. The
+  others are **Delete format** on the edit-book page, **Revoke** on an app
+  password, and the Kobo/OPDS shelf checkboxes, where the whole row now responds
+  rather than just the small square.
+- **The notice bar across the top of the page follows your theme.** It was one
+  fixed dark-teal band whichever theme you picked, so on **Light** and **Sepia**
+  it sat on the page as a near-black slab, and on **High contrast** it ignored
+  that theme's stronger borders entirely. It keeps its own teal identity — it is
+  meant to look distinct from the rest of the UI — but now comes in a version
+  made for each theme. The Ko-fi bar gets the same treatment, and the × that
+  dismisses either one is easier to hit.
+
+### Added
+- **Sending everyone straight to your single sign-on no longer means giving up
+  the password form.** If you run exactly one OAuth provider, Calibre-Web NextGen
+  can take people to it the moment they hit the login page. Until now that
+  automatic jump was welded to "Disable Standard Login", so switching it on also
+  switched off password login for everyone — including you, if the provider ever
+  went down. The two are now separate settings: turn on **Start the only OAuth
+  provider automatically** under Admin → Security, and the password form stays
+  available at `/login?local=1` as a way back in. Off by default, so nothing
+  changes until you ask for it. The setting appears on both the classic and the
+  new admin pages. Contributed by
+  [@lduesing](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1488)
+  ([#1488](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1488)).
+- **You can search inside a book you're reading.** Open a book, click the new
+  search button in the reader toolbar, and type — results show the surrounding
+  sentence with your term marked, grouped so you can tell which chapter each one
+  is in, and clicking one takes you straight there — without moving the place you
+  were reading, so you can look something up and still come back. Neither the old
+  reader nor the new one has ever been able to do this. Long books are searched a chapter at
+  a time so the page stays responsive, and if a very common word turns up more
+  matches than are useful, the list says so rather than quietly showing you part
+  of the answer.
+- **Highlights made on a Kobo now say which device they came from.** The
+  reader's Highlights and notes panel showed a bare internal word like "kobo";
+  it now shows the name you gave the device. Highlights with no device recorded
+  — everything made before this was tracked — are listed exactly as before, just
+  without a label (#325).
+- **You can now write a note about a book without highlighting anything first.**
+  Notes could only ever be attached to a passage, so there was nowhere to put a
+  thought about the book as a whole — "the argument in chapter 3 never lands"
+  had to be pinned to a sentence that was not really the point. **Write a note**
+  at the top of the reader's Highlights and notes panel opens a blank note, and
+  it appears alongside your highlights on the book's Highlights page (#325).
+
+- **The new UI's reader can go full screen.** The classic reader has always had
+  a full-screen button; the new one didn't, so on a laptop or tablet you read
+  with the browser's chrome eating the top of the page. There's now a
+  full-screen control in the reader's top bar. It's hidden on devices that
+  can't do it (an iPhone can only full-screen video, not a page) rather than
+  shown as a button that does nothing (#325).
+
+- **Your highlights and notes are now listed inside the reader, and you can jump
+  straight back to one.** Seeing what you had marked up meant leaving the book
+  for the Highlights page and losing your place — the classic reader has had an
+  in-reader panel for this all along. The new UI's reader now has a highlighter
+  button in the top bar, with a count, opening a drawer that lists every
+  highlight in the book with its note. Picking one takes you to that passage.
+  Highlights that came from a Kobo or KOReader are listed and labelled too,
+  though a few of those have no saved position to jump to (#325).
+- **Reporting a problem now fills the report in for you.** Reporting a bug meant
+  landing on a blank GitHub form that asked you to type out your version, your
+  browser and which page you were on — and if the app had just crashed, the
+  error message was gone from the screen by the time you got there. The "Report
+  Issue on GitHub" item in the Help menu, and the link on an error page, now
+  open a report that already has all of that filled in, including the error
+  itself when there is one. Nothing is sent by your library: it writes the
+  report in your browser and hands you a link, so you see the whole thing and
+  can edit or delete any of it before deciding whether to post it. Your address,
+  your library's name, your file paths and your book titles are never included.
+
+- **You can now write a note on a highlight while reading in the browser.**
+  Highlighting text in the new UI's reader only ever saved the colour — there
+  was nowhere to record *why* you highlighted it, even though notes made on a
+  Kobo or in KOReader have always shown up on the book's Highlights page. Select
+  a passage and the popup now offers **Add note** alongside the colours; tap a
+  highlight you have already made and you can add, edit or remove its note.
+  Highlights carrying a note are drawn with a dashed outline so you can pick
+  them out at a glance, and tapping one shows the note without opening the
+  editor. Notes sync into the same place as everything else, so they appear on
+  the Highlights page and in Markdown/CSV/JSON exports (#325).
+
+- **Two new cover fill styles that fill the e-reader frame instead of adding a
+  border.** Every existing style pads the cover out to your device's shape,
+  which leaves a mirrored, blurred or coloured band down the sides. If you would
+  rather see the artwork itself edge to edge, there are now two more options in
+  the fill-style dropdown: **Stretch to fill**, which scales the cover to the
+  frame and accepts a little distortion, and **Crop to fill**, which keeps the
+  proportions honest and trims a strip off the two long edges instead. The six
+  original styles are untouched and Edge mirror is still the default, so nothing
+  changes unless you pick one. Requested by @mgrimace (#1280).
+
+## [v4.1.33] - 2026-08-08
+
+### Changed
+
+- **On a sign-in-with-your-provider-only server, the login page stops asking
+  you to click one button.** If standard login is switched off and exactly one
+  OAuth provider is configured, the login page existed only to be clicked
+  through — it now starts that provider straight away. Add `?local=1` to the
+  login URL if you ever need the plain page back, which is how an admin gets in
+  when the provider itself is down. Cancelling at the provider's consent screen
+  used to hand your browser straight back to it, over and over; that loop is
+  gone too, and it predates this feature. Servers with standard login enabled,
+  or with more than one provider, are unchanged. Contributed by
+  [@lduesing](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1411)
+  ([#1411](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1411)).
+
+### Fixed
+
+- **More of the interface reads in Traditional Chinese.** Coverage went from
+  619 to 919 translated phrases, and 130 entries that gettext had guessed and
+  marked provisional — provisional entries are dropped when the catalogue is
+  compiled, so they were showing in English — are now confirmed translations.
+  Contributed by
+  [@siuwai1999](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1424)
+  ([#1424](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1424)).
+
+- **Installing outside Docker still lost your settings database, and imports
+  died without saying why.** The previous fix moved `app.db` and `dirs.json`
+  to the folder you installed into, but `cwa.db` — the one holding your CWA
+  settings, import history and enforcement records — kept looking for a
+  `/config` folder at the top of your filesystem. If it could write there you
+  got a second config directory nothing else reads; if it could not, importing
+  a book stopped partway through and the process exited reporting success, so
+  nothing in the logs said anything had gone wrong. All three files now resolve
+  the same way, a failure to open the database says which path it tried and
+  exits non-zero, and adding a missing settings column no longer depends on
+  `/config` being writable — that step used to be skipped silently on exactly
+  these installs. Docker sets `CALIBRE_DBPATH=/config` explicitly and is
+  byte-for-byte unaffected. Follows on from the packaging work reported by
+  @Thovi98.
+
+- **Installing outside Docker put your database somewhere the app never
+  looks.** On a source install, the setup script wrote `app.db` into a
+  `/config` folder it created at the top of your filesystem, while the app
+  itself reads its database from the folder you installed into. Nothing said
+  anything was wrong; you just got a first-run setup screen and an empty
+  library, with the seeded database sitting in a directory nothing opens. The
+  two halves now resolve the config folder the same way, so a source install
+  keeps its database where the app reads it. `CWA_DIRS_JSON` had the matching
+  problem — it moved `dirs.json` for the scripts but not for the app, which
+  would have pointed your ingest and your library at two different places —
+  and is now honoured by both. Docker installs set these explicitly and are
+  byte-for-byte unaffected. Reported by @Thovi98, packaging for YunoHost.
+
+- **First run printed a chown error that was not an error.** Outside the
+  container there is no `abc` service account to hand files to, so setup
+  reported `chown: invalid user: 'abc:abc'` and a failed-command traceback on
+  every run. The files were already owned by the right user. Setup now says it
+  is skipping the step and why, and only reports a genuine permission problem.
+  Reported by @Thovi98.
+
+- **Installing outside Docker failed on the first setup script.** If you install
+  from source rather than pulling the image — a distro package, a systemd unit,
+  anything not living at `/app/calibre-web-automated` — `auto_library.py` quit
+  with `FileNotFoundError` looking for a starter database under `/app`, a
+  directory that only exists inside the container. The file was in your install
+  the whole time; the scripts just weren't looking where the code actually was.
+  They now work out their own location, so a source install sets itself up
+  without patching. The same run then reached a second copy of the problem and
+  tried to create your library at `/calibre-library` no matter what
+  `dirs.json` said; it now uses the folder you configured. Docker installs
+  resolve to exactly the same paths as before and are unaffected. Reported by
+  @Thovi98, who packages Calibre-Web NextGen for YunoHost, and follows the
+  `cps/` cleanup @chloeroform did in #1438.
+
+- **Upgrading a source install no longer looks like it lost your settings.**
+  Earlier builds put the database in a `/config` folder at the very top of the
+  filesystem, whatever directory you installed into. Now that setup uses your
+  install directory, a machine upgrading from one of those builds has a real
+  database in the old place and none in the new one — and setting up a fresh
+  empty one there would have left you looking at an empty library with your
+  users and books apparently gone. Setup now stops before that happens, tells
+  you which database it found, and gives you the one setting that keeps it.
+  Nothing is moved or deleted for you, because only you know which copy is the
+  one you want. Fresh installs and Docker are unaffected.
+
+- **The container reported itself unhealthy, and the library count showed 0
+  books.** A path cleanup landed a reference to a setting the file never
+  imported, so the lookup that finds your Calibre library raised an error the
+  moment anything called it. Two places call it, and both quietly treat any
+  error as "no library": the `/health` endpoint every Docker, Compose and
+  Kubernetes setup polls started answering "degraded" forever even though the
+  app was serving pages normally, and the book count on the instance rendered
+  0. If your orchestration restarts or refuses to roll out on a failing
+  healthcheck, that is why. Affects the `:dev` channel only — no published
+  release shipped it.
+
+- **The log no longer opens with a warning about rate-limit storage on every
+  startup.** Calibre-Web-NextGen serves from a single process, so the
+  rate limiter's in-memory counters are shared by everything that reads them
+  and are the correct choice here. The limiter library could not tell that
+  the choice was deliberate, because the setting was simply left at its
+  default, so it warned that the setup was unsuitable for production on each
+  boot. The setting is now stated explicitly. Nothing about rate limiting
+  changes — login attempts are still capped the same way — the log just stops
+  raising a concern that did not apply. Reported by @chloeroform (#1443).
+
+- **The Tags page showed columns of "…" instead of tag names.** The grid was
+  sized before the per-row rename and delete buttons existed, so once those
+  arrived they took their space out of the tag name itself: in a 1280px-wide
+  window the name had 86px of a 244px cell, and 87% of tags were cut off. Rows
+  carrying those buttons now get a wider column — three across instead of four
+  on a typical desktop — and a long name uses a second line before it
+  ellipsizes. Measured on a 152-tag library, names cut off went from 87% to 9%
+  on desktop, 41% to 9% at the 720px width in the report, and 32% to 8% on a
+  phone. The Authors, Series and Publishers lists keep their current column
+  count and gain the same second line; the compact list view is unchanged.
+
+- **A third-party KOReader sync client is no longer left guessing why a book
+  looks unsynced.** Positions that exist only as a percentage — the ones the
+  web reader and a Kobo produce — are deliberately held back from clients that
+  haven't said they can use them, because older plugins would try to jump to a
+  position they can't understand and lose your place. The problem was that
+  "held back" and "never synced" looked identical from the client's side: an
+  empty answer, with nothing naming the setting that would reveal the position.
+  The server now says what it is holding and how to ask for it, logs the same
+  thing for anyone reading the server log, and the sync protocol documentation
+  now covers the parameter and both position formats. Nothing changes for the
+  bundled plugin or for anyone syncing today. Reported by @sroebert (#1445),
+  who hit this building Crossink and had to read our source to find it.
+
+- **The "help translate this" notice no longer reappears after every update, and
+  now works outside Docker.** The app remembered that it had already shown you
+  the notice by writing a small file into its own program folder, which gets
+  replaced whenever you update — so the reminder came back each time. Outside
+  Docker that folder doesn't exist at all, so the note was never saved and the
+  reminder never appeared for anyone running from source. It's now kept
+  alongside your settings, where it survives updates. Reported by @chloeroform
+  (#1447).
+
+- **If your library lives in a sub-folder, NextGen stopped leaving a stray
+  `metadata.db` at the top of it.** Something in the startup checked for a
+  database at the top level of your library folder, and the act of checking
+  created an empty one there. That stray file is what made versions 4.1.20 to
+  4.1.31 refuse to start for some people — 4.1.32 already stopped it breaking
+  startup, and now it isn't created in the first place. Two other things were
+  looking in the same wrong place and now find your real library: the KOReader
+  sync checksum job, which had been failing with "no such table: books" on every
+  restart, and the reading statistics, which had been reading an empty database
+  and reporting nothing. If you already have a stray file, it's safe to delete
+  once you're on this version.
+
+- **Installing from source no longer reports the previous version.** A checkout
+  or pip install made from the v4.1.31 or v4.1.32 tag identified itself as one
+  release older than it was, so the update check kept offering an update that
+  was already installed. Docker users were never affected — those images take
+  their version from the build, not from this file. Reported by @chloeroform
+  (#1437).
+
+- **The interface now reads in Spanish throughout, instead of leaving about
+  half of its labels in English.** With the language set to Spanish, the admin
+  screens, metadata editing, upload, shelves, the reader and a long tail of task
+  and error messages still showed in English. Another 196 phrases were worse
+  than untranslated: gettext had guessed them from a similar English sentence and
+  marked the guess provisional, and a provisional entry is dropped when the
+  catalog is compiled — so those rendered in English while Spanish that said
+  something else, sometimes the text of an entirely different string, sat in the
+  file waiting for somebody to confirm it. A few outright reversed the meaning of
+  the English. Spanish was covering 1,378 of 2,645 phrases and now covers all
+  2,645, which makes it the most complete translation the project ships. Wording
+  for add, delete, edit, file, email and eReader is now consistent across the
+  interface. Contributed by
+  [@HaruIjima-kun](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1469)
+  ([#1469](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1469)).
+
+## [v4.1.32] - 2026-08-07
+
+### Added
+
+- **Reading in the browser now carries over to KOReader.** Read a few chapters
+  in the web reader, then open the same book on your KOReader device and it
+  moves to roughly where you stopped, instead of resuming where the device
+  itself last was. It lands near the spot rather than exactly on it — the
+  browser records a position KOReader's engine cannot resolve, so the two share
+  a percentage — and it applies when you open the book, not during a bulk
+  library sync. This needs the updated NextGen Progress Sync plugin on the
+  device; until you update it, nothing about its behaviour changes. Reported by
+  @jrodrigoferreira and kept current by @iroQuai (#1366, #324).
+
+### Changed
+
+- **A sign-in page whose only button is your one provider now just takes you
+  there.** If your server runs in OAuth-only mode with standard login switched
+  off and exactly one provider switched on, opening the login page showed you a
+  page whose sole purpose was to click through to that provider. NextGen now
+  starts it for you. Servers that still allow username-and-password sign-in keep
+  the normal login page. If the provider is unreachable, or you want the plain
+  page back for any reason, add `?local=1` to the login URL. Contributed by
+  @lduesing.
+  ([#1411](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1411))
+- **Cancelling a sign-in at your provider now returns you to the login page
+  instead of bouncing you back to the provider forever.** Backing out of the
+  provider's consent screen used to hand you straight back to it, with no way
+  off the merry-go-round short of clearing cookies. This affected OAuth servers
+  before this release too, including ones that never turned on the automatic
+  start above.
+  ([#1411](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1411))
+
+### Fixed
+
+- **Fixed: the container refused to start on every release since v4.1.20 if a
+  leftover `metadata.db` was sitting at the top of your library folder.** The
+  log filled up with `no such table: custom_columns` over and over and the app
+  never came up; rolling back to v4.1.19 was the only way out. NextGen picks
+  your library by looking for `metadata.db`, and it had started trusting the
+  first file with that name — so an empty or leftover one at the root of
+  `/calibre-library` was mounted as your library and hid the real one in the
+  folder below it. It now checks that a file is genuinely a Calibre database
+  before mounting it, says in the log which file it skipped and why, and keeps
+  looking. If nothing usable turns up at all it stops with an explanation
+  instead of looping, and never writes over the files it found. Reported by
+  @sammiq.
+  ([#1428](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1428))
+
+## [v4.1.31] - 2026-08-06
+
+### Added
+
+- **You can now re-apply covers and metadata to your whole library from the
+  admin page, instead of a shell.** NextGen writes your edits into the ebook
+  files themselves, but only for the book you just edited — so anything changed
+  before a fix, or imported with bad metadata, kept the old values inside the
+  file even though the web page looked right. The only way to sweep the whole
+  library was a `docker exec` command that isn't in the docs. There's now a
+  **NextGen Cover & Metadata Enforcement** page, linked from the admin page next
+  to the EPUB Fixer, with a Start button, a live progress bar and log, a Cancel
+  button, and an archive of previous runs — the same shape as the convert and
+  EPUB-fixer pages. This is what you want after updating to v4.1.30, which
+  taught NextGen to write `.kepub` files: a single pass backfills every book you
+  sent to a Kobo before that release, so your series and tags finally show up on
+  the device. Reported by @stripeymonkey.
+  ([#1408](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1408))
+
+- **Your Kobo now gets books in Kobo's own format, automatically.** Kobo devices
+  read two kinds of EPUB: a plain one, and a "kepub" that Kobo's own store always
+  sends. The kepub is the one the device is built for — faster page turns,
+  working chapter progress, and highlights and annotations that actually stick.
+  Until now NextGen only made a kepub the first time a device asked for a
+  particular book, so most of your library sat in the plain format. There's now a
+  **Produce and prefer KEPUB for Kobo delivery** switch in Settings → Kobo, **on
+  by default** — on a fresh install and when you update to this version — and it
+  makes the kepub ahead of time for every book you've already sent to a Kobo, so
+  it's ready before the device asks. EPUB stays the source format and nothing is
+  replaced; the kepub is an extra file about the same size, so expect the books
+  you sync to your Kobo to take roughly twice the disk they do now. Turn the
+  switch off and you get the old behaviour. If kepubify isn't installed the
+  switch tells you so instead of silently doing nothing.
+
+- **You can turn off the "Read now" and edit buttons on book covers.** If you
+  read on an ereader, the "Read now" link on every cover is just noise, and on a
+  touchscreen both it and the edit pencil stay visible all the time rather than
+  appearing on hover — which made the library look busy. There's now a **Show
+  Read now and edit buttons** switch in the library's View settings (the gear
+  next to the sort control). Turn it off and the buttons come off every book
+  cover, everywhere they appear: the library, shelves, smart shelves, search
+  results, Discover and "More by this author". Both actions are still on the
+  book's own page, which is what the cover has always linked to. The setting is
+  remembered in your browser and is on by default, so nothing changes unless you
+  ask it to. Thanks to @Glennza1962 for the request and @chloeroform for the
+  detail about how the classic view handled this.
+
+### Changed
+
+- **Metadata working files moved onto your `/config` volume.** The change logs
+  and scratch space the cover/metadata enforcer uses used to live inside the
+  application folder, which is replaced wholesale every time you pull a new
+  image. They now sit alongside the rest of your per-install state, so an edit
+  saved moments before an upgrade still gets applied to the book file after it.
+  Anything left in the old location is moved across automatically on first
+  start; there is nothing to do. Thanks to @chloeroform for the patch.
+
+### Fixed
+
+- **Running the container as a non-root user gave you a container that said it
+  was fine and served nothing.** If you start NextGen with `--user`, or under
+  rootless Podman with `--userns=keep-id`, every service died the moment it
+  tried to switch to its own app user — something an unprivileged process isn't
+  allowed to do. The supervisor restarted them forever, so `docker ps` showed
+  the container **Up** while nothing was listening on the port and the log
+  filled with `Operation not permitted`. NextGen now checks whether it can
+  switch users before trying, and stays as whoever you started it as when it
+  can't. It also stops trying to take ownership of your files in that mode,
+  which produced most of those errors, and says once in the log why. Running
+  normally is unchanged. Diagnosed down to the call sites by @KucharczykL, from
+  nine days of running it under rootless Podman.
+  ([#947](https://github.com/new-usemame/Calibre-Web-NextGen/issues/947))
+
+- **"Source Code" in the package details opened a list of downloads instead of
+  the code.** If you inspect the installed package — `pip show`, a package
+  index, the dependency view — its Source Code link pointed at the releases
+  page, which is already what the Release Management link is for. It now opens
+  the repository. The same details block used to send you to the upstream
+  tracker for bugs in this build; that was repointed here by @chloeroform in
+  [#1298](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1298), and
+  this finishes the last link that was still wrong.
+  ([#1361](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1361))
+
+- **Kobo syncs wrote to the database once per book instead of once per batch.**
+  Each book a Kobo received was recorded in its own separate save, so a sync
+  carrying a hundred books did a hundred separate writes — and everyone else's
+  pages waited behind them. It's now one write per batch. You'll notice it most
+  on a device's first sync and on libraries kept on a NAS, where each write is
+  slow.
+
+- **Kobo book covers froze the site while they were being prepared.** Covers are
+  padded to your Kobo's screen shape the first time each one is needed, which is
+  a fraction of a second of image work — but it was holding up every other page
+  while it ran, and it happens once per cover, so a device catching up on a
+  shelf-full stacked those pauses back to back. The padding now happens out of
+  the way. This affects anyone with Kobo sync on, since cover padding is on by
+  default; nothing about the covers themselves changes.
+
+- **With "proxy unknown requests to Kobo Store" turned on, your Kobo could stall
+  the site for seconds at a time.** Some of what a Kobo asks for is passed
+  through to Kobo's own servers, and the site sat still waiting for their reply —
+  up to 12 seconds if they were slow to answer, with everyone else's pages
+  waiting too. Measured against the real store, individual calls took anywhere
+  from 0.1 to 1.1 seconds. The waiting now happens out of the way. Only affects
+  you if you turned that setting on; it's off by default.
+
+- **Sending a large book to a Kobo briefly froze the site for everyone else.**
+  If you have "embed metadata" turned on, every book sent to a Kobo is rebuilt
+  on the way out so its details are up to date — and that rebuild was holding up
+  every other page in the meantime. On a 24 MB book, an unrelated page load went
+  from about 10 ms to 493 ms; it now stays at 21 ms, and the book still arrives
+  just as fast.
+
+- **A book could end up permanently broken on your Kobo if the server was
+  restarted at the wrong moment.** While converting a book for Kobo, the new file
+  was written straight into place, so stopping the container mid-write left a
+  half-written book behind — and the next run would accept that half-written file
+  as finished and record it in the library. From then on your Kobo was handed a
+  file it couldn't finish opening, and nothing would ever repair it. Converted
+  books are now written aside and only swapped in once complete and verified as a
+  readable archive, and a damaged file is never accepted as finished.
+
+- **One unreadable or unwritable book could stop every other book being prepared
+  for Kobo — on every restart, forever.** If a single book failed to convert, for
+  instance because the library is mounted read-only, the whole preparation run
+  stopped at that book and started over from scratch at the next restart, getting
+  no further. It now skips what it can't do, reports how many failed, and finishes
+  the rest.
+
+- **Right after updating, books sent to a Kobo could arrive in the wrong format
+  and take 25 seconds each.** The first run after the update prepares your Kobo
+  books in the background, and a download arriving during that window queued up
+  behind the whole job, timed out, and fell back to the plain format. Downloads
+  now go through immediately while that background work is still running.
+
+- **Kobo syncs were slow on big libraries, and froze everything else while they
+  ran.** Every sync re-opened and re-parsed each book's EPUB from disk just to
+  check one rarely-used property, every single time — and because that reading
+  happened inside the sync request, nobody else could load a page until it
+  finished. That answer never changes unless the file itself does, so it's now
+  remembered. Measured on a 215-book library on local disk, the per-100-book cost
+  dropped from 400 ms to 11 ms; on a first sync after a restart it dropped from
+  about 6 seconds to the same 11 ms. Two honest caveats: the memory holds 4,096
+  books, and a sync walks the library in order, so libraries larger than that see
+  little benefit on a full sync; and on a NAS or network share each book still
+  costs one small filesystem check, so the saving is real but smaller than the
+  local-disk numbers above.
+
+- **The whole server paused whenever a Kobo asked for a book it hadn't converted
+  yet.** The first time a Kobo downloaded any book that didn't already have a
+  kepub, the conversion ran inside that request and froze every other page for
+  everyone until it finished — and because it queued behind whatever else the
+  server was doing, a download landing behind a long import or conversion held
+  the freeze for that job's whole duration too. Measured on a 24 MB book, an
+  unrelated page load went from 9 ms to 754 ms; it now stays at 21 ms.
+
+- **The whole library stops responding while a book is being imported.** Saving
+  a metadata edit, renaming or merging a tag, or uploading while an import was
+  running could stop the server answering *anyone* — not just the person who
+  saved, but every page for every user, until the import finished. Nothing was
+  logged and it recovered on its own, so it read as "the server is randomly
+  slow" rather than as one action blocking the rest. Both jobs need the same
+  library lock, and the web side waited for it in a way that also parked the
+  thread every other request is served from. It now waits without holding
+  everyone else up: the edit still queues behind the import, which is correct
+  and unchanged, but the rest of the library stays usable while it does.
+  Measured on a test instance, an unrelated page load during that wait went
+  from 6.5 seconds to 36 milliseconds.
+
+- **The new tag tools read in English on an otherwise Russian interface.**
+  Merging a tag, deleting one, and the confirmation prompts that tell you how
+  many books are affected all arrived in v4.1.30 without Russian text, so the
+  Tags page switched to English at exactly the point it was asking you to
+  confirm something destructive. Two upload and reading-position messages had
+  the same gap. The new interface falls back to its English text when a phrase
+  is missing rather than reporting anything, so the page still worked and
+  simply stopped being translated. All thirteen phrases are now translated and
+  Russian is complete again at 2,622 of 2,622. Contributed by
+  [@standhaftsohnsergius](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1392)
+  ([#1392](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1392)),
+  translation by ZIZA.
+
+## [v4.1.30] - 2026-08-04
+
+### Added
+
+- **Tags can be merged and deleted from the Tags page.** Tidying up a library
+  meant living with whatever tags had accumulated. Renaming a tag onto a
+  near-duplicate — "Sci-Fi" onto "SciFi", which is how you merge two tags into
+  one — was refused with "A tag with that name already exists", so consolidating
+  them was impossible, and there was no way to delete a tag at all, not from the
+  Tags list and not from a tag's own page. Now the rename tells you which tag it
+  clashed with and how many books that one has, and offers to merge into it; the
+  books move across and the leftover tag disappears. Delete removes a tag from
+  every book that carries it, and the books themselves are kept. Both are on the
+  Tags list itself, so you can spot near-duplicates side by side and fix them
+  without opening each tag first, and both ask before they change anything.
+  Editing metadata is required, so read-only accounts and guests see the plain
+  list as before. Reported by @magdalar.
+
+### Fixed
+
+- **Series and other metadata edits now reach your Kobo.** Setting a series name
+  and number on a book saved fine in the library, and the change showed up in the
+  web interface, but the book on a Kobo still had no series — and downloading the
+  file back confirmed the series was missing from it. Books converted for Kobo are
+  stored as `.kepub` files, and those were the one format the metadata writer
+  skipped, so every edit reached the `.epub` and the library while the file your
+  reader actually opens was left untouched. Re-saving did not help, because
+  nothing was wrong with the edit. `.kepub` files are now written too, so setting
+  or changing a series, adding tags and updating the cover turn up on the device
+  after the next sync. Clearing a field is not covered yet — remove a series or a
+  tag and the `.kepub` keeps the old value, tracked in #1376. Existing books pick
+  up their metadata the next time you edit them, or in one pass from Settings if
+  you run the cover and metadata enforcement over the whole library. Reading
+  positions and bookmarks already on your reader are preserved. Reported by
+  @bjekel.
+
+- **Books already sitting in the ingest folder when the container starts are
+  now imported.** If a book was waiting in the ingest folder at the moment
+  Calibre-Web NextGen started — you copied files in while it was stopped, the
+  server rebooted mid-copy, or an import was still pending when the container
+  restarted — it was never picked up. No error appeared, nothing showed in the
+  log, and the book simply never arrived in the library. Restarting did not
+  help; the only way out was to touch or re-copy every file. The ingest folder
+  is now swept once at startup, so anything waiting there gets imported. Books
+  left in the retry queue by a previous run are also picked back up instead of
+  waiting for an unrelated file to arrive.
+
+### Security
+
+- **Requests that change your library are now refused when they come from
+  another website.** Every write the new interface makes already had to carry a
+  one-time token, and a page on another site cannot read that token — but if one
+  ever obtained it, the server would have carried out the write without noticing
+  the request came from somewhere else entirely. It now checks, for the whole
+  `/api/v1` surface at once rather than route by route, and refuses anything that
+  says it came from a site other than yours. Nothing changes for ordinary use:
+  your own browser identifies itself correctly, and tools like `curl` or a script
+  that send no such information keep working as before. If you reach your library
+  through a reverse proxy, it has to tell the server both the address **and**
+  whether the connection is `https` — a proxy that handles TLS but forwards no
+  `X-Forwarded-Proto` leaves the server thinking the request arrived over plain
+  `http`, and writes are refused even though the address matches. Most proxies do
+  this correctly out of the box. If yours does not, either forward
+  `X-Forwarded-Host` and `X-Forwarded-Proto`, or set the existing `PROXY_HOST` and
+  `PROXY_SCHEME` variables, or name the address you actually use in a new optional
+  `CWNG_TRUSTED_ORIGINS` setting, comma-separated. No setting is needed for a
+  normal install, and the same symptom already showed up as `http://` links in
+  emails and redirects, so a install that works today is very likely unaffected.
+
+- **The Statistics page no longer shows your server's version details to
+  everyone.** It listed the exact Calibre-Web NextGen release, the host kernel
+  build, the Python build and the version of every library the server uses —
+  around 70 entries — to any visitor who could open the page. On an instance
+  with guest browsing turned on, that included people who were not signed in at
+  all. It is enough detail to look up known vulnerabilities for the exact
+  software you are running, which matters if your instance is reachable from
+  the internet. Those details now go to admins only, and the server withholds
+  them rather than just hiding them on the page, so they are no longer sent to
+  anyone else. Book, author, series and category counts are unchanged for
+  everyone. Reported by @kabili207; @chloeroform sent the first fix and the
+  page-side change.
+
+## [v4.1.29] - 2026-08-03
+
+### Fixed
+
+- **Marking a book unread no longer marks it read instead.** Telling a book you
+  had not read it — from the book editor, a bulk edit, or the API — set it to
+  *read* whenever that book had never been marked either way before. The
+  opposite of what was asked, and the only way to notice was to look at the
+  checkmark afterwards. It happened on ordinary libraries and on ones where an
+  admin has pointed Calibre-Web at a custom column for read status. Both now
+  record what you actually asked for.
+
+  Read status is also kept in step now if you use a custom column for it.
+  Calibre-Web tracks reading in two places — your column, and an internal record
+  the Kobo and KOReader sync both write to — and only the column was being
+  updated when you toggled a book. So the "Currently reading" marker could drift
+  away from the checkmark on the book, and a book you had marked Read could
+  still be reported to your Kobo as one you were part-way through. Both records
+  now follow the toggle.
+
+  One limit worth knowing if you use a custom read column: the toggle reaches
+  your Kobo for books it has already synced, but not yet for a book the device
+  has never seen. That gap is tracked on
+  [#1350](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1350).
+
+- **Japanese and Chinese ebooks now turn the page the right way in the new
+  reader.** Books that read right-to-left were paged as if they read
+  left-to-right: the button to go forward sat on the right of the screen, so
+  tapping the side you actually read towards took you backwards a page instead
+  of onwards. The arrow keys were reversed in the same way. Forward now sits on
+  the left for these books, where it belongs, and the buttons announce what they
+  really do for anyone using a screen reader. Books that read left-to-right are
+  unchanged.
+
+  This covers epub. Comics and manga read as CBZ or CBR still page
+  left-to-right — they carry no equivalent marker for reading direction, so that
+  needs its own detection and is tracked on
+  [#1354](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1354).
+
+- **Your reading position survives a busy database instead of being dropped.**
+  Both readers save your place constantly — the classic reader on every page
+  turn, the new one every second or so — and if that save failed because
+  something else was writing to the database at that moment, the browser was
+  told it had worked. It hadn't: the position was thrown away, and because the
+  browser thought it was saved, nothing ever went back for it. You would come
+  back to the book and find yourself pages behind, with nothing in the log to
+  explain it. A save that fails now reports the failure instead of a success,
+  and both readers act on it: the new reader retries a few times, and the
+  classic reader keeps your place locally and sends it the next time you open
+  the book.
+
+  Two honest limits. There is still no on-screen warning when a save fails for
+  good — the new reader announces it to screen readers only
+  ([#1352](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1352)) —
+  and if you close the tab within a few seconds of turning a page, the new
+  reader can still lose that last page turn. Neither is a step back from the
+  previous release; the new reader did not send your position anywhere at all
+  before this one.
+
+  The same "said it worked when it didn't" answer turned up in three other
+  places, all now fixed: changing an admin password from the command line could
+  print "Password for user X changed" and exit successfully when the change had
+  in fact been rolled back; revoking a Kobo sync token could report success
+  while the token stayed valid; and editing an allowed-registration domain in
+  the admin panel could show the new value in the table without it being saved.
+
+- **The Epub Fixer stops reporting the same fixes every time you run it, and
+  stops touching books you deleted.** Running it over the same library
+  repeatedly kept listing conversions like "Converted page_styles.css from
+  ascii to utf-8" — on every run, for books it had already been through. The
+  conversion was never real: a stylesheet that is plain ASCII is *already*
+  valid UTF-8, so nothing was being changed, but it was counted and announced
+  as a fix anyway. Worse, every book was rewritten and copied into the backup
+  folder whether or not anything about it changed, so a library-wide run
+  restamped every file — which pushes the whole library back through Kobo,
+  KOReader and any file-sync you have set up, and grew the backup folder every
+  time. Books that genuinely need fixing are still fixed, backed up and
+  rewritten exactly as before; books that don't are now left alone, and the log
+  says "No issues found" instead of inventing two. A book whose language
+  Calibre never set was counted the same way: the fixer left the language
+  exactly as it found it and still recorded that as a repair, adding a row to
+  the Epub Fixer history on every run. It no longer does. The fixer also no
+  longer walks Calibre's hidden `.caltrash` folder, so books you deleted are no
+  longer processed and reported alongside the ones in your library.
+
+- **The "update available" banner stops re-appearing every time you restart.**
+  The banner is meant to show at most once a day, and it remembered the date it
+  last appeared in a file. That file was kept in a part of the container that
+  gets wiped whenever the container is recreated, which is exactly what happens
+  when you pull a new image. So the reminder forgot itself at the one moment it
+  was most likely to be redundant, and admins saw it again on the next page
+  load. It now lives in your `/config` folder alongside the logs, so the
+  once-a-day promise holds across restarts and upgrades. You may see the banner
+  one extra time on the first start after updating, then it settles.
+  Thanks to @chloeroform for finding and fixing this.
+
+### Added
+
+- **Reading in your browser now counts towards your reading progress
+  everywhere else.** Until now the web reader kept its position to itself: it
+  could *show* you how far your Kobo or KOReader had got, but reading a few
+  chapters in the browser left no trace. Your Kobo still thought you were where
+  you left it, and the book still showed the old percentage in your library.
+  Picking a book up on the web during a lunch break and then going back to your
+  device meant finding your place by hand. Now the position you reach in the
+  browser travels the other way too — your Kobo picks it up on its next sync,
+  the progress shown on the book updates, and finishing a book in the browser
+  marks it read. Both the classic reader and the new interface do this.
+
+  Reading backwards never costs you anything: if your Kobo is at 80% and you
+  flip back to chapter 1 in the browser, your own place in the browser follows
+  you, but the furthest point stays 80% so nothing on your device is lost.
+  Starting a book over is still "mark as unread", which clears it everywhere as
+  it always has.
+
+  One honest limit: this covers the Kobo direction and the progress shown in
+  your library. KOReader reads its position from a separate store in a format
+  only KOReader understands, so it doesn't pick up browser reading yet — that
+  half needs a position translation and is still tracked on
+  [#324](https://github.com/new-usemame/Calibre-Web-NextGen/issues/324).
+
+  Worth knowing if your server has several users *and* an admin has pointed
+  Calibre-Web at a custom column for read status: that column belongs to the
+  book rather than to each reader, so one person finishing a book in the
+  browser now shows it as read for everyone. Marking a book read by hand always
+  worked that way on those libraries; what is new is that reading to the end
+  does it too. Ordinary libraries keep read status per person and are
+  unaffected. Discussion of what the right behaviour should be is on
+  [#1351](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1351).
+
+## [v4.1.28] - 2026-08-02
+
+### Fixed
+
+- **The button at the bottom of a page works again while the "new interface"
+  notice is on screen.** The notice sits along the bottom of the window, and it
+  was covering the last thing on the page — so clicking the middle of that
+  button did nothing at all, and only a thin sliver along its top edge
+  responded. Scrolling all the way down did not help. The clearest case was the
+  emergency "Restore Calibre Database (Last Resort)" button on Admin → Database
+  Configuration, but it applied to any page ending in a button or a link. On
+  phones it was worse: the notice is taller there because it wraps onto two
+  lines, and it hid the last button completely rather than just its lower edge.
+  Pages now keep enough space clear at the bottom for the notice, at every
+  screen size. Dismissing the notice was always a workaround and still is; you
+  no longer need it.
+
+- **The emergency "Restore Calibre Database (Last Resort)" button now actually
+  restores.** On Admin → Database Configuration, clicking it did nothing at all —
+  no message, no error, no restore. It was quietly saving the database settings
+  again instead, so anyone reaching for it during a real library corruption got
+  a button that looked like it worked and didn't. It now rebuilds your Calibre
+  database from the OPF files in your library, as the page describes. The rest of
+  the page is unchanged, and the Save button is unaffected. Spotted and diagnosed
+  upstream by @luisalduucin.
+
+- **Typing a page address with a slash on the end no longer gives you "404 Not
+  Found".** `/kosync/` failed while `/kosync` worked, and the same was true of
+  156 other pages — admin settings, your profile, statistics, search, the shelf
+  and author pages. Links inside the app were always fine, so this only bit
+  people who typed an address, bookmarked one, or followed a link from a forum
+  post that happened to end in a slash. Addresses that end in a slash now take
+  you to the page instead of an error, including behind a reverse proxy on a
+  sub-path. Reported by @iroQuai.
+- **The admin settings page no longer leaves one option in English.** With the
+  interface in another language, the "Default book language" dropdown still
+  opened on "Show All" while every other label on the page was translated. It
+  now reads in your own language — "Alle talen" in Dutch, "Montrer tout" in
+  French. The same dropdown in your account settings was already correct; both
+  pages now build it from one place, so they cannot drift apart again. Reported
+  by @iroQuai.
+- **The Upload button no longer disappears once you browse anywhere.** In the
+  new UI it only ever showed on the plain Library page, so the moment you opened
+  an author, a series, a tag, Hot, Discover, Top Rated or a book, there was no
+  way to add a book at all — the classic view keeps Upload in the toolbar on
+  every page. Upload now stays put while you browse, and it is also in the
+  account menu (next to Admin), so it is reachable from anywhere including on a
+  phone. Reported through the in-app feedback form.
+- **"Enable Uploads" now actually disables uploads.** Switching it off in Admin
+  hid the button in the classic view but nothing more — the new UI still offered
+  Upload, and the upload request still went through either way. The setting is
+  now enforced on the server and the button is hidden in both views. Uploading
+  stays on by default, so nothing changes unless you deliberately turned it off.
+
+## [v4.1.27] - 2026-08-02
+
+### Changed
+
+- **The admin "Version Information" table now reports the Calibre you are
+  actually running.** It used to show a value stamped into the image at build
+  time, so if the Calibre binaries had been replaced, or the converter path
+  pointed somewhere else, the number on the page was not the number in use.
+  It is now read from the binary itself — the same source the Statistics page
+  already used — and formatted as `v9.11.0` to match the rows above it. When
+  Calibre can't be found or can't be run, the row now says which of the two it
+  is instead of "Unknown". Thanks to @chloeroform for the change.
+
+- **The Kepubify row of that same table now reports the running binary too.**
+  It had the same problem for the same reason, and it was the more visible of
+  the pair: the Statistics page already read the real binary, so the two pages
+  could show different Kepubify versions on the same install with no way to
+  tell which one was right. Both now read the same source. As with Calibre, a
+  Kepubify that can't be found or can't be run says so rather than showing
+  "Unknown". Thanks again to @chloeroform.
+
+- **The Russian interface is complete again — the custom-columns section of the
+  edit-metadata screen now reads in Russian.** Three phrases there were still in
+  English on an otherwise fully Russian page: the "Custom columns" heading, the
+  "Not set" placeholder shown for an empty column, and the hint telling you a
+  field takes comma-separated values. Russian is back to every string
+  translated. Contributed by
+  [@standhaftsohnsergius](https://github.com/standhaftsohnsergius)
+  ([#1269](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1269)).
+
+### Fixed
+
+- **The "Duplicates found" popup kept naming books you had already deleted.**
+  If you removed duplicate copies in Calibre itself rather than in the web app,
+  the popup carried on listing them — while the Duplicates page and a fresh
+  scan both correctly reported nothing. The popup was reading a list saved at
+  the time of the last scan and never re-checked it against your actual
+  library, so it was the one place still remembering the deleted books. It now
+  re-checks before it shows, and a group whose books are gone (or archived, or
+  hidden from you) drops out. Groups that merely lost one copy now show the
+  real remaining count instead of the stale one. The sidebar duplicate badge
+  reads the same number, so it was wrong in the same way and is fixed too.
+
+- **A duplicate you dismissed could come back on its own.** Dismissals were
+  being matched against a label built from the title and author of whichever
+  copy happened to sort first, so editing a book's metadata — or importing
+  another copy — quietly changed the label and the dismissal stopped applying.
+  Dismissals now hold onto a stable identity that metadata edits don't move.
+  Thanks to @blahblah57, whose report on the duplicates popup led here.
 
 - **Marking a book unread left its "Started reading" and "Last synced" dates on
   the page.** The percentage cleared, but the two dates stayed — and "Last
@@ -704,8 +1980,6 @@ is for things you can see or feel when running the app.
 - **Reporting an issue from the new UI's Help menu now opens the bug-report form instead of a blank issue.** The "Report Issue on GitHub" link pointed at the blank-issue URL, so reporters landed on an empty textarea rather than the Bug report / Feature request templates defined in the repo. It now opens the issue-template chooser. Thanks to @auspex for the report ([#799](https://github.com/new-usemame/Calibre-Web-NextGen/issues/799)).
 - **The edit pencil on a book card can now be opened in a new tab.** In the new UI, the hover edit pencil on a book card was a button rather than a real link, so ⌘/ctrl-click (or middle-click) didn't open the editor in a new tab the way real links do — there was no `href` for the browser to open. The pencil is now a true link: a plain click still opens the editor in place (no full page reload), and a modified click opens it in a new tab. Thanks to @chloeroform for the report ([#798](https://github.com/new-usemame/Calibre-Web-NextGen/issues/798)).
 - **Hardcover metadata is fetched again when a book is auto-ingested.** After the v4.1.9 change that centralised how the Hardcover token is read, the automatic fetch that runs on ingest aborted with an internal error and skipped Hardcover — even with a `HARDCOVER_TOKEN` set — while manual "Fetch Metadata" kept working. The token is now read safely in the background ingest process, so a `HARDCOVER_TOKEN` (or `HARDCOVER_TOKEN_FILE`) in the environment is applied during ingest again. Thanks to @ghub3297 and @Glalith121 for the reports ([#819](https://github.com/new-usemame/Calibre-Web-NextGen/issues/819)).
-### Fixed
-
 - **Saving a cover for a PDF-only or other non-EPUB/AZW3 book no longer ends with a false enforcement error.** The metadata enforcer now preserves the successful cover save, refreshes the format-independent `metadata.opf` backup, and logs an informational note that only in-file embedding was skipped for the unsupported format (#797).
 - **Author-sort mismatch warnings now name the affected book and link straight to where you fix it.** The warning previously omitted the book title/ID and pointed at an author-admin screen that doesn't exist, so there was no clear way to act on it. It now names the book and gives the direct edit link (`/admin/book/<id>`): opening that page and re-saving the book's Authors field regenerates its author sort and clears the warning (or you can correct the book in Calibre). Thanks to @auspex for the report (#801).
 - **The classic book page's read checkbox now matches the book's actual state.** Unread books previously showed a checked box beside the “Mark As Read” action, while read books showed an empty box. The checkbox is now empty for unread and checked for read; its tooltip continues to describe what clicking will do (#771).

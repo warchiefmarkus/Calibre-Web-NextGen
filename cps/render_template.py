@@ -16,21 +16,96 @@ from sqlalchemy.sql.expression import or_
 from . import config, constants, deployment_profile, logger, ub
 from .ub import User
 from .duplicate_notice import duplicate_setup_notice_dismissed
+from .translation_notice import last_notified, record_notified
 
 # CWA specific imports
 from datetime import datetime
 import os.path
 
 import sys
-sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+sys.path.insert(1, constants.SCRIPTS_DIR)
 from cwa_db import CWA_DB
 
 
 log = logger.create()
 
+# Where the "update available" banner remembers the date it last fired, so it
+# can hold itself to once per calendar day.
+#
+# This has to live under /config. That is the declared VOLUME; /app is part of
+# the image and its writable layer is thrown away whenever the container is
+# recreated, which is precisely what a user does when they pull a new image.
+# Keeping the throttle there reset it at the one moment the banner had most
+# likely already been shown (#1333, @chloeroform). Siblings on the same volume:
+# cwa_ingest_status, cwa_ingest_retry_queue, and the logs.
+CWA_UPDATE_NOTICE_PATH = "/config/cwa_update_notice"
+
 
 def _duplicate_setup_notice_dismissed():
     return duplicate_setup_notice_dismissed(getattr(current_user, 'id', 'unknown'))
+
+
+def _build_duplicate_notification(duplicate_groups, user_id, notifications_enabled,
+                                  scan_pending=False):
+    """Build the "Duplicates found" popup payload from the duplicate cache.
+
+    ``cwa_duplicate_cache`` is serialized at scan time, so it does not reflect
+    books the user has since archived or hidden, or that were deleted from the
+    library entirely (e.g. in Calibre desktop). ``/duplicates/status`` already
+    re-validates it against the user's live view; this render path is the
+    cache's *second* consumer — injected into every classic page render — and
+    did not, so the popup kept naming books a fresh scan and the /duplicates
+    page both agreed were gone (fork #1167).
+
+    Route through the same two helpers the status endpoint uses so the two
+    consumers cannot drift again: ``filter_dismissed_groups`` (matches on the
+    stable ``duplicate_key``, not the volatile ``group_hash``) and then
+    ``filter_visible_duplicate_groups`` (drops groups with fewer than two books
+    still visible, and trims the count of those that merely shrank).
+
+    The import is deliberately lazy: ``cps.duplicates`` imports
+    ``render_title_template`` from this module, so a module-level import would
+    be circular.
+    """
+    payload = {
+        "enabled": bool(notifications_enabled),
+        "count": 0,
+        "preview": [],
+        "cached": True,
+        "stale": bool(scan_pending),
+    }
+    groups = duplicate_groups or []
+    # The two filters degrade independently and deliberately: a dismissal is an
+    # explicit user preference, so a failure in the (later, DB-heavier)
+    # visibility check must not discard it and resurrect groups the user
+    # already dismissed. Only a failure of the dismissal filter itself leaves
+    # the raw cache as the sole option.
+    try:
+        from .duplicates import filter_dismissed_groups
+        groups = filter_dismissed_groups(groups, user_id)
+    except Exception as e:
+        log.debug("[cwa-duplicates] Failed to filter dismissed duplicate groups: %s", str(e))
+        groups = duplicate_groups or []
+
+    try:
+        from .duplicates import filter_visible_duplicate_groups
+        groups = filter_visible_duplicate_groups(groups, user_id)
+    except Exception as e:
+        # This runs on every page render — keep the dismissal-filtered groups
+        # rather than 500-ing the whole site.
+        log.debug("[cwa-duplicates] Failed to re-validate duplicate cache: %s", str(e))
+
+    payload["count"] = len(groups)
+    payload["preview"] = [
+        {
+            'title': group.get('title', ''),
+            'author': group.get('author', ''),
+            'count': group.get('count', 0),
+            'hash': group.get('group_hash', ''),
+        }
+        for group in groups[:3]
+    ]
+    return payload
 
 
 def duplicate_index_setup_notification(settings, cwa_db=None):
@@ -245,12 +320,12 @@ def cwa_update_available() -> tuple[bool, str, str]:
 # Gets the date the last cwa update notification was displayed
 def get_cwa_last_notification() -> str:
     current_date = datetime.now().strftime("%Y-%m-%d")
-    if not os.path.isfile('/app/cwa_update_notice'):
-        with open('/app/cwa_update_notice', 'w') as f:
+    if not os.path.isfile(CWA_UPDATE_NOTICE_PATH):
+        with open(CWA_UPDATE_NOTICE_PATH, 'w') as f:
             f.write(current_date)
         return "0001-01-01"
     else:
-        with open('/app/cwa_update_notice', 'r') as f:
+        with open(CWA_UPDATE_NOTICE_PATH, 'r') as f:
             last_notification = f.read()
     return last_notification
 
@@ -292,7 +367,7 @@ def cwa_update_notification() -> None:
             flash(message, category="cwa_update")
             print(f"[cwa-update-notification-service] {message}", flush=True)
 
-        with open('/app/cwa_update_notice', 'w') as f:
+        with open(CWA_UPDATE_NOTICE_PATH, 'w') as f:
             f.write(current_date)
         return
     else:
@@ -321,39 +396,43 @@ def theme_migration_notification() -> None:
 # Checks if translations are missing for the current language
 def translations_missing_notification() -> None:
     db = CWA_DB()
-    if db.cwa_settings['contribute_translations_notifications']:
-        lang = str(get_locale())
-        # Skip English as it is the default language
-        if lang == 'en':
-            return
-        po_path = f"cps/translations/{lang}/LC_MESSAGES/messages.po"
-        current_date = datetime.now().strftime("%Y-%m-%d")
-        notice_file = f"/app/cwa_translation_notice_{lang}"
-        missing_count = 0
-        if os.path.isfile(po_path):
-            try:
-                po = polib.pofile(po_path)
-                missing_count = sum(1 for entry in po if not entry.msgstr.strip())
-            except Exception as e:
-                print(f"[translation-notification-service] Error reading {po_path}: {e}", flush=True)
-        if missing_count > 0:
-            if not os.path.isfile(notice_file):
-                with open(notice_file, 'w') as f:
-                    f.write(current_date)
-                last_notification = "0001-01-01"
-            else:
-                with open(notice_file, 'r') as f:
-                    last_notification = f.read().strip()
-            if last_notification != current_date:
-                message = _format_translation_missing_message(
-                    constants.LANGUAGE_NAMES.get(lang, lang), missing_count)
-                flash(message, category="translation_missing")
-                print(f"[translation-notification-service] {message}", flush=True)
-                with open(notice_file, 'w') as f:
-                    f.write(current_date)
+    if not db.cwa_settings['contribute_translations_notifications']:
         return
-    else:
+    lang = str(get_locale())
+    # Skip English as it is the default language
+    if lang == 'en':
         return
+    # Resolved from the package rather than the working directory: this only
+    # ever found the file because the s6 service cds into the app dir first.
+    #
+    # lang arrives straight from user.locale, which the self-service profile
+    # route stores without validating against the locales we ship, so it is not
+    # safe as a path segment. Require the resolved directory to be a direct
+    # child of TRANSLATIONS_DIR; anything else has no .po for us to count.
+    translations_dir = os.path.normpath(constants.TRANSLATIONS_DIR)
+    locale_dir = os.path.normpath(os.path.join(translations_dir, lang))
+    if os.path.dirname(locale_dir) != translations_dir:
+        return
+    po_path = os.path.join(locale_dir, 'LC_MESSAGES', 'messages.po')
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    missing_count = 0
+    if os.path.isfile(po_path):
+        try:
+            po = polib.pofile(po_path)
+            missing_count = sum(1 for entry in po if not entry.msgstr.strip())
+        except Exception as e:
+            print(f"[translation-notification-service] Error reading {po_path}: {e}", flush=True)
+    if missing_count <= 0:
+        return
+    # Once a day per locale. An unwritable state dir costs one repeat notice
+    # rather than a traceback on every render, which is what /app used to give.
+    if last_notified(lang) == current_date:
+        return
+    message = _format_translation_missing_message(
+        constants.LANGUAGE_NAMES.get(lang, lang), missing_count)
+    flash(message, category="translation_missing")
+    print(f"[translation-notification-service] {message}", flush=True)
+    record_notified(lang, current_date)
 
 # Returns the template for rendering and includes the instance name
 def _style_safe_css(value):
@@ -427,36 +506,12 @@ def render_title_template(*args, **kwargs):
                         "stale": True,
                     }
                 elif cache_data and cache_data.get('duplicate_groups') is not None:
-                    duplicate_groups = cache_data.get('duplicate_groups') or []
-                    try:
-                        dismissed_groups = ub.session.query(ub.DismissedDuplicateGroup.group_hash)\
-                            .filter(ub.DismissedDuplicateGroup.user_id == current_user.id)\
-                            .all()
-                        dismissed_hashes = {row[0] for row in dismissed_groups}
-                        if dismissed_hashes:
-                            duplicate_groups = [
-                                group for group in duplicate_groups
-                                if group.get('group_hash') not in dismissed_hashes
-                            ]
-                    except Exception:
-                        pass
-
-                    preview = []
-                    for group in duplicate_groups[:3]:
-                        preview.append({
-                            'title': group.get('title', ''),
-                            'author': group.get('author', ''),
-                            'count': group.get('count', 0),
-                            'hash': group.get('group_hash', '')
-                        })
-
-                    duplicate_notification = {
-                        "enabled": notifications_enabled,
-                        "count": len(duplicate_groups),
-                        "preview": preview,
-                        "cached": True,
-                        "stale": bool(cache_data.get('scan_pending')),
-                    }
+                    duplicate_notification = _build_duplicate_notification(
+                        cache_data.get('duplicate_groups') or [],
+                        getattr(current_user, 'id', None),
+                        notifications_enabled,
+                        scan_pending=bool(cache_data.get('scan_pending')),
+                    )
                 else:
                     duplicate_notification = {
                         "enabled": notifications_enabled,
@@ -472,6 +527,7 @@ def render_title_template(*args, **kwargs):
                        accept=config.config_upload_formats.split(','),
                        magic_shelf_routes=magic_shelf_routes,
                        duplicate_notification=duplicate_notification,
+                       mcp_managed_library=deployment_profile.is_mcp_managed_library(),
                        # Fork #225 (@froggybottomboys): server-wide announcement banner string;
                        # consumed in layout.html. Empty string = no banner.
                        server_announcement=(getattr(config, 'config_server_announcement', '') or ''),

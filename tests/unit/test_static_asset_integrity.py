@@ -290,8 +290,9 @@ def test_reader_position_saver_flushes_on_lifecycle_boundaries():
 def test_unified_reader_persists_positions_for_epub_and_fb2():
     """foliate-js owns both formats while preserving legacy FB2 fractions."""
     reader = (Path(FRONTEND_DIR) / "src/pages/Reader.tsx").read_text()
+    engine = (Path(FRONTEND_DIR) / "src/pages/reader/FoliateEngine.ts").read_text()
     native = (Path(FRONTEND_DIR) / "src/pages/NativeReader.tsx").read_text()
-    assert "foliate-view" in reader
+    assert "foliate-view" in engine
     assert "parseFb2ScrollBookmark" in reader
     assert "position_fraction" in reader
     assert "goToFraction" in reader
@@ -303,9 +304,13 @@ def test_unified_reader_persists_positions_for_epub_and_fb2():
 @pytest.mark.unit
 def test_unified_reader_has_navigation_search_and_synced_bookmarks():
     reader = (Path(FRONTEND_DIR) / "src/pages/Reader.tsx").read_text()
+    side = (Path(FRONTEND_DIR) / "src/pages/reader/ReaderSidePanel.tsx").read_text()
+    toolbar = (Path(FRONTEND_DIR) / "src/pages/reader/ReaderToolbar.tsx").read_text()
+    bottom = (Path(FRONTEND_DIR) / "src/pages/reader/ReaderBottomBar.tsx").read_text()
+    combined = reader + side + toolbar + bottom
     for token in ("Table of contents", "view.search", "useReaderBookmarks",
                   "useCreateReaderBookmark", "progressSlider", "SpeechSynthesisUtterance"):
-        assert token in reader
+        assert token in combined
 
 
 @pytest.mark.unit
@@ -313,8 +318,8 @@ def test_unified_reader_has_optional_tap_zones_and_dismisses_selection_on_naviga
     reader = (Path(FRONTEND_DIR) / "src/pages/Reader.tsx").read_text()
     css = (Path(FRONTEND_DIR) / "src/pages/Reader.module.css").read_text()
     assert "settings?.tapToTurn" in reader
-    assert "navigate('left')" in reader
-    assert "navigate('right')" in reader
+    assert "navigateReader('left')" in reader
+    assert "navigateReader('right')" in reader
     assert "dismissSelection();" in reader
     assert ".tapZone" in css
     assert "padding-inline-end: 38px" in css

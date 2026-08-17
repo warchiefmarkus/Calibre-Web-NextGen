@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import { Link, useParams, useLocation } from 'wouter';
-import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, BookOpen, Trash2, RefreshCw, ExternalLink } from 'lucide-react';
+import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, Trash2, RefreshCw, Cloud } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faOpenai } from '@fortawesome/free-brands-svg-icons';
 import {
   useBook, useToggleRead, useToggleFavorite, useToggleArchived, useToggleHidden,
   useSendToEreader, useMe, useAccount, useUpdateMetadata, useDeleteBook, useReloadMetadata,
-  useBookOcrStatus, useStartBookOcr,
+  useBookOcrStatus, useStartBookOcr, useExternalBookRatings,
+  useRefreshExternalBookRatings, useStartBookMoonReaderSync,
+  useBookShelves, useShelves,
 } from '../lib/queries';
 import { MetadataTypeahead } from '../components/MetadataTypeahead';
 import { Pill } from '../components/Pill';
@@ -18,7 +22,12 @@ import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef } from
 import { ApiError, resourceUrl } from '../lib/api';
 import { useT } from '../lib/i18n';
 import { getPrimaryReadTarget } from '../lib/readerTarget';
+import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
+import { CoverProgressBadge } from '../components/CoverProgressBadge';
+import { formatReadingProgress } from '../lib/readerProgress';
 import styles from './BookDetail.module.css';
+import { useCardActionsHidden } from '../lib/useCardActionsHidden';
+import { BookUserNotices } from '../components/UserNotices';
 
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -47,6 +56,78 @@ function formatDate(date: string, alwaysReturnFullDate = false): string {
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
   }
   return date;
+}
+
+function ExternalRatingsPanel({ bookId }: { bookId: number }) {
+  const t = useT();
+  const ratings = useExternalBookRatings(bookId);
+  const refresh = useRefreshExternalBookRatings(bookId);
+  const number = new Intl.NumberFormat();
+  const items = ratings.data?.items ?? [];
+  const backgroundRefreshing = ratings.data?.refreshing === true;
+  const ratingBusy = refresh.isPending || backgroundRefreshing;
+  const error = refresh.error ?? ratings.error;
+
+  return (
+    <div className={styles.externalRatings} aria-live="polite">
+      {items.map((item) => {
+        const source = EXTERNAL_RATING_SOURCE_LABELS[item.source] ?? item.source;
+        const score = item.rating != null ? formatExternalRatingScore(item.rating) : null;
+        const content = (
+          <>
+            <span className={styles.externalRatingMain}>
+              {score != null && (
+                <strong className={styles.externalRatingScore}>
+                  <Star size={14} fill="currentColor" aria-hidden="true" />
+                  {score}
+                </strong>
+              )}
+              <span className={styles.externalRatingSourceName}>{source}</span>
+            </span>
+            <span className={styles.externalRatingStats}>
+              {item.ratings_count != null && (
+                <span>{t('Ratings: {count}', { count: number.format(item.ratings_count) })}</span>
+              )}
+              {item.reviews_count != null && (
+                <span>{t('Reviews: {count}', { count: number.format(item.reviews_count) })}</span>
+              )}
+            </span>
+          </>
+        );
+        return item.source_url ? (
+          <a className={styles.externalRatingBadge} href={item.source_url}
+            target="_blank" rel="noopener noreferrer" key={item.source}>
+            {content}
+          </a>
+        ) : (
+          <span className={styles.externalRatingBadge} key={item.source}>{content}</span>
+        );
+      })}
+
+      {!ratings.isLoading && items.length === 0 && !error && (
+        <span className={styles.externalRatingsStatus}>
+          {backgroundRefreshing ? t('Loading ratings…') : t('No external ratings found.')}
+        </span>
+      )}
+
+      <button type="button" className={styles.externalRatingsRefresh}
+        title={ratingBusy ? t('Loading ratings…') : t('Refresh ratings')}
+        aria-label={ratingBusy ? t('Loading ratings…') : t('Refresh ratings')}
+        aria-busy={ratingBusy}
+        disabled={ratingBusy}
+        onClick={() => refresh.mutate()}>
+        {ratingBusy
+          ? <Spinner size={14} />
+          : <RefreshCw size={14} aria-hidden="true" />}
+      </button>
+
+      {error && (
+        <span className={styles.externalRatingsError} role="alert">
+          {error instanceof Error ? error.message : t('Could not load external ratings.')}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function formatCustomValue(column: CustomColumn, entry: CustomColumnValue, yes: string, no: string): string {
@@ -244,6 +325,7 @@ function TagEditor({ bookId, tags, canEdit }:
 }
 
 export function BookDetail() {
+  const [cardActionsHidden] = useCardActionsHidden();
   const t = useT();
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -256,6 +338,7 @@ export function BookDetail() {
   const sendToEreader = useSendToEreader(id);
   const deleteBook = useDeleteBook(id);
   const reloadMetadata = useReloadMetadata(id);
+  const moonBookSync = useStartBookMoonReaderSync(id);
   const [, navigate] = useLocation();
   const me = useMe().data;
   // The send-to-e-reader button only renders when mail is configured + the user
@@ -274,6 +357,11 @@ export function BookDetail() {
   );
   const ocrStatus = useBookOcrStatus(id, canRunOcr);
   const startOcr = useStartBookOcr(id);
+  // Shelf membership for the metadata list (#1254). Both queries are already
+  // in flight for the always-rendered AddToShelf popover below and share its
+  // cache keys, so reading them here costs no extra request.
+  const shelfMembership = useBookShelves(id).data;
+  const visibleShelves = useShelves().data;
 
   if (isLoading) return <SpinnerCentered size={40} />;
   if (error || !book) {
@@ -286,6 +374,17 @@ export function BookDetail() {
   }
 
   const primaryReadTarget = getPrimaryReadTarget(book.id, book.formats.map((f) => f.format));
+  const unifiedProgress = book.reading_progress && Number.isFinite(book.reading_progress.percentage)
+    ? Math.max(0, Math.min(100, book.reading_progress.percentage))
+    : book.kosync_progress != null && Number.isFinite(book.kosync_progress)
+      ? Math.max(0, Math.min(100, book.kosync_progress))
+      : null;
+  const unifiedProgressTime = book.reading_progress?.updated_at
+    ? new Date(book.reading_progress.updated_at)
+    : null;
+  const unifiedProgressTimeText = unifiedProgressTime && !Number.isNaN(unifiedProgressTime.getTime())
+    ? unifiedProgressTime.toLocaleString()
+    : book.reading_progress?.updated_at ?? null;
   const currentOcr = ocrStatus.data;
   const ocrBusy = startOcr.isPending || (
     !!currentOcr && !currentOcr.terminal &&
@@ -314,9 +413,17 @@ export function BookDetail() {
     );
   };
 
+  // The membership endpoint returns ids only, and both it and the shelf list
+  // apply the same server-side visibility filter (own shelves + public ones),
+  // so every id here resolves to a name the caller is allowed to see.
+  const onShelfIds = new Set(shelfMembership?.shelf_ids ?? []);
+  const bookShelves = (visibleShelves?.items ?? []).filter((s) => onShelfIds.has(s.id));
+
   return (
     <main className={styles.container}>
       <Link href="/" className={styles.back}>{t('← Library')}</Link>
+
+      <BookUserNotices bookId={book.id} />
 
       <div className={styles.layout}>
         {/* LEFT: cover */}
@@ -346,11 +453,7 @@ export function BookDetail() {
                   <span className={styles.coverFallbackMark} aria-hidden="true">NextGen</span>
                 </div>
               )}
-              {primaryReadTarget && (
-                <span className={styles.coverReadHint} aria-hidden="true">
-                  <BookOpen size={17} /> {t('Read now')}
-                </span>
-              )}
+              <CoverProgressBadge progress={book.reading_progress} side="right" />
             </button>
             {me?.role?.edit && (
               <Link href={`/book/${book.id}/cover`} className={styles.changeCover}>
@@ -363,9 +466,12 @@ export function BookDetail() {
         {/* RIGHT: info */}
         <div className={styles.infoCol}>
           <div>
-            <h1 className={styles.title}>{book.title}</h1>
+            {/* dir="auto" per field (#1073): direction follows each string's own
+                first strong character, so a Hebrew title and a Latin series name
+                on the same page each render correctly. */}
+            <h1 className={styles.title} dir="auto">{book.title}</h1>
             {book.authors.length > 0 && (
-              <p className={styles.authors}>
+              <p className={styles.authors} dir="auto">
                 {book.authors.map((a, i) => (
                   <span key={a.id}>
                     {i > 0 && AUTHOR_SEPARATOR}
@@ -375,7 +481,7 @@ export function BookDetail() {
               </p>
             )}
             {book.series && (
-              <p className={styles.series}>
+              <p className={styles.series} dir="auto">
                 <Link href={`/series/${book.series.id}`} className={styles.metaLink}>
                   {book.series.name}
                 </Link>
@@ -391,27 +497,33 @@ export function BookDetail() {
                 <StarRating rating={book.rating} size={16} />
               </div>
             )}
-            {/* Passive "currently reading" marker (fork #634) — mirrors the classic
-                detail page. Sync-driven display only; the read toggle below stays a
-                2-state read/unread control. Shows the synced percent when known. */}
-            {book.in_progress && (
+            {/* Keep the original NextGen progress presentation, but feed it the
+                newest unified Moon+/Calibre-Web progress carrier. */}
+            {(unifiedProgress != null || book.in_progress) && (
               <div className={styles.readProgressWrap}>
                 <p className={styles.currentlyReading}>
-                  <BookOpen size={14} aria-hidden="true" focusable={false} />
-                  {book.kosync_progress != null
-                    ? `${t('Currently reading')} · ${Math.round(book.kosync_progress)}%`
+                  {unifiedProgress != null
+                    ? `${t('Currently reading')} · ${formatReadingProgress(unifiedProgress)}%`
                     : t('Currently reading')}
                 </p>
-                {book.kosync_progress != null && (
+                {unifiedProgress != null && (
                   <div className={styles.readProgress} role="progressbar"
                     aria-label={t('Reading progress')} aria-valuemin={0} aria-valuemax={100}
-                    aria-valuenow={Math.round(book.kosync_progress)}>
-                    <span style={{ width: `${Math.max(0, Math.min(100, book.kosync_progress))}%` }} />
+                    aria-valuenow={Math.round(unifiedProgress)}>
+                    <span style={{ width: `${unifiedProgress}%` }} />
                   </div>
+                )}
+                {unifiedProgressTimeText && (
+                  <time className={styles.readProgressTime}
+                    dateTime={book.reading_progress?.updated_at ?? undefined}>
+                    {unifiedProgressTimeText}
+                  </time>
                 )}
               </div>
             )}
           </div>
+
+          <ExternalRatingsPanel bookId={book.id} />
 
           {/* Actions */}
           <div className={styles.actions}>
@@ -430,9 +542,31 @@ export function BookDetail() {
               aria-label={`ChatGPT: Порекомендуй схожі книги — ${book.title}`}
               data-testid="chatgpt-similar-books"
             >
-              <ExternalLink size={14} aria-hidden="true" focusable={false} />
+              <FontAwesomeIcon icon={faOpenai} className={styles.chatGptIcon} aria-hidden="true" />
               ChatGPT
             </a>
+
+            <button
+              type="button"
+              className={styles.moonSyncBtn}
+              onClick={() => moonBookSync.mutate()}
+              disabled={moonBookSync.isPending}
+              title={moonBookSync.isError
+                ? (moonBookSync.error instanceof ApiError ? moonBookSync.error.message : t('Moon+ Reader operation failed.'))
+                : t('Moon+ Reader sync')}
+              aria-label={t('Moon+ Reader sync')}
+              aria-busy={moonBookSync.isPending}
+              data-testid="moonreader-book-sync"
+            >
+              {moonBookSync.isPending ? (
+                <Spinner size={16} />
+              ) : (
+                <span className={styles.moonSyncIcon} aria-hidden="true">
+                  <Cloud size={19} strokeWidth={1.9} />
+                  <RefreshCw size={10} strokeWidth={2.4} className={styles.moonSyncArrows} />
+                </span>
+              )}
+            </button>
 
             <button
               className={book.read ? styles.readToggleActive : styles.readToggleGhost}
@@ -474,13 +608,20 @@ export function BookDetail() {
                 href={resourceUrl(fmt.download_url)}
                 className={styles.downloadBtn}
                 download
-                // iOS Safari ignores the `download` hint and the server serves book
-                // files with `Content-Disposition: inline` (needed for byte-range /
-                // in-browser reading), so a same-tab tap navigates the SPA away to a
-                // file the browser can't render — stranding the user on a dead page
-                // until they force-restart (#716). Opening in a new tab preserves the
-                // app tab; desktop browsers still honour `download` and don't spawn a
-                // stray tab. `noopener` keeps the download context from reaching back.
+                // NOTE: the comment that used to sit here said this route serves
+                // `Content-Disposition: inline`. That is wrong, and it sent #717 after
+                // the wrong fix. `download_url` hits cps/helper.py get_download_link,
+                // which sets `attachment`; `inline` is on the reader route `/show/`
+                // (cps/web.py). The download itself works — #716 is that an iOS
+                // standalone Home Screen app has no browser chrome, so a top-level
+                // navigation to an attachment leaves the user with no way back.
+                //
+                // `target` below is therefore inert on this element: per the HTML
+                // "following hyperlinks" algorithm, a present `download` attribute
+                // means the UA downloads and never consults `target`. It is left in
+                // place only because removing it is a behaviour change that needs a
+                // real standalone iOS run to verify, which #716 is still blocked on.
+                // Full diagnosis and the reproduction plan are on issue #716.
                 target="_blank"
                 rel="noopener"
               >
@@ -507,9 +648,19 @@ export function BookDetail() {
                   <Pencil size={14} aria-hidden="true" focusable={false} />
                   {t('Edit')}
                 </Link>
+                {/* Destructive: reload overwrites whatever the user curated here with
+                    what the file on disk says, and there is no undo. It sits in the
+                    same row as the per-format download buttons, so it was being hit
+                    by accident while reaching for a download (#1496, @JamesHACS).
+                    Every other destructive action in the SPA confirms first; this was
+                    the one that didn't. */}
                 <button type="button" className={styles.downloadBtn}
                   disabled={reloadMetadata.isPending}
                   onClick={() => {
+                    if (reloadMetadata.isPending) return;
+                    if (!window.confirm(
+                      t('Reload metadata for "{title}" from the file on disk? Any title, author or series you edited here is replaced by what the file contains. This cannot be undone.', { title: book.title })
+                    )) return;
                     setReloadMessage('');
                     reloadMetadata.mutate(undefined, {
                       onSuccess: (result) => setReloadMessage(result.message),
@@ -693,26 +844,6 @@ export function BookDetail() {
                 <dd className={styles.metaValue}>{book.original_filename}</dd>
               </>
             )}
-            {book.kosync_progress != null && (
-              <>
-                <dt className={styles.metaLabel}>{t('KOReader Progress')}</dt>
-                <dd className={styles.metaValue}>{book.kosync_progress.toFixed(1)}%</dd>
-              </>
-            )}
-            {book.kosync_progress_created_at !== null && (
-              <>
-                <dt className={styles.metaLabel} title={t('When reading progress was first synced')}>
-                  {t('Started reading')}
-                </dt>
-                <dd className={styles.metaValue}>{formatDate(book.kosync_progress_created_at, true)}</dd>
-              </>
-            )}
-            {book.kosync_progress_timestamp !== null && (
-              <>
-                <dt className={styles.metaLabel}>{t('Last synced')}</dt>
-                <dd className={styles.metaValue}>{formatDate(book.kosync_progress_timestamp, true)}</dd>
-              </>
-            )}
             {book.pubdate && (
               <>
                 <dt className={styles.metaLabel}>{t('Published')}</dt>
@@ -757,6 +888,22 @@ export function BookDetail() {
                 </dd>
               </>
             )}
+            {bookShelves.length > 0 && (
+              <>
+                {/* Always the plural msgid: "Shelf" is translated in no locale
+                    today, so a count-switched label would render English for a
+                    single shelf everywhere. */}
+                <dt className={styles.metaLabel}>{t('Shelves')}</dt>
+                <dd className={styles.metaValue} data-testid="book-shelves">
+                  {bookShelves.map((s, i) => (
+                    <span key={s.id}>
+                      {i > 0 && ', '}
+                      <Link href={`/shelf/${s.id}`} className={styles.metaLink}>{s.name}</Link>
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
             {book.identifiers.map((id, i) => (
               <Fragment key={`id-${i}`}>
                 <dt className={styles.metaLabel}>{id.label || id.type.toUpperCase()}</dt>
@@ -770,7 +917,7 @@ export function BookDetail() {
             {(book.custom_columns ?? []).map((column) => (
               <Fragment key={`custom-${column.id}`}>
                 <dt className={styles.metaLabel}>{column.name}</dt>
-                <dd className={styles.metaValue}>
+                <dd className={styles.metaValue} dir="auto">
                   {column.datatype === 'comments' && column.values[0]?.value_html ? (
                     <span
                       // value_html is sanitized by the API serializer.
@@ -790,6 +937,7 @@ export function BookDetail() {
           {book.description_html && (
             <div
               className={styles.description}
+              dir="auto"
               // description_html is sanitized server-side in serialize_book_detail
               // (cps/clean_html.clean_string — bleach/nh3 allowlist, same as the
               // legacy templates), so it is safe to render here.
@@ -806,6 +954,7 @@ export function BookDetail() {
           refetches; renders nothing when the author has no other titles. */}
       {book.authors.length > 0 && (
         <MoreByAuthor
+          hideActions={cardActionsHidden}
           key={book.id}
           authorId={book.authors[0].id}
           authorName={book.authors[0].name}

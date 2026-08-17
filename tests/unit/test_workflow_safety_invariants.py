@@ -832,14 +832,30 @@ _DETECT_MATRIX = [
     (["tests/integration/test_ingest_flow.py"], "true", "false"),
     # tests.yml houses both harnesses' setup, so it is relevant to both.
     ([".github/workflows/tests.yml"], "true", "true"),
+    # Application Python. This row used to expect "false" on the theory that
+    # only build *definitions* can break the image. #1438 disproved it: a
+    # cleanup in cps/web.py referenced a constant it never imported, which is
+    # invisible at import time, so every unit test passed, the container
+    # booted, and /health then answered 503 forever. Integration Tests caught
+    # it and was advisory, so the summary reported that failure as a pass.
+    # integration-tests is still the only job that boots the container, and
+    # app code can stop it booting as dead as a bad Dockerfile.
+    (["cps/admin.py"], "true", "false"),
+    (["cps/services/cover_picker.py"], "true", "false"),
     # Negative cases — these must NOT pay the ~15-minute Docker build.
-    (["cps/admin.py"], "false", "false"),
     (["README.md"], "false", "false"),
     # The requirements pattern was widened to catch optional-requirements.txt;
     # pin that the widening stays bounded to the repo root, where the image's
     # pip install reads from. A nested one is not a build input.
     (["docs/requirements.txt"], "false", "false"),
+    # The cps/ gate above is scoped to .py deliberately. Locale catalogues are
+    # tier-1 auto-merge PRs and a malformed one already fails Fast Tests via
+    # test_translations_compile.py, so sending them through a full image build
+    # would buy nothing and stall every translation PR behind it. Same for
+    # templates and static assets, which cannot stop the container booting.
     (["cps/translations/de/LC_MESSAGES/messages.po"], "false", "false"),
+    (["cps/templates/index.html"], "false", "false"),
+    (["cps/static/css/style.css"], "false", "false"),
     (["frontend/src/App.tsx"], "false", "true"),
     # Mixed PR: one build-relevant path anywhere in the diff is enough.
     (["README.md", "Dockerfile"], "true", "false"),
@@ -865,8 +881,10 @@ def test_changed_paths_classifies_build_definition_edits(changed, want_build, wa
     )
     assert out["build"] == want_build, (
         f"changed={changed} → build={out['build']!r}, expected {want_build!r}. "
-        "A Dockerfile/requirements/integration-suite edit must run the Docker "
-        "integration job; anything else must not pay for it."
+        "A Dockerfile/requirements/root/integration-suite edit, or any change "
+        "to application Python under cps/, must run the Docker integration "
+        "job — it is the only one that boots the container. Non-Python cps/ "
+        "assets and everything else must not pay for it."
     )
     assert out["frontend"] == want_frontend, (
         f"changed={changed} → frontend={out['frontend']!r}, expected {want_frontend!r}"
@@ -1073,3 +1091,314 @@ def test_ci_image_build_never_selects_the_mirror_without_credentials():
         "build that can still select the private mirror is the exact shape "
         "that broke release dry-runs"
     )
+
+
+# --- Layer 2 promotion: the SPA e2e suite must actually gate (#1130) ---------
+
+
+def _run_summary_script(
+    summary: dict, results: dict, env: dict, event_name: str = "pull_request"
+) -> tuple[int, str]:
+    """Execute the Test Suite Summary script the way Actions would.
+
+    `${{ needs.<job>.result }}` is replaced with the supplied result (anything
+    unspecified defaults to `success`, i.e. the job passed), and the `IS_*`
+    predicates are passed as real environment variables — which is how the
+    workflow already supplies them. Returns (exit code, combined output).
+
+    Running the script beats grepping it: the gate is a shell decision, and
+    only executing it proves which way the decision goes.
+    """
+    step = next(
+        (s for s in _steps(summary) if "needs.e2e-tests.result" in str(s.get("run", ""))),
+        None,
+    )
+    assert step is not None, "summary must have a step that reads needs.e2e-tests.result"
+    script = str(step["run"])
+
+    def _sub(match: "re.Match[str]") -> str:
+        return results.get(match.group(1), "success")
+
+    script = re.sub(r"\$\{\{\s*needs\.([a-z0-9_-]+)\.result\s*\}\}", _sub, script)
+    script = re.sub(r"\$\{\{\s*github\.event_name\s*\}\}", event_name, script)
+    # Any remaining ${{ … }} would be an unmodelled input; surface it loudly
+    # rather than letting bash interpret it as a brace expansion.
+    leftover = re.findall(r"\$\{\{.*?\}\}", script)
+    assert not leftover, f"unmodelled workflow expressions in the summary script: {leftover}"
+
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        env={**os.environ, **env},
+    )
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def test_e2e_actually_blocks_frontend_prs():
+    """Running is not gating — the same lesson integration-tests learned.
+
+    The SPA e2e matrix is Layer 2 of the verification system. It ran on every
+    frontend PR while `continue-on-error` was a blanket
+    `github.event_name == 'pull_request'`, so a fully red suite reported a
+    green job and `needs.e2e-tests.result` came back `success`. #1130 is the
+    write-up: 19 specs failed on every run for weeks and nobody saw them,
+    which made the "earn the release" gate decorative rather than protective.
+
+    The suite has since been repaired and is green (9 consecutive runs
+    including the v4.1.25 and v4.1.26 tag runs), so it has earned the
+    promotion the original comment asked for. Forks stay advisory — see the
+    tripwire below.
+    """
+    wf = _load(WF_DIR / "tests.yml")
+    job = (wf.get("jobs") or {}).get("e2e-tests")
+    assert isinstance(job, dict), "tests.yml must define an e2e-tests job"
+
+    coe = str(job.get("continue-on-error", ""))
+    assert coe.strip() != "${{ github.event_name == 'pull_request' }}", (
+        "e2e-tests is advisory for EVERY pull request. A frontend PR that "
+        "breaks the SPA reports a green job and merges. That is the exact "
+        "hole #1130 exists to close."
+    )
+    assert "fork" in coe, (
+        "the e2e advisory carve-out must be scoped to fork PRs (which have no "
+        "run history to justify hard-gating), not to all pull requests"
+    )
+
+
+def test_summary_hard_fails_on_red_e2e_for_frontend_prs():
+    """Layer 3: the summary is the check branch protection reads.
+
+    Even with the job promoted, the summary used to swallow the result:
+
+        if [[ "${{ needs.e2e-tests.result }}" == "failure" ]]; then
+          echo "⛔ E2E tests failed - do not release!"
+          # Don't fail the summary, just warn.
+        fi
+
+    `Test Suite Summary` is the single required check, and auto-merge.yml
+    fires on it. Warning-and-continuing means a red SPA suite still satisfies
+    merge-gate condition (a). Both layers have to agree or the gate reports
+    its own failure as a pass.
+    """
+    wf = _load(WF_DIR / "tests.yml")
+    jobs = wf.get("jobs") or {}
+    summary = next(
+        (j for name, j in jobs.items() if isinstance(j, dict) and j.get("name") == "Test Suite Summary"),
+        None,
+    )
+    assert summary is not None, "tests.yml must define a Test Suite Summary job"
+
+    env_blob = "\n".join(str((s.get("env") or {})) for s in _steps(summary))
+    assert "needs.changed_paths.outputs.frontend" in env_blob, (
+        "Test Suite Summary never consults `frontend`, so it cannot tell a "
+        "frontend PR from a .po-only one and treats every red e2e result as "
+        "advisory."
+    )
+
+    # Behavioural, not a source pin. An earlier version of this test scraped
+    # the script for `exit 1` near the e2e branch and passed against the
+    # warn-only original, because the regex ran on to fast-tests' exit. So run
+    # the real script instead: substitute the job results GitHub would
+    # interpolate and assert the exit code the gate is supposed to produce.
+    for scenario, results, env, want_rc, why in [
+        (
+            "frontend PR from this repo, SPA suite red",
+            {"e2e-tests": "failure"},
+            {"IS_FRONTEND_PR": "true"},
+            1,
+            "a broken SPA must block the merge — this is the whole of #1130",
+        ),
+        (
+            "fork frontend PR / main push, SPA suite red",
+            {"e2e-tests": "failure"},
+            {"IS_FRONTEND_PR": "false"},
+            0,
+            "forks and main pushes stay advisory; failing them would block "
+            "community PRs and auto-revert decisions",
+        ),
+        (
+            "frontend PR, SPA suite green",
+            {"e2e-tests": "success"},
+            {"IS_FRONTEND_PR": "true"},
+            0,
+            "a green suite must not block",
+        ),
+        (
+            "translations-only PR, e2e skipped entirely",
+            {"e2e-tests": "skipped"},
+            {"IS_FRONTEND_PR": "false"},
+            0,
+            "`skipped` is not `failure` — a .po-only PR must not be gated on a "
+            "job that never ran",
+        ),
+    ]:
+        rc, out = _run_summary_script(summary, results, env)
+        assert rc == want_rc, (
+            f"{scenario}: expected exit {want_rc}, got {rc}. {why}\n--- output ---\n{out}"
+        )
+
+
+def test_summary_fails_when_path_detection_itself_failed():
+    """The gates are only as trustworthy as the job they derive from.
+
+    `IS_BUILD_PR` and `IS_FRONTEND_PR` are both computed from
+    `needs.changed_paths.outputs.*`. When that job fails its outputs come back
+    empty, so every dependent job's `if:` evaluates false, both predicates read
+    false, and the summary would report a green required check having gated
+    nothing — "we could not tell what changed" silently becoming "nothing
+    changed". That is the #1130 failure class one level up, and it disables the
+    build gate as well as the SPA one.
+
+    Surfaced by a cross-family review pass on PR #1281.
+    """
+    wf = _load(WF_DIR / "tests.yml")
+    jobs = wf.get("jobs") or {}
+    summary = next(
+        (j for name, j in jobs.items() if isinstance(j, dict) and j.get("name") == "Test Suite Summary"),
+        None,
+    )
+    assert summary is not None, "tests.yml must define a Test Suite Summary job"
+
+    rc, out = _run_summary_script(
+        summary, {"changed_paths": "failure"}, {"IS_FRONTEND_PR": "false", "IS_BUILD_PR": "false"}
+    )
+    assert rc == 1, (
+        "changed_paths failed on a PR and the summary still went green. Both "
+        f"path-derived gates were silently disabled.\n--- output ---\n{out}"
+    )
+
+    # A push/tag run has no changed_paths job at all (it is `if:`-gated to
+    # pull_request), so `skipped` there must stay benign — otherwise every
+    # main push and every release tag fails this summary.
+    rc, out = _run_summary_script(
+        summary,
+        {"changed_paths": "skipped"},
+        {"IS_FRONTEND_PR": "false", "IS_BUILD_PR": "false"},
+        event_name="push",
+    )
+    assert rc == 0, (
+        "a push/tag run must not be failed by changed_paths being skipped — it "
+        f"is PR-only by design.\n--- output ---\n{out}"
+    )
+
+
+def test_fork_prs_run_e2e_but_do_not_hard_gate_on_it_yet():
+    """Fork frontend PRs must RUN the suite but not block on it yet.
+
+    Same reasoning as the integration-tests tripwire: the job pulls a
+    published image and overlays the PR's own SPA bundle, and no fork PR has
+    exercised that path yet (#1274, the only recent fork PR, touched no
+    frontend files and skipped the job). Hard-gating on an unmeasured
+    infrastructure path would block community contributions for a reason
+    unrelated to their change. Excluding forks from the `if:` instead would
+    restore the original hole for exactly the contributions that need the
+    check most.
+
+    If someone widens the hard gate to forks, they must come here and record
+    why it is now safe.
+    """
+    wf = _load(WF_DIR / "tests.yml")
+    job = (wf.get("jobs") or {}).get("e2e-tests")
+
+    condition = str(job.get("if") or "")
+    assert "fork" not in condition, (
+        "e2e-tests must still RUN on fork frontend PRs — surfacing the result "
+        "is the point; only the hard gate is deferred"
+    )
+
+    coe = str(job.get("continue-on-error", ""))
+    assert "fork" in coe, (
+        "fork PRs must stay advisory until a real fork run shows the "
+        "image-pull + bundle-overlay path works without repo secrets"
+    )
+
+
+# ─── Wall 11: failure evidence actually gets uploaded ──────────────────
+#
+# `actions/upload-artifact` skips hidden files unless told otherwise, and
+# "hidden" includes any path component starting with a dot. The SPA e2e
+# job uploads `frontend/e2e/.report` + `frontend/e2e/.results` — both
+# dot-directories — so the step ran on every failed run and uploaded
+# nothing but a "No files were found with the provided path" warning.
+# The gate could fail and never say why: no HTML report, no screenshot,
+# no trace, no video. Each hypothesis then cost a full CI round trip.
+#
+# This is the "gate with no signal" class from notes/verify: a check that
+# can block a merge has to be able to explain itself.
+
+
+def _artifact_paths(step: dict) -> list[str]:
+    raw = (step.get("with") or {}).get("path")
+    if raw is None:
+        return []
+    return [line.strip() for line in str(raw).splitlines() if line.strip()]
+
+
+def _has_hidden_component(path: str) -> bool:
+    """True when any component of the path starts with a dot.
+
+    `.report`, `a/.results/**` → hidden. `./out`, `..`, `x.y` → not.
+    """
+    return any(
+        part.startswith(".") and part not in (".", "..")
+        for part in path.replace("\\", "/").split("/")
+    )
+
+
+def test_upload_artifact_with_hidden_paths_includes_hidden_files():
+    """Any upload whose path reaches into a dot-directory must set
+    `include-hidden-files: true`, or it silently uploads nothing."""
+    offenders = []
+    for path in all_workflows():
+        wf = _load(path)
+        for job_name, step in _every_step(wf):
+            uses = str(step.get("uses") or "")
+            if not uses.startswith("actions/upload-artifact"):
+                continue
+            hidden = [p for p in _artifact_paths(step) if _has_hidden_component(p)]
+            if not hidden:
+                continue
+            flag = (step.get("with") or {}).get("include-hidden-files")
+            if str(flag).lower() not in ("true", "yes", "on"):
+                offenders.append(
+                    f"{path.name}:{job_name}:{step.get('name') or uses} "
+                    f"uploads hidden path(s) {hidden} without include-hidden-files: true"
+                )
+    assert not offenders, (
+        "upload-artifact skips dot-directories by default, so these steps upload "
+        "nothing and the failure they were meant to explain stays invisible: "
+        f"{offenders}"
+    )
+
+
+def test_spa_e2e_uploads_its_playwright_report():
+    """Pin the specific artifact the e2e gate needs to be debuggable.
+
+    Not just "some upload exists" — the report AND the per-test results
+    directory (screenshots, traces, video) have to be in it, on
+    `if: always()` so a failing run is the one that keeps them.
+    """
+    wf = _load(WF_DIR / "tests.yml")
+    steps = [s for _, s in _every_step(wf)
+             if str(s.get("uses") or "").startswith("actions/upload-artifact")
+             and (s.get("with") or {}).get("name") == "playwright-report"]
+    assert steps, "the SPA e2e job must upload a playwright-report artifact"
+
+    for step in steps:
+        paths = _artifact_paths(step)
+        assert any(p.endswith("e2e/.report") for p in paths), (
+            f"playwright-report upload must include the HTML report; got {paths}"
+        )
+        assert any(p.endswith("e2e/.results") for p in paths), (
+            "playwright-report upload must include e2e/.results — that is where "
+            f"screenshots, traces and video live; got {paths}"
+        )
+        assert str((step.get("with") or {}).get("include-hidden-files")).lower() == "true", (
+            "both paths are dot-directories; without include-hidden-files the "
+            "artifact is empty"
+        )
+        assert "always()" in str(step.get("if") or ""), (
+            "the upload must run on failure — that is the only run whose "
+            "evidence anyone needs"
+        )

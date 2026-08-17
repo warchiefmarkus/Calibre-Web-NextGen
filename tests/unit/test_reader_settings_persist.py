@@ -1,6 +1,6 @@
 """Per-user web-reader display settings (task #31).
 
-Reader settings (theme/font/fontSize/spread/flow/reflow/margin/lineHeight/column width/tap zones) are persisted under
+Reader settings (theme/font/fontSize/spread/flow/reflow/margin/lineHeight/column width/justification/tap zones) are persisted under
 view_settings['reader'] so they follow a user across devices. sanitize_reader_settings()
 is the gate that keeps a crafted POST from storing junk on the user row — pin
 its whitelist + clamping. RED on main (the function doesn't exist there); GREEN
@@ -18,13 +18,15 @@ def test_keeps_each_valid_field():
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
         "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
-        "animated": False, "tapToTurn": False,
+        "animated": False, "tapToTurn": False, "justifyText": True,
+        "translationCacheEnabled": False, "translationPreloadNextPage": True,
     })
     assert out == {
         "theme": "darkTheme", "font": "Arial", "spread": "nonespread",
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
         "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
-        "animated": False, "tapToTurn": False,
+        "animated": False, "tapToTurn": False, "justifyText": True,
+        "translationCacheEnabled": False, "translationPreloadNextPage": True,
     }
 
 
@@ -68,6 +70,12 @@ def test_flow_and_boolean_coercion():
     assert sanitize_reader_settings({"animated": "false"})["animated"] is False
     assert sanitize_reader_settings({"tapToTurn": True})["tapToTurn"] is True
     assert sanitize_reader_settings({"tapToTurn": "false"})["tapToTurn"] is False
+    assert sanitize_reader_settings({"justifyText": True})["justifyText"] is True
+    assert sanitize_reader_settings({"justifyText": "false"})["justifyText"] is False
+    assert sanitize_reader_settings({"translationCacheEnabled": True})["translationCacheEnabled"] is True
+    assert sanitize_reader_settings({"translationCacheEnabled": "false"})["translationCacheEnabled"] is False
+    assert sanitize_reader_settings({"translationPreloadNextPage": True})["translationPreloadNextPage"] is True
+    assert sanitize_reader_settings({"translationPreloadNextPage": "false"})["translationPreloadNextPage"] is False
 
 
 def test_non_dict_payload_is_empty():
@@ -101,6 +109,85 @@ def test_classic_reader_uses_dedicated_route_and_shared_line_height():
 
 def test_spa_font_range_matches_canonical_contract():
     root = Path(__file__).resolve().parents[2]
+    style = (root / "frontend/src/pages/reader/settings/readerStyle.ts").read_text()
+    assert "const FONT_MIN = 75;" in style
+    assert "const FONT_MAX = 200;" in style
+
+
+def test_translation_settings_are_typed_and_partial_updates_do_not_clear_profile():
+    out = sanitize_reader_settings({
+        "translationEnabled": True,
+        "translationView": "translated",
+        "translationMode": "simple",
+        "translationSourceLanguage": "auto",
+        "translationTargetLanguage": "uk",
+        "translationProfileId": "profile-1",
+        "translationPrompt": "Translate faithfully.",
+    })
+    assert out == {
+        "translationEnabled": True,
+        "translationView": "translated",
+        "translationMode": "simple",
+        "translationSourceLanguage": "auto",
+        "translationTargetLanguage": "uk",
+        "translationProfileId": "profile-1",
+        "translationPrompt": "Translate faithfully.",
+    }
+    assert "translationProfileId" not in sanitize_reader_settings({"fontSize": 110})
+
+
+def test_translation_side_panel_overlays_stage_without_reflowing_translated_page():
+    root = Path(__file__).resolve().parents[2]
+    css = (root / "frontend/src/pages/Reader.module.css").read_text()
+    start = css.index(".sidePanel {")
+    rule = css[start:css.index("}", start)]
+    assert "position: absolute;" in rule
+    assert "inset: 0 auto 0 0;" in rule
+
+
+def test_translation_preload_uses_stable_page_identity_and_sentence_carry():
+    root = Path(__file__).resolve().parents[2]
     reader = (root / "frontend/src/pages/Reader.tsx").read_text()
-    assert "const FONT_MIN = 75;" in reader
-    assert "const FONT_MAX = 200;" in reader
+    translation = (root / "frontend/src/pages/reader/translation/translationPage.tsx").read_text()
+    assert "function translationSourcePageId(" in translation
+    assert "function translationPageCacheKey(" in translation
+    assert "translationSentenceCarryRef.current.set" in reader
+    assert "splitTrailingSentenceForNext" in reader
+    assert "translationPreloading" in reader
+    assert "currentSettings.flow === 'paginated'" not in reader[
+        reader.index("const runTranslationPreload"):reader.index("const scheduleNextTranslationPreload")
+    ]
+
+
+def test_scrolled_translation_overlay_is_vertical_and_tap_zones_remain_visible():
+    root = Path(__file__).resolve().parents[2]
+    css = (root / "frontend/src/pages/Reader.module.css").read_text()
+    reader = (root / "frontend/src/pages/Reader.tsx").read_text()
+    overlay = (root / "frontend/src/pages/reader/translation/TranslationOverlay.tsx").read_text()
+    assert ".translationOverlay[data-flow='scrolled']" in css
+    assert "overflow-y: auto;" in css
+    assert ".translationTapZone" in css
+    assert "data-flow={props.settings.flow}" in overlay
+    assert "translationOverlayRef.current" in reader
+
+
+def test_translation_activity_spinner_colors_are_distinct():
+    root = Path(__file__).resolve().parents[2]
+    css = (root / "frontend/src/pages/Reader.module.css").read_text()
+    assert "button[data-translation-activity='translation']" in css
+    assert "border-color: #22c55e;" in css
+    assert "button[data-translation-activity='preload']" in css
+    assert "border-color: #f59e0b;" in css
+
+
+def test_translation_settings_reject_invalid_values_and_bound_prompt_length():
+    out = sanitize_reader_settings({
+        "translationEnabled": "yes",
+        "translationView": "side-by-side",
+        "translationMode": "html",
+        "translationSourceLanguage": "not a language",
+        "translationTargetLanguage": "auto",
+        "translationProfileId": "x" * 65,
+        "translationPrompt": "x" * 6001,
+    })
+    assert out == {}

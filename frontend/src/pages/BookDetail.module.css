@@ -58,33 +58,6 @@
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
-.coverReadHint {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) translateY(4px);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid rgba(255, 255, 255, .28);
-  border-radius: var(--r-full);
-  background: rgba(20, 28, 36, .84);
-  color: #f2efe9;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-
-.coverReadButton:hover .coverReadHint,
-.coverReadButton:focus-visible .coverReadHint {
-  opacity: 1;
-  transform: translate(-50%, -50%);
-}
-
 /* #987 — hairline so a cover whose artwork background matches the page surface
    still has a visible edge. Matches the shared BookCover frame and EditBook. */
 .cover {
@@ -125,7 +98,6 @@
   opacity: .92;
   transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
-.coverWrap:hover .changeCover,
 .changeCover:hover,
 .changeCover:focus-visible {
   background: var(--accent);
@@ -244,6 +216,106 @@
   margin: var(--sp-2) 0 0;
 }
 
+/* External sources remain separate, but each one is rendered as a compact
+   pill so the detail page uses the same visual language as the other actions. */
+.externalRatings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  max-width: 100%;
+}
+
+.externalRatingBadge {
+  min-width: 0;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  color: var(--text);
+  text-decoration: none;
+  box-shadow: var(--elev-1);
+}
+
+.externalRatingBadge:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.externalRatingMain,
+.externalRatingStats {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
+
+.externalRatingScore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #d99000;
+  font-variant-numeric: tabular-nums;
+}
+
+.externalRatingSourceName,
+.externalRatingStats {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.externalRatingStats > span + span::before {
+  content: '·';
+  margin-right: var(--sp-2);
+  color: var(--text-faint);
+}
+
+.externalRatingsRefresh {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--surface-1);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.externalRatingsRefresh:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.externalRatingsRefresh:disabled { opacity: .55; cursor: default; }
+
+.externalRatingsStatus,
+.externalRatingsError {
+  font-size: var(--fs-xs);
+}
+.externalRatingsStatus { color: var(--text-muted); }
+.externalRatingsError { color: var(--danger); }
+
+@media (max-width: 600px) {
+  .externalRatingBadge {
+    max-width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    border-radius: var(--r-md);
+  }
+
+  .externalRatingMain,
+  .externalRatingStats {
+    gap: var(--sp-1);
+  }
+}
+
 /* Sync-driven "currently reading" marker (fork #634) — an accent-tinted inline
    pill, distinct from the read/unread toggle. */
 .currentlyReading {
@@ -261,6 +333,7 @@
 }
 
 .readProgressWrap { max-width: 360px; }
+.readProgressTime { display: block; margin-top: 4px; color: var(--text-muted); font-size: var(--fs-xs); }
 .readProgress {
   height: 8px;
   margin-top: var(--sp-1);
@@ -472,6 +545,55 @@
 
 .downloadBtn:hover {
   background: var(--surface-2);
+}
+
+.chatGptIcon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.moonSyncBtn {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.moonSyncBtn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.moonSyncBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.moonSyncIcon {
+  position: relative;
+  width: 21px;
+  height: 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.moonSyncArrows {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--surface);
 }
 
 /* Destructive whole-book delete (fork #803). Same shape as .downloadBtn, danger-tinted. */

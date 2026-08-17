@@ -23,24 +23,39 @@ class TestBasicFunctionality:
     """Verify core application can start and basic functions work."""
     
     def test_python_version(self):
-        """Verify Python 3.10+ is being used."""
-        assert sys.version_info >= (3, 10), "Python 3.10 or higher required"
+        """Verify Python 3.11+ is being used."""
+        assert sys.version_info >= (3, 11), "Python 3.11 or higher required"
     
     def test_required_directories_exist(self):
-        """Verify critical directories exist."""
-        # /config always should exist (we're running from workspace)
-        assert os.path.exists('/config'), "Missing critical directory: /config"
-        
-        # These are container-specific paths - skip if not in container
-        container_dirs = [
-            '/app/calibre-web-automated',
-            '/calibre-library',
-            '/cwa-book-ingest'
-        ]
-        
-        # Check if we're in a container environment
-        if not all(os.path.exists(d) for d in container_dirs):
-            pytest.skip("Container mount points not available (running outside Docker)")
+        """Verify the resolved config directory exists, plus container mounts when present.
+
+        This used to assert the literal ``/config`` unconditionally, which is a
+        statement about the *runner*, not about the code: it passes in the image
+        because the volume is mounted and fails on every source checkout, so the
+        only way to keep it green was to run tests in Docker. Since #1462 the
+        config directory is resolved by ``app_paths.config_dir()``, and that
+        resolved directory is the thing worth asserting — it is what a source
+        install actually needs to exist. See #1474.
+        """
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))), 'scripts'))
+        import app_paths
+
+        resolved = str(app_paths.config_dir())
+        assert os.path.isdir(resolved), f"Missing resolved config directory: {resolved}"
+
+        # Container mode is decided by ONE marker, not by "do all the mounts
+        # happen to be here". The old form asked whether every container path
+        # existed and skipped if any was missing — so a container missing two of
+        # its mounts reported "not a container, skipped" instead of failing,
+        # which is the exact layout the assertion is for.
+        in_container = os.path.isdir('/app/calibre-web-automated')
+        if not in_container:
+            pytest.skip("Not running inside the container image (source checkout)")
+
+        required_mounts = ['/config', '/calibre-library', '/cwa-book-ingest']
+        missing = [d for d in required_mounts if not os.path.isdir(d)]
+        assert not missing, f"Container is missing required mounts: {missing}"
     
     def test_flask_app_can_be_imported(self):
         """Verify Flask app module can be imported without errors."""
@@ -231,15 +246,22 @@ class TestEnvironmentConfiguration:
     """Verify environment variables and configuration work."""
     
     def test_can_read_cwa_version(self):
-        """Verify CWA version file exists and can be read."""
-        if os.path.exists('/app/CWA_RELEASE'):
-            with open('/app/CWA_RELEASE', 'r') as f:
-                version = f.read().strip()
-                assert version, "CWA_RELEASE file is empty"
-                assert version.startswith('V') or version.startswith('v'), \
-                    f"Version format unexpected: {version}"
-        else:
-            pytest.skip("Not in Docker environment - /app/CWA_RELEASE not found")
+        """Verify the image stamped the version it was built from.
+
+        This used to read /app/CWA_RELEASE. That file is gone: the build sets
+        CWA_INSTALLED_VERSION as an env var in the final stage instead. The
+        check has to follow the stamp rather than the old file, or it turns
+        into a permanent skip that asserts nothing in the very environment it
+        exists to cover.
+        """
+        version = os.environ.get('CWA_INSTALLED_VERSION')
+        if not version:
+            pytest.skip(
+                "Not in a built image - CWA_INSTALLED_VERSION is not stamped"
+            )
+        # A release image carries the tag; a dev image carries DEV_BUILD-dev-<n>.
+        assert version.startswith(('V', 'v', 'DEV_BUILD')), \
+            f"Version format unexpected: {version}"
     
     def test_network_share_mode_detection(self):
         """Verify network share mode can be detected from environment."""

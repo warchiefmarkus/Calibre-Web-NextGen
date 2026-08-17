@@ -22,17 +22,18 @@ import subprocess
 import tempfile
 import fcntl
 
-from flask import Blueprint, flash, redirect, url_for, abort, request, make_response, send_from_directory, g, Response, jsonify
+from flask import Blueprint, current_app, flash, redirect, url_for, abort, request, make_response, send_from_directory, g, Response, jsonify
 from markupsafe import Markup
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from .cw_login import current_user
 from flask_babel import gettext as _
-from flask_babel import get_locale, format_time, format_datetime, format_timedelta
+from flask_babel import get_locale, format_time, format_datetime, format_timedelta, LazyString
 from sqlalchemy import and_
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError, OperationalError, InvalidRequestError
 from sqlalchemy.sql.expression import func, or_, text
 
-from . import constants, logger, helper, services, cli_param, apply_https_runtime_config
+from . import constants, converter, deployment_profile, logger, helper, services, cli_param, apply_https_runtime_config
 from . import user_book_data
 from . import db, calibre_db, ub, web_server, config, updater_thread, gdriveutils, \
     kobo_sync_status, schedule
@@ -42,6 +43,18 @@ from .embed_helper import get_calibre_binarypath
 from .gdriveutils import is_gdrive_ready, gdrive_support
 from .render_template import render_title_template, get_sidebar_config
 from .services.worker import WorkerThread
+from .services.kobo_import import (
+    KoboContentDatabaseError,
+    KoboUploadError,
+    MAX_KOBO_DATABASE_UPLOAD_BYTES,
+    ParsedKoboBook,
+    parse_kobo_device_books,
+    temporary_kobo_database,
+)
+from .services.kobo_reconcile import (
+    build_reconciliation_preview,
+    scan_from_candidates,
+)
 from .usermanagement import user_login_required
 from .ui_themes import config_theme_code
 from .cw_babel import get_available_translations, get_available_locale, get_user_locale_language
@@ -58,7 +71,9 @@ feature_support = {
     'updater': constants.UPDATER_AVAILABLE,
     'gmail': bool(services.gmail),
     'scheduler': schedule.use_APScheduler,
-    'gdrive': gdrive_support
+    'gdrive': gdrive_support,
+    'koreader': deployment_profile.enable_koreader(),
+    'library_automation': deployment_profile.enable_library_automation(),
 }
 
 try:
@@ -256,8 +271,8 @@ def trigger_hardcover_auto_fetch():
         
         # Get settings
         import sys as _sys
-        if '/app/calibre-web-automated/scripts/' not in _sys.path:
-            _sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+        if constants.SCRIPTS_DIR not in _sys.path:
+            _sys.path.insert(1, constants.SCRIPTS_DIR)
         from cwa_db import CWA_DB
         from cps.tasks.auto_hardcover_id import TaskAutoHardcoverID
         from cps.services.worker import WorkerThread
@@ -527,20 +542,63 @@ def update_thumbnails():
         })
 
 
-def cwa_get_package_versions() -> tuple[str, str, str, str]:
-    try:
-        with open("/app/KEPUBIFY_RELEASE", "r") as f:
-            kepubify_version = f.read()
-    except Exception:
-        kepubify_version = "Unknown"
+# The banners the two probes print, and the digits to lift out of each.
+#
+# They are not the same shape, which is why the patterns stay separate while
+# the rendering below is shared. Calibre's is fenced — ``(calibre 9.11.0)`` —
+# so a lazy quantifier terminates on the closing paren. kepubify prints
+# ``kepubify v4.0.4`` with nothing after the digits, so the same lazy pattern
+# would stop at the first character it can and render ``vv4``; it needs a
+# greedy run of non-space instead. kepubify also supplies its own ``v`` where
+# calibre does not, so the optional ``v?`` is consumed rather than captured and
+# the caller prepends exactly one.
+_CALIBRE_BANNER_RE = re.compile(r'\(calibre (.+?)\)')
+_KEPUBIFY_BANNER_RE = re.compile(r'kepubify\s+v?(\S+)')
 
-    try:
-        with open("/app/CALIBRE_RELEASE", "r") as f:
-            calibre_version = f.read()
-    except Exception:
-        calibre_version = "Unknown"
 
-    return constants.INSTALLED_VERSION, kepubify_version, calibre_version
+def _version_label(probe, banner_re, name):
+    """Render one row of the admin Version Information table.
+
+    ``probe`` returns one of two shapes: the binary's full version banner, or a
+    translated diagnostic (``not installed`` / ``Execution permissions
+    missing``) as a LazyString. Only the banner is reduced to a tag; a
+    diagnostic is passed through untouched so the admin keeps the actionable,
+    translated message instead of an opaque, untranslated "Unknown".
+
+    Shared rather than copied per binary: the discriminator, the passthrough
+    and the degrade-to-"Unknown" path are the three things #1274 established
+    are easy to get subtly wrong, and a second copy is where one of them drifts.
+    """
+    try:
+        raw = probe()
+    except Exception as e:
+        # Neither documented return shape raises; something else is wrong.
+        # The version row must never take the admin page down with it, but the
+        # reason belongs in the log rather than behind a silent "Unknown".
+        log.warning("Could not determine the %s version: %s", name, e)
+        return "Unknown"
+    if not isinstance(raw, str):
+        # A LazyString diagnostic. Returning it as-is keeps it translatable.
+        return raw
+    match = banner_re.search(raw)
+    return 'v' + match.group(1) if match else raw
+
+
+def calibre_version_label():
+    """Render the Calibre version for the admin Version Information table."""
+    return _version_label(converter.get_calibre_version, _CALIBRE_BANNER_RE, "Calibre")
+
+
+def kepubify_version_label():
+    """Render the Kepubify version for the admin Version Information table."""
+    return _version_label(converter.get_kepubify_version, _KEPUBIFY_BANNER_RE, "Kepubify")
+
+
+def cwa_get_package_versions() -> tuple[str, "str | LazyString", "str | LazyString"]:
+    # Members two and three are LazyStrings when the binary could not be
+    # probed — the diagnostics are deliberately left translatable rather than
+    # flattened here.
+    return constants.INSTALLED_VERSION, kepubify_version_label(), calibre_version_label()
 
 
 def cwa_get_update_indicator() -> tuple[bool, str]:
@@ -614,6 +672,10 @@ def configuration():
                                  config=config,
                                  provider=oauth_bb.oauthblueprints,
                                  feature_support=feature_support,
+                                 kobo_two_way_emergency_disabled=(
+                                     os.environ.get("CWNG_KOBO_TWO_WAY_ANNOTATIONS", "").strip().lower()
+                                     in {"0", "false", "off", "no"}
+                                 ),
                                  hardcover_token_status=hardcover_status,
                                  title=_("Basic Configuration"), page="config")
 
@@ -1079,7 +1141,12 @@ def edit_domain(allow):
     vals = request.form.to_dict()
     answer = ub.session.query(ub.Registration).filter(ub.Registration.id == vals['pk']).first()
     answer.domain = vals['value'].replace('*', '%').replace('?', '_').lower()
-    return ub.session_commit("Registering Domains edited {}".format(answer.domain))
+    # #1318: x-editable takes any 2xx as "saved" and paints the new value into
+    # the table, so a rolled-back edit used to leave the admin looking at a
+    # domain rule that is not in the database.
+    if not ub.session_commit("Registering Domains edited {}".format(answer.domain)):
+        return "", 500
+    return ""
 
 
 @admi.route("/ajax/adddomain/<int:allow>", methods=['POST'])
@@ -1402,6 +1469,147 @@ def do_kobo_resend(userid, bookid):
     ub.session_commit(message)
     return Response(json.dumps([{"type": "success", "message": message}]),
                     mimetype='application/json')
+
+
+_KOBO_RECONCILE_TOKEN_SALT = "kobo-stranded-entitlement-preview"
+_KOBO_RECONCILE_TOKEN_MAX_AGE = 30 * 60
+
+
+def _kobo_reconcile_serializer():
+    return URLSafeTimedSerializer(
+        current_app.config["SECRET_KEY"], salt=_KOBO_RECONCILE_TOKEN_SALT)
+
+
+def _kobo_reconcile_user(user_id):
+    return ub.session.query(ub.User).filter(ub.User.id == int(user_id)).first()
+
+
+def _kobo_reconciliation_preview(user_id, scan):
+    tombstone_uuids = {
+        row.book_uuid for row in
+        ub.session.query(ub.KoboDeletedBook.book_uuid).filter(
+            ub.KoboDeletedBook.user_id == user_id).all()
+    }
+    synced_book_uuids = {
+        row.book_uuid for row in
+        ub.session.query(ub.KoboSyncedBooks.book_uuid).filter(
+            ub.KoboSyncedBooks.user_id == user_id,
+            ub.KoboSyncedBooks.book_uuid.isnot(None),
+        ).all()
+    }
+    return build_reconciliation_preview(
+        scan,
+        existing_tombstone_uuids=tombstone_uuids,
+        synced_book_uuids=synced_book_uuids,
+        book_lookup=calibre_db.get_book_by_uuid,
+    )
+
+
+def _render_kobo_reconcile(user, preview=None, confirmation_token=None,
+                           result=None, error=None):
+    return render_title_template(
+        "kobo_reconcile.html",
+        user=user,
+        preview=preview,
+        confirmation_token=confirmation_token,
+        result=result,
+        error=error,
+        max_upload_mb=MAX_KOBO_DATABASE_UPLOAD_BYTES // (1024 * 1024),
+        title=_("Reconcile deleted Kobo books for %(user)s", user=user.name),
+        page="edituser",
+    )
+
+
+@admi.route("/admin/user/<int:user_id>/kobo-reconcile", methods=["GET", "POST"])
+@user_login_required
+@admin_required
+def kobo_reconcile(user_id):
+    user = _kobo_reconcile_user(user_id)
+    if user is None or user.role_anonymous():
+        abort(404)
+    if request.method == "GET":
+        return _render_kobo_reconcile(user)
+
+    try:
+        with temporary_kobo_database(
+                request.files.get("file"), request.content_length or 0) as sqlite_path:
+            scan = parse_kobo_device_books(sqlite_path)
+    except KoboUploadError as upload_error:
+        messages = {
+            "no_file": _("Choose a KoboReader.sqlite file."),
+            "not_sqlite": _("The uploaded file is not a SQLite database."),
+            "too_large": _(
+                "The file is larger than %(max)d MB.",
+                max=MAX_KOBO_DATABASE_UPLOAD_BYTES // (1024 * 1024),
+            ),
+        }
+        return _render_kobo_reconcile(user, error=messages[upload_error.code]), \
+            upload_error.status_code
+    except KoboContentDatabaseError as database_error:
+        return _render_kobo_reconcile(user, error=str(database_error)), 400
+
+    preview = _kobo_reconciliation_preview(user.id, scan)
+    confirmation_token = None
+    if preview.candidates:
+        confirmation_token = _kobo_reconcile_serializer().dumps({
+            "user_id": user.id,
+            "books": [
+                [book.uuid, book.title]
+                for book in preview.candidates
+            ],
+        })
+    return _render_kobo_reconcile(
+        user, preview=preview, confirmation_token=confirmation_token)
+
+
+@admi.route("/admin/user/<int:user_id>/kobo-reconcile/confirm", methods=["POST"])
+@user_login_required
+@admin_required
+def kobo_reconcile_confirm(user_id):
+    user = _kobo_reconcile_user(user_id)
+    if user is None or user.role_anonymous():
+        abort(404)
+    try:
+        payload = _kobo_reconcile_serializer().loads(
+            request.form.get("confirmation_token", ""),
+            max_age=_KOBO_RECONCILE_TOKEN_MAX_AGE,
+        )
+        if payload.get("user_id") != user.id:
+            raise BadSignature("preview belongs to another user")
+        preview_books = {
+            str(book_uuid): ParsedKoboBook(uuid=str(book_uuid), title=str(title))
+            for book_uuid, title in payload.get("books", [])
+        }
+    except (BadSignature, SignatureExpired, TypeError, ValueError):
+        return _render_kobo_reconcile(
+            user,
+            error=_("This preview is invalid or expired. Upload the device database again."),
+        ), 400
+
+    selected_uuids = list(dict.fromkeys(request.form.getlist("book_uuid")))
+    if not selected_uuids:
+        return _render_kobo_reconcile(
+            user, error=_("Select at least one book to archive.")), 400
+    if any(book_uuid not in preview_books for book_uuid in selected_uuids):
+        return _render_kobo_reconcile(
+            user,
+            error=_("The selected books do not match this preview. Upload the device database again."),
+        ), 400
+    candidates = tuple(preview_books[book_uuid] for book_uuid in selected_uuids)
+
+    preview = _kobo_reconciliation_preview(user.id, scan_from_candidates(candidates))
+    written = kobo_sync_status.record_user_book_deletions(
+        user.id,
+        [book.uuid for book in preview.candidates],
+        session=ub.session,
+    )
+    result = {
+        "written": written,
+        "already_scheduled": preview.already_scheduled,
+        "skipped_present": preview.skipped_present,
+        "skipped_unresolved": preview.skipped_unresolved,
+    }
+    return _render_kobo_reconcile(user, result=result)
 
 
 def check_valid_read_column(column):
@@ -2578,6 +2786,8 @@ def _configuration_update_helper():
     reboot_required = False
     to_save = request.form.to_dict()
     prev_hardcover_sync = config.hardcover_sync_enabled()
+    prev_kobo_prefer_kepub = bool(config.config_kobo_prefer_kepub)
+    queue_kepub_backfill = False
     prev_hardcover_token_available = bool(config.resolved_hardcover_token())
     try:
         reboot_required |= _config_string(to_save, "config_trustedhosts")
@@ -2602,8 +2812,10 @@ def _configuration_update_helper():
         _config_checkbox_int(to_save, "config_register_email")
         prev_kobo_sync = bool(config.config_kobo_sync)
         reboot_required |= _config_checkbox_int(to_save, "config_kobo_sync")
+        _config_checkbox_int(to_save, "config_kobo_two_way_annotation_sync")
         _config_int(to_save, "config_external_port")
         _config_checkbox_int(to_save, "config_kobo_proxy")
+        _config_checkbox(to_save, "config_kobo_prefer_kepub")
 
         # Kobo cover aspect-ratio padding (server-side letterbox elimination)
         _config_checkbox_int(to_save, "config_kobo_cover_padding_enabled")
@@ -2618,6 +2830,11 @@ def _configuration_update_helper():
         # auto-enable only fires on the off→on transition.
         if not prev_kobo_sync and bool(config.config_kobo_sync):
             config.config_kobo_cover_padding_enabled = 1
+
+        if not prev_kobo_prefer_kepub and bool(config.config_kobo_prefer_kepub):
+            queue_kepub_backfill = True
+        elif "kobo_kepub_backfill" in to_save:
+            queue_kepub_backfill = True
 
         if "config_upload_formats" in to_save:
             to_save["config_upload_formats"] = ','.join(
@@ -2731,6 +2948,7 @@ def _configuration_update_helper():
 
         # security configuration
         _config_checkbox(to_save, "config_disable_standard_login")
+        _config_checkbox(to_save, "config_enable_oauth_auto_forward")
         _config_checkbox(to_save, "config_enable_oauth_group_admin_management")
         _config_checkbox(to_save, "config_check_extensions")
         _config_checkbox(to_save, "config_use_https")
@@ -2763,6 +2981,11 @@ def _configuration_update_helper():
         _configuration_result(_("Oops! Database Error: %(error)s.", error=e.orig))
 
     config.save()
+    if queue_kepub_backfill:
+        from .tasks.kepub_backfill import enqueue_kepub_backfill
+        if not enqueue_kepub_backfill(current_user.name):
+            flash(_("KEPUB conversion was not queued. Check that the preference and Kepubify path are enabled."),
+                  category="warning")
     # Keep the retired cwa.db auto-fetch flag synchronized solely for safe
     # rollback. Runtime consumers use ConfigSQL.hardcover_sync_enabled().
     effective_hardcover_sync, _ = schedule.reconcile_hardcover_configuration()
@@ -2872,6 +3095,9 @@ def _handle_new_user(to_save, content, languages, translations, kobo_support):
         content.denied_column_value = config.config_denied_column_value
         # No default value for kobo sync shelf setting
         content.kobo_only_shelves_sync = to_save.get("kobo_only_shelves_sync", 0) == "on"
+        content.kobo_two_way_annotation_sync = (
+            to_save.get("kobo_two_way_annotation_sync", 0) == "on"
+        )
         content.opds_only_shelves_sync = to_save.get("opds_only_shelves_sync", 0) == "on"
         ub.session.add(content)
         ub.session.commit()
@@ -2952,6 +3178,10 @@ def _handle_edit_user(to_save, content, languages, translations, kobo_support):
         # the setting, so the two cannot disagree.
         kobo_sync_status.update_on_sync_shelfs(content.id)
     content.opds_only_shelves_sync = int(to_save.get("opds_only_shelves_sync") == "on") or 0
+    if "kobo_two_way_annotation_sync_present" in to_save:
+        content.kobo_two_way_annotation_sync = int(
+            to_save.get("kobo_two_way_annotation_sync") == "on"
+        ) or 0
     # Auto-send and metadata fetch settings
     content.auto_send_enabled = to_save.get("auto_send_enabled") == "on"
     content.auto_metadata_fetch = to_save.get("auto_metadata_fetch") == "on"
@@ -3347,7 +3577,7 @@ def restore_calibre_db():
             log.warning("Failed to dispose sessions before restore: %s", e)
 
         # 2. Run calibredb check_library (pre)
-        calibredb_binary = get_calibre_binarypath("calibredb") or "/app/calibre/calibredb"
+        calibredb_binary = get_calibre_binarypath("calibredb")
         check_cmd = [
             calibredb_binary, "check_library",
             "--with-library", config.config_calibre_dir

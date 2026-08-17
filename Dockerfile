@@ -168,6 +168,7 @@ RUN \
   libxdamage1 \
   libgl1 \
   libglx-mesa0 \
+  libxcb-cursor0 \
   xz-utils \
   binutils && \
   echo "**** install lsof 4.99.5 from source (fixes hanging issue with 4.95, #654) ****" && \
@@ -208,18 +209,20 @@ RUN \
   pip \
   wheel
 
-# STEP 3 - Copy requirements files and install Python packages
-# Copy only requirements files first to leverage Docker layer caching
-COPY --chown=abc:abc requirements.txt optional-requirements.txt /app/calibre-web-automated/
+# STEP 3 - Copy pyproject.toml and install Python dependencies
+# Copy only pyproject.toml first to leverage Docker layer caching
+COPY --chown=abc:abc pyproject.toml /app/calibre-web-automated/
 
 RUN \
-  # STEP 3.1 - Installing the required python packages listed in 'requirements.txt' and 'optional-requirements.txt'
+  # STEP 3.1 - Installing Python dependencies without installing the package
+  # itself, to avoid triggering a rebuild (see STEP 6).
   # HOWEVER, they are not pulled from PyPi directly, they are pulled from linuxserver's Ubuntu Wheel Index
   # This is essentially a repository of precompiled some of the most popular packages with C/C++ source code
   # This provides the install maximum compatibility with multiple different architectures including: x86_64, armv71 and aarch64
   # You can read more about python wheels here: https://realpython.com/python-wheels/
-  /lsiopy/bin/pip install -U --no-cache-dir --find-links https://wheel-index.linuxserver.io/ubuntu/ -r \
-  /app/calibre-web-automated/requirements.txt -r /app/calibre-web-automated/optional-requirements.txt
+  # The `--only-deps` flag was requires pip ≥ 26.2.
+  /lsiopy/bin/pip install -U --no-cache-dir --find-links https://wheel-index.linuxserver.io/ubuntu/ \
+    --only-deps /app/calibre-web-automated
 
 # STEP 4 - Install kepubify from the kepubify_mirror stage (GHCR mirror in CI,
 # public release CDN by default). Either way /kepubify arrives mode 0755 for the
@@ -228,26 +231,11 @@ COPY --from=kepubify_mirror /kepubify /usr/bin/kepubify
 
 # STEP 5 - Install Calibre
 RUN \
-  # STEP 5.1 - Make the /app/calibre directory for the installed files
-  mkdir -p /app/calibre && \
-  # STEP 5.2 - Download the desired version of Calibre, determined by the CALIBRE_RELEASE variable and the architecture of the build environment
-  if [ "$(uname -m)" == "x86_64" ]; then \
   curl -fL --retry 30 --retry-delay 15 --retry-all-errors -o \
-  /calibre.txz \
-  "https://download.calibre-ebook.com/${CALIBRE_RELEASE}/calibre-${CALIBRE_RELEASE}-x86_64.txz"; \
-  elif [ "$(uname -m)" == "aarch64" ]; then \
-  curl -fL --retry 30 --retry-delay 15 --retry-all-errors -o \
-  /calibre.txz \
-  "https://download.calibre-ebook.com/${CALIBRE_RELEASE}/calibre-${CALIBRE_RELEASE}-arm64.txz"; \
-  fi && \
-  # STEP 5.3 - Extract the downloaded file to /app/calibre
-  tar xf \
-  /calibre.txz -C \
-  /app/calibre && \
-  # STEP 5.3.1 - Remove the ABI tag from the extracted libQt6* files to allow them to be used on older kernels
-  # Removed in V3.1.4 because it was breaking Calibre features that require Qt6. Replaced with a kernel check in the cwa-init service
-  # STEP 5.4 - Delete the extracted calibre.txz to save space in final image
-  rm /calibre.txz
+  /linux-installer.sh \
+  https://download.calibre-ebook.com/linux-installer.sh && \
+  sh /linux-installer.sh version=${CALIBRE_RELEASE} && \
+  rm /linux-installer.sh
 
 # ============================================================================
 # STAGE 2: Final - Build the final runtime image
@@ -265,6 +253,27 @@ ARG KEPUBIFY_RELEASE
 LABEL build_version="Version:- ${VERSION}"
 LABEL build_date="${BUILD_DATE}"
 LABEL maintainer="CrocodileStick"
+
+# The version this image was actually built from, stamped straight off the
+# build arg the release workflow passes (`VERSION=${{ steps.ver.outputs.tag }}`)
+# and the dev workflow passes as `DEV_BUILD-dev-<n>`. Like CALIBRE_DBPATH
+# below, one ENV in the final stage reaches every s6 service, so this replaces
+# both the /app/CWA_RELEASE file and the cwa-init block that used to read it.
+#
+# It deliberately does NOT come from the package metadata that
+# cps.constants._get_version() falls back to. That metadata is fixed when pip
+# installs the package (STEP 6) from the checked-in VERSION file, so it can
+# only ever report the version that file happened to hold at commit time —
+# stale for every release after it, which reads at runtime as a permanent
+# "update available" nag on a container that is already current (#1108 in
+# reverse). It also cannot represent a dev build at all: DEV_BUILD-dev-<n> is
+# not a PEP 440 version, so setuptools rejects it outright.
+#
+# So: the build stamps the truth here, and VERSION-file metadata stays a
+# fallback for source checkouts. That keeps the release train free of a
+# "remember to bump VERSION" step, which is the kind of manual gate that
+# silently goes stale.
+ENV CWA_INSTALLED_VERSION=${VERSION}
 
 # Where this install keeps its own state. cps.constants.CONFIG_DIR reads this
 # and otherwise falls back to BASE_DIR — the read-only app tree — so anything
@@ -284,7 +293,7 @@ SHELL ["/bin/bash", "-c"]
 # Copy installed dependencies from the dependencies stage
 COPY --from=dependencies /lsiopy /lsiopy
 COPY --from=dependencies /usr/bin/kepubify /usr/bin/kepubify
-COPY --from=dependencies /app/calibre /app/calibre
+COPY --from=dependencies /opt/calibre /opt/calibre
 COPY --from=dependencies /usr/bin/lsof /usr/bin/lsof
 # Self-contained Python 3.13 from python-build-standalone — no PPA needed at runtime
 COPY --from=dependencies /opt/python /opt/python
@@ -342,6 +351,14 @@ RUN \
 # Copy the rest of the application code (changes most frequently)
 COPY --chown=abc:abc . /app/calibre-web-automated/
 
+RUN \
+  # The `frontend/` directory should be in `.dockerignore` but is used during
+  # STAGE 0 to build the SPA. We therefore manually remove it.
+  rm -Rf /app/calibre-web-automated/frontend && \
+  # Install our Python package. The dependencies were installed in STEP 3.1.
+  /lsiopy/bin/pip install -U --no-cache-dir --find-links https://wheel-index.linuxserver.io/ubuntu/ \
+    -e /app/calibre-web-automated
+
 # STEP 6.1 - Copy the Vite-built SPA bundle from the frontend-build stage.
 # The source tree's cps/static/app is .dockerignore'd, so this COPY is the
 # only bundle that ships — guaranteeing the SPA is built in-image rather than
@@ -382,17 +399,30 @@ RUN \
   else \
   echo "Warning: koplugin.zip not found, skipping move to static directory"; \
   fi && \
-  # STEP 7.5 - ADD files referencing the versions of the installed main packages
-  echo "$VERSION" >| /app/CWA_RELEASE && \
-  echo "$KEPUBIFY_RELEASE" >| /app/KEPUBIFY_RELEASE && \
-  echo "$CALIBRE_RELEASE" > /app/CALIBRE_RELEASE
+  # Once the koplugin zip is built and copied into cps/static, the `koreader/`
+  # tree is a second copy of the same plugin that nothing in the running
+  # container reads — the download button serves static/koplugin.zip. Hide it
+  # so nobody edits that copy inside a container and wonders why the download
+  # is unchanged.
+  #
+  # This does NOT reclaim the ~188 KB. `COPY . /app/calibre-web-automated/`
+  # above is its own layer (61.8 MB in the published image), so removing a path
+  # in this later layer only writes a whiteout: the bytes still ship and are
+  # still pulled. Actually dropping them needs a .dockerignore entry or a build
+  # stage that COPY --from's just koplugin.zip. Same caveat as the frontend/
+  # removal in STEP 6, whose comment already points at .dockerignore.
+  #
+  # -f because every other step in this RUN degrades to a warning rather than
+  # failing the build; this one should not be the exception if the tree is
+  # ever absent.
+  rm -rf "/app/calibre-web-automated/koreader/"
 
 # Add unrar from unrar stage
 COPY --from=unrar /usr/bin/unrar-ubuntu /usr/bin/unrar
 
 # Bake Calibre's /usr/bin symlinks into the image (#875; original patch by
 # @chloeroform in #1014). The binaries themselves already ship in the image
-# (COPY --from=dependencies /app/calibre above), but the /usr/bin entry
+# (COPY --from=dependencies /opt/calibre above), but the /usr/bin entry
 # points did not, so `calibredb --version` failed on a cold boot and the
 # calibre-binaries-setup s6 service ran calibre_postinstall on EVERY start --
 # ~12s of a ~60s startup. With the links present that check passes and the
@@ -400,7 +430,7 @@ COPY --from=unrar /usr/bin/unrar-ubuntu /usr/bin/unrar
 # where the links are missing (e.g. a non-Ubuntu base).
 #
 # The link set mirrors the entry points calibre_postinstall itself creates:
-# every executable at the top level of /app/calibre except the installer
+# every executable at the top level of /opt/calibre except the installer
 # itself and calibre-complete (the bash-completion helper, which upstream
 # reaches through the completion scripts rather than through PATH).
 # `test -x` resolves the symlink without executing the binary, so this stays
@@ -409,7 +439,7 @@ COPY --from=unrar /usr/bin/unrar-ubuntu /usr/bin/unrar
 # Nothing else that ran at boot moves here: the Qt6 / kernel ABI check and
 # the PUID/PGID ownership pass live in the cwa-init service, which runs
 # before this one and is gated on its own sentinel.
-RUN find /app/calibre -maxdepth 1 -type f -perm -u+x \
+RUN find /opt/calibre -maxdepth 1 -type f -perm -u+x \
   ! -name 'calibre_postinstall' ! -name 'calibre-complete' \
   -exec ln -sf {} /usr/bin/ \; && \
   test -x /usr/bin/calibredb

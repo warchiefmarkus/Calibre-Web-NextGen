@@ -16,6 +16,8 @@ import { Shelf } from './pages/Shelf';
 import { AdvancedSearch } from './pages/AdvancedSearch';
 import { AiSearch } from './pages/AiSearch';
 import { Account } from './pages/Account';
+import { MoonReaderSync } from './pages/MoonReaderSync';
+import { Devices } from './pages/Devices';
 import { EditBook } from './pages/EditBook';
 import { CoverPicker } from './pages/CoverPicker';
 import { Upload } from './pages/Upload';
@@ -151,7 +153,15 @@ export function App() {
         <Route path={SPA_ROUTES.reader}>
           {(p) => (
             <Suspense fallback={<SpinnerCentered size={40} />}>
-              <Reader id={p.id} />
+              {/* Keyed by book id: a different book is a different reading
+                  session, so it must get a fresh component instance. Without
+                  this, wouter reuses the element across an id change and the
+                  reader's refs (last CFI, last percentage, pending save timer)
+                  survive into the next book — which would post one book's
+                  position under another book's id (#324). A format switch on
+                  the SAME book keeps the key and reuses the instance, which is
+                  the behaviour the rendition-rebuild effect already expects. */}
+              <Reader key={p.id} id={p.id} />
             </Suspense>
           )}
         </Route>
@@ -240,7 +250,9 @@ export function App() {
           <Route path={SPA_ROUTES.aiSearch}>{() => <AiSearch />}</Route>
 
           {/* Account / settings */}
+          <Route path={SPA_ROUTES.moonReader}>{() => <MoonReaderSync />}</Route>
           <Route path={SPA_ROUTES.account}>{() => <Account />}</Route>
+          <Route path={SPA_ROUTES.devices}>{() => <Devices />}</Route>
 
           {/* Upload */}
           <Route path={SPA_ROUTES.upload}>{() => <Upload />}</Route>

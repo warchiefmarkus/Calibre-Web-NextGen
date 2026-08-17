@@ -28,6 +28,7 @@ from . import constants, logger, isoLanguages, gdriveutils, uploader, helper, ko
 from . import user_book_data
 from .clean_html import clean_string
 from . import config, ub, db, calibre_db
+from .config_sql import uploads_enabled
 from .services.worker import WorkerThread
 from .services import parallel
 from .tasks.upload import TaskUpload
@@ -50,7 +51,9 @@ log = logger.create()
 def upload_required(f):
     @wraps(f)
     def inner(*args, **kwargs):
-        if current_user.role_upload():
+        # The "Enable Uploads" switch was consulted only by layout.html, which
+        # hid the navbar button while this route kept serving the POST (#1288).
+        if current_user.role_upload() and uploads_enabled(config):
             return f(*args, **kwargs)
         abort(403)
 
@@ -359,7 +362,10 @@ def edit_selected_books():
                     }
 
                     now = datetime.now()
-                    log_path = f'/app/calibre-web-automated/metadata_change_logs/{now.strftime("%Y%m%d%H%M%S")}-{book.id}.json'
+                    os.makedirs(constants.CWA_METADATA_CHANGE_LOGS_DIR, exist_ok=True)
+                    log_path = os.path.join(
+                        constants.CWA_METADATA_CHANGE_LOGS_DIR,
+                        f'{now.strftime("%Y%m%d%H%M%S")}-{book.id}.json')
                     with open(log_path, 'w', encoding='utf-8') as f:
                         json.dump(log_payload, f, indent=4, ensure_ascii=False)
                     log.debug(f"Created metadata change log for book {book.id} with changes: {list(log_payload.keys())}")
@@ -702,7 +708,10 @@ def edit_book_param(param, vals):
                 }
 
                 now = datetime.now()
-                log_path = f'/app/calibre-web-automated/metadata_change_logs/{now.strftime("%Y%m%d%H%M%S")}-{book.id}.json'
+                os.makedirs(constants.CWA_METADATA_CHANGE_LOGS_DIR, exist_ok=True)
+                log_path = os.path.join(
+                    constants.CWA_METADATA_CHANGE_LOGS_DIR,
+                    f'{now.strftime("%Y%m%d%H%M%S")}-{book.id}.json')
                 with open(log_path, 'w', encoding='utf-8') as f:
                     json.dump(payload, f, indent=4, ensure_ascii=False)
                 log.debug(f"Created metadata change log for book {book.id} with changes: {list(payload.keys())}")
@@ -867,7 +876,7 @@ def merge_list_book():
 def _queue_duplicate_scan_after_change(book_ids=None):
     """Queue a debounced duplicate scan after manual changes."""
     try:
-        sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+        sys.path.insert(1, constants.SCRIPTS_DIR)
         from cwa_db import CWA_DB
         from .cwa_functions import queue_debounced_duplicate_scan
 
@@ -1137,7 +1146,10 @@ def do_edit_book(book_id, upload_formats=None):
                 }
 
                 now = datetime.now()
-                log_path = f'/app/calibre-web-automated/metadata_change_logs/{now.strftime("%Y%m%d%H%M%S")}-{book.id}.json'
+                os.makedirs(constants.CWA_METADATA_CHANGE_LOGS_DIR, exist_ok=True)
+                log_path = os.path.join(
+                    constants.CWA_METADATA_CHANGE_LOGS_DIR,
+                    f'{now.strftime("%Y%m%d%H%M%S")}-{book.id}.json')
                 with open(log_path, 'w', encoding='utf-8') as f:
                     json.dump(payload, f, indent=4, ensure_ascii=False)
                 log.debug(f"Created metadata change log for book {book.id} with changes: {list(meaningful_changes.keys())}")
@@ -1477,7 +1489,8 @@ class _DeletedBookFileRef:
 def delete_whole_book(book_id, book):
     # Capture a tombstone for every Kobo-synced user BEFORE we touch
     # any of the metadata.db / app.db rows. The Kobo protocol needs the
-    # book's UUID to address a DeletedEntitlement on the device; once
+    # book's UUID to address the archived ChangedEntitlement on the device;
+    # once
     # the book row is gone there is no way to recover it. Sync handler
     # consumes these on the next sync and tells each affected device to
     # archive its local copy. Without this, hard-deleted books linger on
@@ -1631,7 +1644,7 @@ def delete_book_from_table(book_id, book_format, json_response, location="", ski
                             delete_book_keys,
                             get_duplicate_groups_from_index,
                         )
-                        sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+                        sys.path.insert(1, constants.SCRIPTS_DIR)
                         from cwa_db import CWA_DB
 
                         delete_book_keys([book_id])
@@ -1646,7 +1659,7 @@ def delete_book_from_table(book_id, book_format, json_response, location="", ski
                 # above already handled it; otherwise mark the cache as stale.
                 if not skip_cache_invalidation and not refreshed_duplicate_cache:
                     try:
-                        sys.path.insert(1, '/app/calibre-web-automated/scripts/')
+                        sys.path.insert(1, constants.SCRIPTS_DIR)
                         from cwa_db import CWA_DB
                         cwa_db = CWA_DB()
                         cwa_db.invalidate_duplicate_cache()

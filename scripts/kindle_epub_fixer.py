@@ -23,10 +23,11 @@ import json
 import shutil
 from typing import Optional, Tuple
 
-import pwd
-import grp
+import app_paths
+import service_user
 
 from cwa_db import CWA_DB
+from library_paths import get_calibre_metadata_db_path
 
 try:
     from charset_normalizer import from_bytes as _charset_from_bytes
@@ -45,11 +46,13 @@ except Exception:
 LANGUAGE_TAG_PATTERN = re.compile(r'^[a-z]{2,3}(-[a-z]{2,4})?$', re.IGNORECASE)
 
 ### Global Variables
-dirs_json = "/app/calibre-web-automated/dirs.json"
-change_logs_dir = "/app/calibre-web-automated/metadata_change_logs"
-metadata_temp_dir = "/app/calibre-web-automated/metadata_temp"
+dirs_json = str(app_paths.dirs_json())
+# `change_logs_dir` / `metadata_temp_dir` used to be declared here and were never read by
+# anything in this module. Importing cps.constants just to define them pulled the whole
+# Flask web stack into a script that convert_library.py imports at module scope, so both
+# the globals and the import are gone rather than relocated (#995).
 # Log file path
-epub_fixer_log_file = "/config/epub-fixer.log"
+epub_fixer_log_file = str(app_paths.config_dir() / "epub-fixer.log")
 
 ### LOGGING
 # Define the logger
@@ -64,42 +67,27 @@ try:
     file_handler.setFormatter(formatter)
     # Add the handler to the logger
     logger.addHandler(file_handler)
-except FileNotFoundError:
-    # Fallback for test environments where /config might not exist
+except OSError:
+    # Fallback when the log file cannot be opened. This caught only
+    # FileNotFoundError, which was enough while the path was /config: a
+    # missing directory was the only way it failed. The config dir now
+    # resolves to the app root off Docker, which usually exists and may be
+    # read-only (a distro package installs the tree root-owned), so the
+    # failure mode is PermissionError. Importing this module must not depend
+    # on the log file being writable either way.
     stream_handler = logging.StreamHandler()
     LOG_FORMAT = '%(message)s'
     formatter = logging.Formatter(LOG_FORMAT)
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
-# Define user and group
-USER_NAME = "abc"
-GROUP_NAME = "abc"
-
 # Kill trigger path
 KILL_TRIGGER_PATH = os.path.join(tempfile.gettempdir(), ".kill_epub_fixer_trigger")
 
-# Get UID and GID (skip if user doesn't exist, e.g., in CI environments)
-uid = None
-gid = None
-try:
-    uid = pwd.getpwnam(USER_NAME).pw_uid
-    gid = grp.getgrnam(GROUP_NAME).gr_gid
-except KeyError:
-    # User/group doesn't exist (e.g., in CI/test environments)
-    # This is okay - just skip ownership operations
-    pass
-
-# Set permissions for log file (skip on network shares or if uid/gid not available)
-if uid is not None and gid is not None:
-    try:
-        nsm = os.getenv("NETWORK_SHARE_MODE", "false").strip().lower() in ("1", "true", "yes", "on")
-        if not nsm:
-            subprocess.run(["chown", f"{uid}:{gid}", epub_fixer_log_file], check=True)
-        else:
-            print(f"[cwa-kindle-epub-fixer] NETWORK_SHARE_MODE=true detected; skipping chown of {epub_fixer_log_file}", flush=True)
-    except subprocess.CalledProcessError as e:
-        print(f"[cwa-kindle-epub-fixer] An error occurred while attempting to set ownership of {epub_fixer_log_file} to abc:abc. See the following error:\n{e}", flush=True)
+# Hand the log file to the service account. service_user skips this when there
+# is no such account, which is the normal case outside the container.
+service_user.chown_to_service_user(
+    epub_fixer_log_file, "[cwa-kindle-epub-fixer]", recursive=False)
 
 
 def print_and_log(string, log=True) -> None:
@@ -295,10 +283,25 @@ class EPUBFixer:
 
         self.file_target_encodings[filename] = target_encoding
 
-        if encoding != target_encoding:
+        if encoding != target_encoding and self._reencoding_changes_bytes(text, data, target_encoding):
             self.fixed_problems.append(f"Converted {filename} from {encoding} to {target_encoding}")
 
         return text
+
+    def _reencoding_changes_bytes(self, text: str, original: bytes, target_encoding: str) -> bool:
+        """Whether writing `text` back out as `target_encoding` really differs
+        from the bytes we read.
+
+        The encoding *names* are not enough to answer this. A pure-ASCII entry
+        detects as 'ascii' and targets 'utf-8', but ASCII re-encodes to
+        byte-identical UTF-8 — so a name-only comparison claims a conversion
+        that never happened, and claims it again on every subsequent run.
+        """
+        try:
+            return text.encode(target_encoding) != original
+        except Exception:
+            # Cannot prove they match, so treat it as a real conversion.
+            return True
 
     def _get_text_content(self, filename: str) -> Optional[str]:
         content = self.files.get(filename)
@@ -352,7 +355,10 @@ class EPUBFixer:
     def _get_metadata_db_path(self) -> str:
         """Get the path to metadata.db considering split library configuration."""
         try:
-            con = sqlite3.connect("/config/app.db", timeout=30)
+            app_db = str(app_paths.app_db_path())
+            if not os.path.isfile(app_db):
+                return get_calibre_metadata_db_path(dirs_json)
+            con = sqlite3.connect(Path(app_db).as_uri() + "?mode=ro", uri=True, timeout=30)
             cur = con.cursor()
             split_library = cur.execute('SELECT config_calibre_split FROM settings;').fetchone()[0]
 
@@ -365,8 +371,8 @@ class EPUBFixer:
                 library_location = get_library_location()
                 return os.path.join(library_location, "metadata.db")
         except Exception:
-            # Fallback to default location
-            return "/calibre-library/metadata.db"
+            # dirs.json is maintained by auto_library and supports nested libraries.
+            return get_calibre_metadata_db_path(dirs_json)
 
     def _recalculate_checksum_after_modification(self, book_id: int, file_format: str, file_path: str) -> None:
         """Calculate and store new checksum after modifying an EPUB file."""
@@ -396,6 +402,8 @@ class EPUBFixer:
 
             # Store in database using centralized manager function
             metadb_path = self._get_metadata_db_path()
+            if not os.path.isfile(metadb_path):
+                return
             con = sqlite3.connect(metadb_path, timeout=30)
 
             try:
@@ -663,9 +671,12 @@ class EPUBFixer:
                                 f"Preserved language {original_language} as {language} (not in Amazon list; case standardization)"
                             )
                         else:
-                            self.fixed_problems.append(
-                                f"Preserved language '{original_language}' (not in Amazon list)"
-                            )
+                            # Nothing changed: the code is already what will be
+                            # written, so the write below is declined. Appending
+                            # here would report a fix that never happens — the
+                            # #1304 symptom this module exists to remove — and
+                            # would do so on every run, forever.
+                            pass
                 else:
                     # Doesn't look like a language tag at all (e.g., "Unknown", "garbage")
                     detected = self._detect_language_from_metadata(epub_path)
@@ -736,7 +747,9 @@ class EPUBFixer:
             
             # Query metadata.db for language
             metadb_path = self._get_metadata_db_path()
-            con = sqlite3.connect(metadb_path, timeout=30)
+            if not os.path.isfile(metadb_path):
+                return None
+            con = sqlite3.connect(Path(metadb_path).as_uri() + "?mode=ro", uri=True, timeout=30)
             cur = con.cursor()
             
             # Get language from books table via languages link table
@@ -1030,6 +1043,71 @@ class EPUBFixer:
         except Exception as e:
             print_and_log(f"[cwa-kindle-epub-fixer] Warning: Could not strip Amazon identifiers: {e}", log=self.manually_triggered)
 
+    def _content_changed(self, epub_path) -> bool:
+        """Whether writing this EPUB back out would materially differ from what
+        we read.
+
+        `fixed_problems` cannot answer that question: it is the user-facing
+        report, and things land in it that changed no bytes. Compare the entries
+        we would write against the ones we read instead.
+        """
+        if set(self.files) | set(self.binary_files) != set(self.entries):
+            return True
+
+        if len(self.entries) != len(set(self.entries)):
+            # The archive carries the same name more than once. Reading is keyed
+            # by name so the duplicates collapsed, and write_epub emits one entry
+            # per name — so rewriting really does repair the archive here, even
+            # though every surviving payload matches.
+            return True
+
+        for filename, content in self.files.items():
+            original = self.file_original_bytes.get(filename)
+            if original is None:
+                # Stored verbatim and never decoded (mimetype, undecodable
+                # entries), so it cannot have been modified in place.
+                continue
+            if isinstance(content, bytes):
+                new_bytes = content
+            else:
+                try:
+                    new_bytes = content.encode(self.file_target_encodings.get(filename, 'utf-8'))
+                except Exception:
+                    return True
+            if new_bytes != original:
+                return True
+
+        return False
+
+    def _same_file(self, first, second) -> bool:
+        """Whether two paths name the same file on disk.
+
+        Comparing absolute paths is not enough: a symlinked library path spells
+        the same book two ways, and treating those as different destinations
+        would rewrite the very file the no-op check exists to leave alone.
+        """
+        try:
+            return os.path.samefile(str(first), str(second))
+        except OSError:
+            # One of them does not exist yet — a genuinely separate destination.
+            return os.path.abspath(str(first)) == os.path.abspath(str(second))
+
+    def _zip_layout_needs_rewrite(self, epub_path) -> bool:
+        """EPUB requires `mimetype` to be the first entry and stored uncompressed.
+        write_epub always lays the archive out that way, so a file that violates
+        it is worth rewriting even when no entry contents changed."""
+        if 'mimetype' not in self.files:
+            return False
+        try:
+            with zipfile.ZipFile(epub_path, 'r') as zip_ref:
+                entry_infos = zip_ref.infolist()
+        except Exception:
+            return True
+        if not entry_infos:
+            return True
+        first = entry_infos[0]
+        return first.filename != 'mimetype' or first.compress_type != zipfile.ZIP_STORED
+
     def write_epub(self, output_path):
         """Write EPUB file"""
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
@@ -1091,10 +1169,6 @@ class EPUBFixer:
         # Extract book_id and format from path for checksum management
         book_id, book_format = self._extract_book_info_from_path(input_path)
 
-        # Back Up Original File
-        print_and_log("[cwa-kindle-epub-fixer] Backing up original file...", log=self.manually_triggered)
-        self.backup_original_file(input_path)
-
         # Load EPUB
         print_and_log("[cwa-kindle-epub-fixer] Loading provided EPUB...", log=self.manually_triggered)
         self.read_epub(input_path)
@@ -1115,19 +1189,41 @@ class EPUBFixer:
         print_and_log("[cwa-kindle-epub-fixer] Checking for stray images...", log=self.manually_triggered)
         self.fix_stray_img()
 
+        # An archive whose mimetype entry is misplaced or compressed is malformed
+        # even when every payload is fine, and write_epub lays it out correctly.
+        # Record it as the repair it is, so the summary can never read
+        # "No issues found" immediately before rewriting the file.
+        layout_repaired = self._zip_layout_needs_rewrite(input_path)
+        if layout_repaired:
+            self.fixed_problems.append(
+                "Normalized archive layout (mimetype must be the first, uncompressed entry)"
+            )
+
         # Notify user and/or write to log
         self.export_issue_summary(input_path)
 
         # Write EPUB
-        print_and_log("[cwa-kindle-epub-fixer] Writing EPUB...", log=self.manually_triggered)
         if Path(output_path).is_dir():
             output_path = output_path + os.path.basename(input_path)
-        self.write_epub(output_path)
-        print_and_log("[cwa-kindle-epub-fixer] EPUB successfully written.", log=self.manually_triggered)
+
+        writing_in_place = self._same_file(output_path, input_path)
+        modified = True
+        if writing_in_place and not (layout_repaired or self._content_changed(input_path)):
+            # Rewriting a book we did not change would churn its mtime and
+            # checksum — re-syncing it to every device — and take another copy
+            # into fixed_originals, on every library-wide run.
+            print_and_log("[cwa-kindle-epub-fixer] No changes needed, leaving file untouched.", log=self.manually_triggered)
+            modified = False
+        else:
+            print_and_log("[cwa-kindle-epub-fixer] Backing up original file...", log=self.manually_triggered)
+            self.backup_original_file(input_path)
+            print_and_log("[cwa-kindle-epub-fixer] Writing EPUB...", log=self.manually_triggered)
+            self.write_epub(output_path)
+            print_and_log("[cwa-kindle-epub-fixer] EPUB successfully written.", log=self.manually_triggered)
 
         # Calculate and store new checksum after modification
-        if book_id and self.fixed_problems:
-            # Only recalculate if fixes were actually applied
+        if book_id and modified:
+            # Only recalculate if the file on disk actually changed
             self._recalculate_checksum_after_modification(book_id, book_format, output_path)
 
         # Add entry to cwa.db
@@ -1138,7 +1234,7 @@ class EPUBFixer:
 
 
 def get_library_location() -> str:
-    con = sqlite3.connect("/config/app.db", timeout=30)
+    con = sqlite3.connect(str(app_paths.app_db_path()), timeout=30)
     cur = con.cursor()
     split_library = cur.execute('SELECT config_calibre_split FROM settings;').fetchone()[0]
 
@@ -1148,16 +1244,43 @@ def get_library_location() -> str:
         return split_path
     else:
         dirs = {}
-        with open('/app/calibre-web-automated/dirs.json', 'r') as f:
+        # The module-level `dirs_json`, not a fresh app_paths lookup: it is the
+        # same value, and it is the seam the rest of this module (and its tests)
+        # already resolve through. Before #1462 this line hardcoded a path that
+        # does not exist outside the container, so it raised and the caller's
+        # `except` branch quietly did the right thing via that global.
+        with open(dirs_json, 'r') as f:
             dirs: dict[str, str] = json.load(f)
         library_dir = f"{dirs['calibre_library_dir']}/"
         return library_dir
 
+# Calibre's own bookkeeping directories inside the library root. Matched by
+# exact name so that a book whose author or title legitimately begins with a
+# dot is still swept (see get_all_epubs_in_library).
+CALIBRE_INTERNAL_DIRS = frozenset({".caltrash", ".calnotes", ".calibre"})
+
+
 def get_all_epubs_in_library() -> list[str]:
-    """ Returns a list if the book dir given contains files of one or more of the supported formats"""
+    """Returns every EPUB in the user's library.
+
+    Calibre's own bookkeeping directories are skipped: `.caltrash` holds books
+    the user has deleted, so processing them is wasted work and makes the log
+    read as though deleted books were being modified.
+
+    They are matched by name, not by a leading dot. The library layout takes its
+    directory names from the book's author and title via `get_valid_filename`,
+    which preserves a leading dot — ".NET Core in Action" comes back unchanged —
+    so pruning every dot-directory silently drops real books from the sweep.
+    Silently, because a book that is never walked produces no log line and no
+    error; it simply stops being repaired.
+    """
     library_location = get_library_location()
-    library_files = [os.path.join(dirpath,f) for (dirpath, dirnames, filenames) in os.walk(library_location) for f in filenames]
-    epubs_in_library = [f for f in library_files if f.endswith(f'.epub')]
+    epubs_in_library = []
+    for dirpath, dirnames, filenames in os.walk(library_location):
+        dirnames[:] = [d for d in dirnames if d not in CALIBRE_INTERNAL_DIRS]
+        epubs_in_library.extend(
+            os.path.join(dirpath, f) for f in filenames if f.endswith('.epub')
+        )
     return epubs_in_library
 
 

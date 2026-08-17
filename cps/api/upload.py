@@ -19,6 +19,7 @@ from markupsafe import escape
 
 from . import api_v1, log
 from .. import config, calibre_db, deployment_profile, ub
+from ..config_sql import uploads_enabled
 from ..cw_login import current_user
 from ..services.calibremcp_client import (
     CalibreMCPClientError,
@@ -74,6 +75,14 @@ def _record_original_filename(book_id, original_filename):
     return "unchanged"
 
 
+def _uploads_disabled():
+    """Return a consistent refusal when the admin disabled uploads."""
+    if uploads_enabled(config):
+        return None
+    return _err("uploads_disabled",
+                "Uploading is disabled on this server", 403)
+
+
 @api_v1.route("/upload", methods=["POST"])
 @login_required_if_no_ano
 def upload_books():
@@ -81,6 +90,9 @@ def upload_books():
         return _err("unauthorized", "You must be signed in", 401)
     if not current_user.role_upload():
         return _err("forbidden", "You are not allowed to upload books", 403)
+    disabled = _uploads_disabled()
+    if disabled:
+        return disabled
 
     files = [f for f in request.files.getlist("file") if f and f.filename]
     if not files:
@@ -136,6 +148,25 @@ def upload_books():
                     staged.unlink(missing_ok=True)
         calibre_db.session.rollback()
         calibre_db.session.expire_all()
+        if imported:
+            from ..tasks.external_ratings import queue_external_rating_refresh
+            hardcover_tokens = []
+            for raw_token in (
+                getattr(current_user, "hardcover_token", None),
+                config.resolved_hardcover_token(),
+            ):
+                token = str(raw_token or "").replace("Bearer ", "", 1).strip()
+                if token and token not in hardcover_tokens:
+                    hardcover_tokens.append(token)
+            queue_external_rating_refresh(
+                [item["book_id"] for item in imported],
+                username=current_user.name,
+                hardcover_tokens=hardcover_tokens,
+                google_books_api_key=(
+                    str(getattr(config, "config_google_books_api_key", None) or "").strip()
+                    or None
+                ),
+            )
         return jsonify({
             "queued": queued,
             "errors": errors,
@@ -190,6 +221,9 @@ def add_format(book_id):
         return _err("unauthorized", "You must be signed in", 401)
     if not current_user.role_upload():
         return _err("forbidden", "You are not allowed to upload books", 403)
+    disabled = _uploads_disabled()
+    if disabled:
+        return disabled
     if not calibre_db.get_filtered_book(
         book_id, allow_show_archived=True, allow_show_hidden=True
     ):

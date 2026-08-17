@@ -5,8 +5,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
-__package__ = "cps"
-
 import sys
 import os
 import mimetypes
@@ -68,6 +66,7 @@ mimetypes.add_type('text/css', '.css')
 mimetypes.add_type('application/x-ms-reader', '.lit')
 mimetypes.add_type('text/javascript; charset=UTF-8', '.js')
 mimetypes.add_type('application/vnd.adobe.adept+xml', '.acsm')
+mimetypes.add_type('application/vnd.readium.lcp.license.v1.0+json', '.lcpl')
 mimetypes.add_type('application/vnd.amazon.ebook', '.kfx')
 mimetypes.add_type('application/zip', '.kfx-zip')
 
@@ -153,6 +152,10 @@ def _log_magic_shelf_counts(user_id, total_shelves, visible_shelves,
 
 def create_app():
     app.config["MCP_MANAGED_LIBRARY"] = deployment_profile.is_mcp_managed_library()
+    # Classic templates sometimes receive the SQL-backed `config` object, which
+    # shadows Flask's default `config` Jinja global. Expose the deployment flag
+    # under a dedicated name so every layout render uses the same safe value.
+    app.jinja_env.globals["mcp_managed_library"] = app.config["MCP_MANAGED_LIBRARY"]
     if csrf:
         csrf.init_app(app)
 
@@ -198,6 +201,13 @@ def create_app():
     from .calibre_init import init_calibre_db_from_config
     init_calibre_db_from_config(config, cli_param.settings_path)
     calibre_db.init_db()
+    # The annotation content-id backfill needs both databases: app.db owns the
+    # annotation, while metadata.db is authoritative for book UUID. Running it
+    # earlier would let a filename choose the book and can cross-link rows.
+    ub.backfill_annotation_content_ids(
+        ub.session.bind,
+        lambda book_id: getattr(calibre_db.get_book(book_id), "uuid", None),
+    )
 
     updater_thread.init_updater(config, web_server)
     # Perform dry run of updater and exit afterward
@@ -266,11 +276,24 @@ def create_app():
         app.config.update(RATELIMIT_STORAGE_URI=config.config_limiter_uri)
         if config.config_limiter_options != "":
             app.config.update(RATELIMIT_STORAGE_OPTIONS=config.config_limiter_options)
+    else:
+        # No backend configured, so we get the in-memory one. Say so rather
+        # than leaving the key unset: flask_limiter warns on every startup
+        # when nothing is specified, because an implicit in-memory backend is
+        # wrong for the multi-worker deployments it usually sees. This server
+        # is single-process, so those counters are shared by every handler
+        # that reads them and the backend is right.
+        #
+        # This belongs here and not on the Limiter(...) constructor. A
+        # constructor storage_uri outranks app.config, so it would quietly
+        # override the admin's own "Limiter Backend" setting above and drop
+        # them onto memory storage with no error.
+        app.config.update(RATELIMIT_STORAGE_URI="memory://")
     try:
         limiter.init_app(app)
     except Exception as e:
         log.error('Wrong Flask Limiter configuration, falling back to default: {}'.format(e))
-        app.config.update(RATELIMIT_STORAGE_URI=None)
+        app.config.update(RATELIMIT_STORAGE_URI="memory://")
         limiter.init_app(app)
 
     # Register scheduled tasks
@@ -521,6 +544,12 @@ def create_app():
         register_startup_tasks()
     else:
         log.info("Library scheduler and startup automation disabled by deployment profile")
+
+    # Moon+ synchronization is independent of library-ingest automation.
+    # It polls any WebDAV implementation and serializes actual reconciliation
+    # through the normal Calibre worker queue.
+    from .tasks.moonreader_sync import start_moonreader_polling
+    start_moonreader_polling(app)
 
     @app.get("/healthz")
     def _healthz():

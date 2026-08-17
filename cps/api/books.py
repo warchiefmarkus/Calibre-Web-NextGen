@@ -15,6 +15,7 @@ from .. import calibre_db, config, db, ub, isoLanguages, logger
 from ..cw_login import current_user
 from ..helper import edit_book_read_status, book_is_in_progress, get_convert_options, \
     get_kosync_progress_display
+from ..sort_orders import BOOK_SORT_ORDERS
 from ..usermanagement import login_required_if_no_ano
 
 log = logger.create()
@@ -70,28 +71,11 @@ def _original_filename(book_id):
     except Exception:
         return None
 
-# Stateless sort map — mirrors web.py sort options without calling get_sort_function
-# (which writes per-user state and must not be called from a read-only API endpoint).
-SORT_MAP = {
-    "new": [db.Books.timestamp.desc()],
-    "old": [db.Books.timestamp],
-    "abc": [func.ng_sort_key(db.Books.sort), db.Books.sort, db.Books.id],
-    "zyx": [func.ng_sort_key(db.Books.sort).desc(), db.Books.sort.desc(), db.Books.id.desc()],
-    "pubnew": [db.Books.pubdate.desc()],
-    "pubold": [db.Books.pubdate],
-    "modifiednew": [db.Books.last_modified.desc()],
-    "modifiedold": [db.Books.last_modified],
-    "authaz": [func.ng_sort_key(db.Books.author_sort), db.Books.author_sort,
-               func.ng_sort_key(db.Series.name), db.Series.name, db.Books.series_index],
-    "authza": [func.ng_sort_key(db.Books.author_sort).desc(), db.Books.author_sort.desc(),
-               func.ng_sort_key(db.Series.name).desc(), db.Series.name.desc(), db.Books.series_index.desc()],
-    # Series reading order — mirrors web.py get_sort_function's seriesasc/seriesdesc.
-    # Every list_books path already joins db.Series (series_join), so ordering by
-    # db.Books.series_index needs no extra plumbing. Used by the new-UI series view
-    # so a series reads 1, 2, 3… instead of newest-first (fork #573).
-    "seriesasc": [db.Books.series_index.asc()],
-    "seriesdesc": [db.Books.series_index.desc()],
-}
+# The sort options, shared with the classic UI's get_sort_function — which
+# additionally writes per-user view state and so cannot be called from a
+# read-only API endpoint. Only the ORDER BY is common, and it lives in one place
+# so a sort cannot be correct in one UI and wrong in the other (fork #1331).
+SORT_MAP = BOOK_SORT_ORDERS
 
 
 def _real_user_id():
@@ -125,7 +109,7 @@ def _archived_book_ids():
     return {int(row[0]) for row in rows}
 
 
-def _row_to_item(e, hidden_ids=None):
+def _row_to_item(e, hidden_ids=None, external_rating=None, reading_progress=None):
     """Unwrap a SQLAlchemy Row (Books, is_archived, read_status) or plain Books object."""
     book = getattr(e, "Books", e)
     if config.config_read_column:
@@ -142,7 +126,41 @@ def _row_to_item(e, hidden_ids=None):
         read=read,
         archived=archived,
         hidden=book.id in (hidden_ids or set()),
+        external_rating=external_rating,
+        reading_progress=reading_progress,
     )
+
+
+def _rows_to_items(entries, hidden_ids=None):
+    """Serialize a page and attach rating badges without N+1 queries."""
+    entries = list(entries or [])
+    book_ids = [int(getattr(getattr(entry, "Books", entry), "id")) for entry in entries]
+    try:
+        from .external_ratings import external_rating_summary_map
+        summaries = external_rating_summary_map(book_ids)
+    except Exception:
+        log.warning("External-rating summaries unavailable for book list", exc_info=True)
+        summaries = {}
+    progress_summaries = {}
+    user_id = _real_user_id()
+    if user_id is not None:
+        from ..services.reading_progress import reading_progress_summary_map
+        progress_summaries = reading_progress_summary_map(
+            ub.session, user_id, book_ids,
+            user_name=getattr(current_user, "name", None))
+    return [
+        _row_to_item(
+            entry,
+            hidden_ids=hidden_ids,
+            external_rating=summaries.get(
+                int(getattr(getattr(entry, "Books", entry), "id"))
+            ),
+            reading_progress=progress_summaries.get(
+                int(getattr(getattr(entry, "Books", entry), "id"))
+            ),
+        )
+        for entry in entries
+    ]
 
 
 def _build_entity_filter(author, series, tag, publisher, language, rating=None, book_format=None):
@@ -225,7 +243,7 @@ def list_books():
     # mutation guard.
     show_hidden = bool(show_hidden and _real_user_id() is not None)
     hidden_ids = _hidden_book_ids() if show_hidden else set()
-    to_items = lambda entries: [_row_to_item(e, hidden_ids) for e in entries]
+    to_items = lambda entries: _rows_to_items(entries, hidden_ids)
 
     if search:
         offset = (page - 1) * per_page
@@ -316,7 +334,7 @@ def list_books():
         off = per_page * (page - 1)
         all_hot_ids = [row[0] for row in (ub.session.query(ub.Downloads.book_id)
                    .group_by(ub.Downloads.book_id)
-                   .order_by(func.count(ub.Downloads.book_id).desc()))]
+                   .order_by(*BOOK_SORT_ORDERS["hotdesc"]))]
         # Filter before paginating: otherwise a hidden/restricted book leaves a
         # short page while the header still counts it.
         visible_hot_ids = _visible_hot_book_ids(all_hot_ids)
@@ -398,6 +416,7 @@ def book_detail(book_id):
     kosync_progress = None
     kosync_progress_timestamp = None
     kosync_progress_created_at = None
+    reading_progress = None
     if current_user.is_authenticated and not current_user.is_anonymous:
         uid = int(current_user.id)
         favorited = (ub.session.query(ub.FavoriteBook)
@@ -418,6 +437,10 @@ def book_detail(book_id):
             kosync_progress_timestamp = last_synced.replace(tzinfo=timezone.utc).isoformat()
         if started_reading:
             kosync_progress_created_at = started_reading.replace(tzinfo=timezone.utc).isoformat()
+        from ..services.reading_progress import reading_progress_summary_map
+        reading_progress = reading_progress_summary_map(
+            ub.session, uid, [book_id],
+            user_name=getattr(current_user, "name", None)).get(book_id)
 
     # With a custom read column, get_book_read_archived returns the column's value
     # (truthy = read); otherwise the built-in ub.ReadBook.read_status. Match the
@@ -448,6 +471,7 @@ def book_detail(book_id):
     body["kosync_progress"] = kosync_progress
     body["kosync_progress_timestamp"] = kosync_progress_timestamp
     body["kosync_progress_created_at"] = kosync_progress_created_at
+    body["reading_progress"] = reading_progress
     return jsonify(body)
 
 

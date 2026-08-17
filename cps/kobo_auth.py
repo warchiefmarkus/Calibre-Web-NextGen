@@ -122,7 +122,12 @@ def delete_auth_token(user_id):
     ub.session.query(ub.RemoteAuthToken).filter(ub.RemoteAuthToken.user_id == user_id)\
         .filter(ub.RemoteAuthToken.token_type==1).delete()
 
-    return ub.session_commit()
+    # #1318: returning the helper's value used to answer 200 whether or not the
+    # revocation landed. Telling someone their Kobo token is gone when it is
+    # still valid is the wrong way round to be wrong about a credential.
+    if not ub.session_commit():
+        return "", 500
+    return ""
 
 
 def disable_failed_auth_redirect_for_blueprint(bp):
@@ -163,6 +168,13 @@ def requires_kobo_auth(f):
             )
             if user is not None:
                 login_user(user)
+                try:
+                    from .services.device_registry import register_kobo_device_best_effort
+                    g.annotation_origin_device_id = register_kobo_device_best_effort(
+                        user_id=user.id, headers=request.headers, return_internal=True,
+                    )
+                except Exception:
+                    log.warning("Best-effort Kobo device observation failed", exc_info=True)
                 [limiter.limiter.storage.clear(k.key) for k in limiter.current_limits]
                 return f(*args, **kwargs)
         log.debug("Received Kobo request without a recognizable auth token.")

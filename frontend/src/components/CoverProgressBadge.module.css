@@ -1,0 +1,55 @@
+.badge {
+  position: absolute;
+  left: var(--sp-2);
+  top: var(--sp-2);
+  z-index: 2;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, .58);
+  border-radius: var(--r-full);
+  background: rgba(20, 28, 36, .70);
+  color: #fff;
+  box-shadow: var(--elev-1);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.label {
+  display: block;
+  line-height: 1;
+  /* Keep the pill geometry unchanged; the visible percentage sits slightly
+     low with the current font metrics, so nudge only the label upward. */
+  transform: translateY(-.5px);
+}
+
+.right {
+  left: auto;
+  right: var(--sp-2);
+}
+
+@container book-card (max-width: 132px) {
+  .badge {
+    left: 5px;
+    top: 5px;
+    min-height: 20px;
+    padding: 0 3px;
+    font-size: 10px;
+  }
+
+  .right {
+    left: auto;
+    right: 5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .badge { min-height: 20px; padding-inline: 5px; }
+}

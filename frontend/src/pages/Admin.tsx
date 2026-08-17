@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'wouter';
-import { Shield, Trash2, Mail, UserPlus, ChevronRight, Settings, Database, Server, Clock, FileText, Sliders, BarChart3, Files, Lock, RefreshCw, KeyRound } from 'lucide-react';
+import { Shield, Trash2, Mail, UserPlus, ChevronRight, Settings, Database, Server, Clock, FileText, Sliders, BarChart3, Files, Lock, RefreshCw, KeyRound, Cloud } from 'lucide-react';
 import { useEffect } from 'react';
 import {
   useAdminUsers, useUpdateAdminUser, useDeleteAdminUser, useCreateAdminUser, useMe,
@@ -28,6 +28,7 @@ const SERVER_SETTINGS: { href: string; label: string; icon: typeof Settings; spa
   { href: '/admin/dbconfig', label: 'Database & library path', icon: Database },
   { href: '/admin/scheduledtasks', label: 'Scheduled tasks', icon: Clock },
   { href: '/cwa-settings', label: 'CWA settings (ingest/convert)', icon: Server },
+  { href: '/account/moonreader', label: 'Moon+ Reader sync', icon: Cloud, spa: true },
   { href: '/cwa-stats-show', label: 'Statistics dashboard', icon: BarChart3 },
   { href: '/admin/logfile', label: 'Logs', icon: FileText },
   // #1048 — this row used to link to /duplicates, i.e. the exact page the
@@ -506,6 +507,7 @@ function SecurityConfigForm() {
       oauth: {
         redirect_host: f.oauth.redirect_host,
         disable_standard_login: f.oauth.disable_standard_login,
+        enable_oauth_auto_forward: f.oauth.enable_oauth_auto_forward,
         enable_group_admin_management: f.oauth.enable_group_admin_management,
       },
     };
@@ -673,9 +675,14 @@ function SecurityConfigForm() {
           <div className={styles.newRow}>
             <label className={styles.checkField}><input type="checkbox" checked={f.oauth.disable_standard_login}
               onChange={(e) => setOauth('disable_standard_login', e.target.checked)} /><span>{t('Disable standard password login')}</span></label>
+            <label className={styles.checkField}><input type="checkbox" checked={f.oauth.enable_oauth_auto_forward}
+              onChange={(e) => setOauth('enable_oauth_auto_forward', e.target.checked)} /><span>{t('Start the only OAuth provider automatically')}</span></label>
             <label className={styles.checkField}><input type="checkbox" checked={f.oauth.enable_group_admin_management}
               onChange={(e) => setOauth('enable_group_admin_management', e.target.checked)} /><span>{t('Manage admin role from OAuth group')}</span></label>
           </div>
+          <p className={styles.settingsHint} style={{ margin: '4px 0 0' }}>
+            {t('With automatic start on, the login page goes straight to the provider. Add ?local=1 to the login URL to reach the password form, which keeps working as long as standard password login is left enabled.')}
+          </p>
           {f.oauth.providers.length > 0 && (
             <>
               <p className={styles.settingsHint} style={{ margin: '4px 0 0' }}>

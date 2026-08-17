@@ -16,6 +16,7 @@ import { formatAuthors } from '../lib/authors';
 import { ApiError, resourceUrl } from '../lib/api';
 import { useT } from '../lib/i18n';
 import styles from './EditBook.module.css';
+import { canUploadBooks } from '../lib/permissions';
 
 interface Ident { type: string; val: string }
 
@@ -365,16 +366,17 @@ function MetadataFetch({ defaultQuery, onApply }:
   const seq = useRef(0);
 
   // Single search path for the normal form, the editions drill-down, and Back.
-  // `ed` is the title-level snapshot captured before drilling in; when present we
-  // keep only Hardcover edition rows (a `hardcover-id:<id>` query still fans out
-  // to every enabled provider, so other providers return noise for that string).
+  // `ed` is the title-level snapshot captured before drilling in; when present
+  // the search is restricted server-side to Hardcover, because `hardcover-id:<id>`
+  // is that provider's own syntax and reads as a literal search string to every
+  // other one (#303). The row filter below stays as a belt-and-braces guard.
   const doSearch = (q: string, ed?: { prevQuery: string; prevResults: MetaResult[] }) => {
     const term = q.trim();
     if (!term) return;
     const mine = ++seq.current;
     setErr(null);
     setQuery(term);
-    search.mutate(term, {
+    search.mutate({ query: term, providers: ed ? ['hardcover'] : undefined }, {
       onSuccess: (r) => {
         if (mine !== seq.current) return; // superseded/abandoned — ignore
         if (ed) {
@@ -758,7 +760,10 @@ function FormatsManager({ id }: { id: string }) {
   const targets = convertOptions?.targets ?? [];
   if (!book) return null;
   const canDelete = !!me?.role?.delete_books;
-  const canUpload = !!me?.role?.upload;
+  // #1288: "Add a format" POSTs to /api/v1/books/<id>/formats, which requires
+  // role_upload and now honours the admin's "Enable Uploads" switch. Gate the
+  // control on the same pair, or the switch turns a hidden button into a 403.
+  const canUpload = canUploadBooks(me);
 
   // Keep the selected source/target normalized to lowercase option values.
   const selectedFrom = (from || sources[0] || '').toLowerCase();

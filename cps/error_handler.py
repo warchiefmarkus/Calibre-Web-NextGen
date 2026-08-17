@@ -7,7 +7,7 @@
 
 import traceback
 
-from flask import render_template
+from flask import redirect, render_template, request
 from werkzeug.exceptions import default_exceptions
 try:
     from werkzeug.exceptions import FailedDependency
@@ -16,6 +16,8 @@ except ImportError:
 
 from . import config, app, logger, services
 from .cw_login import current_user
+from .report_link import build_issue_url
+from .url_policy import trailing_slash_redirect_url
 
 
 log = logger.create()
@@ -23,6 +25,19 @@ log = logger.create()
 # custom error page
 
 def error_http(error):
+    # A 404 with no matched rule came from routing, not from a view calling
+    # abort(404). If the only thing wrong with the URL is a trailing slash,
+    # send the user to the page they meant instead of an error page.
+    if error.code == 404 and request.url_rule is None:
+        target = trailing_slash_redirect_url()
+        if target:
+            # 307, not 308: both preserve the method, but a permanent redirect
+            # is cached by the browser indefinitely. This app already has
+            # routes where a trailing slash is meaningful (the SPA registers
+            # both /app and /app/), so a cached permanent mapping could strand
+            # a client on the slash-less form with no server-side remedy.
+            return redirect(target, code=307)
+
     headers = {'WWW-Authenticate': f'Basic realm="{config.config_calibre_web_title or "calibre-web-automated"}"'} if error.code == 401 else {}
     return render_template('http_error.html',
                            error_code="Error {0}".format(error.code),
@@ -45,11 +60,24 @@ def internal_error(error):
             error_stack = traceback.format_exc().split("\n")
     except Exception:
         pass
+    error_name = ('The server encountered an internal error and was unable to complete your '
+                  'request. There is an error in the application.')
+    # Precomposed report link. This page asks the user to "report this issue
+    # with all related information" while already holding the error, and until
+    # now handed them a blank form and asked them to type the version by hand.
+    # Composed, never sent: only the user clicking through posts anything.
+    try:
+        issue_url = build_issue_url("500 Internal Server Error", error_name)
+    except Exception:
+        # An error page that errors is the worst possible outcome here, so the
+        # link is strictly best-effort — the template falls back to the plain
+        # new-issue URL when this is empty.
+        issue_url = ""
     return render_template('http_error.html',
                            error_code="500 Internal Server Error",
-                           error_name='The server encountered an internal error and was unable to complete your '
-                                      'request. There is an error in the application.',
+                           error_name=error_name,
                            issue=True,
+                           issue_url=issue_url,
                            unconfigured=False,
                            error_stack=error_stack,
                            instance=config.config_calibre_web_title

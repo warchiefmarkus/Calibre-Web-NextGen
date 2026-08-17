@@ -43,7 +43,7 @@ jobs:
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -92,7 +92,7 @@ jobs:
             echo "No translation changes to commit"
             echo "TRANSLATION_COMMITTED=0" >> $GITHUB_ENV
           else
-            git commit -m "Update translations [skip ci]"
+            git commit -m "Update translations"
             # The autopilot pushes docs commits to main minutes after each
             # merge, so a bare `git push` here loses that race and fails
             # non-fast-forward (3 of the last 30 runs). The commit holds

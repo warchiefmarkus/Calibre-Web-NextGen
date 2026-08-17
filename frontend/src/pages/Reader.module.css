@@ -10,7 +10,7 @@
   z-index: 1000;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 54px minmax(0, 1fr) 64px;
+  grid-template-rows: 66px minmax(0, 1fr) 64px;
   overflow: hidden;
   background: var(--reader-bg);
   color: var(--reader-text);
@@ -92,8 +92,8 @@
 .pageButton {
   display: inline-grid;
   place-items: center;
-  min-width: 38px;
-  min-height: 38px;
+  min-width: 44px;
+  min-height: 44px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -121,12 +121,23 @@
   overflow: hidden;
 }
 
+.sidePanelBackdrop {
+  position: fixed;
+  inset: 66px 0 0;
+  z-index: 1001;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
 .stage {
   position: relative;
   min-width: 0;
   min-height: 0;
   flex: 1;
   overflow: hidden;
+  contain: layout paint;
 }
 
 .host,
@@ -149,7 +160,7 @@
 .tapZone {
   position: absolute;
   inset-block: 0;
-  z-index: 2;
+  z-index: 4;
   width: clamp(56px, 9vw, 104px);
   display: grid;
   place-items: center;
@@ -168,6 +179,15 @@
     color-mix(in srgb, var(--reader-panel) 88%, transparent), transparent);
 }
 
+.translationTapZone {
+  opacity: .18;
+}
+
+.translationTapZone:hover,
+.translationTapZone:focus-visible {
+  opacity: .82;
+}
+
 .tapZoneLeft {
   --tap-fade-direction: right;
   inset-inline-start: 0;
@@ -177,7 +197,223 @@
   --tap-fade-direction: left;
   inset-inline-end: 0;
 }
+
+.translationToggle {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 44px);
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--reader-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--reader-bg) 72%, var(--reader-panel));
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 10%);
+}
+
+.translationToggle button {
+  inline-size: 44px;
+  block-size: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  color: var(--reader-muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.translationToggle button:hover {
+  color: var(--reader-text);
+}
+
+.translationToggleActive {
+  background: var(--reader-accent) !important;
+  color: var(--reader-bg) !important;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 22%);
+}
+
+.translationToggleIcon {
+  position: relative;
+  inline-size: 22px;
+  block-size: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+}
+
+.translationToggleIconBusy::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 999px;
+  pointer-events: none;
+  animation: translation-ring-spin 720ms linear infinite;
+}
+
+.translationToggle button[data-translation-activity='translation']
+.translationToggleIconBusy::after {
+  border-color: #22c55e;
+  border-inline-end-color: transparent;
+}
+
+.translationToggle button[data-translation-activity='preload']
+.translationToggleIconBusy::after {
+  border-color: #f59e0b;
+  border-inline-end-color: transparent;
+}
+
+@keyframes translation-ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .translationToggleIconBusy::after {
+    animation-duration: 1.8s;
+  }
+}
+
+.translationStatus {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  z-index: 5;
+  max-width: min(420px, calc(100% - 80px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--reader-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--reader-panel) 94%, transparent);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 22%);
+  color: var(--reader-text);
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.translationStatus button {
+  flex: 0 0 auto;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  padding: 5px 9px;
+  background: var(--reader-bg);
+  color: inherit;
+  cursor: pointer;
+}
+
+.translationOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.translationPageShell {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.translationPagerViewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.translationPagerContent {
+  position: absolute;
+  column-fill: auto;
+  overflow: visible;
+  transform-origin: left top;
+  transition: transform 180ms ease-out;
+  will-change: transform;
+  user-select: text;
+}
+
+.translationOverlay[data-flow='scrolled'] {
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+.translationOverlay[data-flow='scrolled'] .translationPageShell {
+  margin-inline: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.translationOverlay[data-flow='scrolled'] .translationPagerViewport {
+  position: relative;
+  min-height: 100%;
+  overflow: visible;
+}
+
+.translationOverlay[data-flow='scrolled'] .translationPagerContent {
+  position: relative;
+  margin-inline: auto;
+  column-count: auto;
+  column-fill: balance;
+  overflow: visible;
+  transition: none;
+  will-change: auto;
+}
+
+.translationPagerContent ::selection {
+  background: rgba(255, 214, 64, .72);
+  color: #1f1f1f;
+}
+
+.translationPagerContent ::-moz-selection {
+  background: rgba(255, 214, 64, .72);
+  color: #1f1f1f;
+}
+
+.translationBlock {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  break-inside: auto;
+  orphans: 2;
+  widows: 2;
+}
+
+.translationBlock:is(h1, h2, h3, h4, h5, h6) {
+  break-after: avoid-column;
+}
+
+.translationBlock a,
+.translationLink {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: .12em;
+}
+
+.translationBlock code {
+  font-family: monospace;
+}
+
+.translationImage {
+  break-inside: avoid-column;
+  page-break-inside: avoid;
+  user-select: none;
+}
+
 .sidePanel {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1002;
   width: min(380px, 88vw);
   min-width: min(380px, 88vw);
   height: 100%;
@@ -185,6 +421,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   background: var(--reader-panel);
   border-right: 1px solid var(--reader-border);
+  box-shadow: 10px 0 30px rgba(0, 0, 0, .22);
   overflow: hidden;
 }
 
@@ -323,6 +560,45 @@
   -webkit-box-orient: vertical;
 }
 
+.annotationSource {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border: 1px solid var(--reader-border);
+  border-radius: 999px;
+  color: var(--reader-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.annotationNewNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: 1px dashed var(--reader-border);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  padding: 9px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.annotationNewNote:hover {
+  background: color-mix(in srgb, var(--reader-accent) 10%, transparent);
+}
+
+.annotationStandaloneBody {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px;
+}
+
 .itemActions {
   display: flex;
   align-items: center;
@@ -334,6 +610,12 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding: 14px;
+}
+
+.translationPanel {
+  min-height: 0;
+  overflow: auto;
   padding: 14px;
 }
 
@@ -355,6 +637,58 @@
   align-items: center;
 }
 
+.translationSwitch {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.translationSwitch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.translationSwitchTrack {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border: 1px solid var(--reader-border);
+  border-radius: 999px;
+  background: var(--reader-panel);
+  transition: background-color .16s ease, border-color .16s ease;
+}
+
+.translationSwitchTrack::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--reader-muted);
+  transition: transform .16s ease, background-color .16s ease;
+}
+
+.translationSwitch input:checked + .translationSwitchTrack {
+  border-color: var(--reader-accent);
+  background: var(--reader-accent);
+}
+
+.translationSwitch input:checked + .translationSwitchTrack::after {
+  transform: translateX(16px);
+  background: white;
+}
+
+.translationSwitch input:focus-visible + .translationSwitchTrack {
+  outline: 2px solid var(--reader-accent);
+  outline-offset: 2px;
+}
+
 .settingsHint {
   display: flex;
   gap: 9px;
@@ -368,7 +702,11 @@
 }
 
 .bottomBar {
+  position: relative;
+  z-index: 6;
+  isolation: isolate;
   justify-content: center;
+  background: var(--reader-bg);
 }
 
 .progressArea {
@@ -398,10 +736,10 @@
 .selectionBar {
   position: fixed;
   z-index: 1003;
-  top: 62px;
+  top: 70px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(720px, calc(100vw - 24px));
+  width: min(860px, calc(100vw - 24px));
   display: flex;
   align-items: center;
   gap: 7px;
@@ -426,6 +764,24 @@
   white-space: nowrap;
 }
 
+.selectionBar button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.selectionChatGptIcon {
+  inline-size: 17px;
+  block-size: 17px;
+  flex: 0 0 auto;
+}
+
+.selectionError {
+  flex-basis: 100% !important;
+  color: #b43c3c;
+  font-size: 12px;
+  white-space: normal !important;
+}
+
 .saveError {
   position: fixed;
   right: 12px;
@@ -440,11 +796,19 @@
 }
 
 @media (max-width: 760px) {
-  .reader { grid-template-rows: 52px minmax(0, 1fr) 72px; }
+  .reader { grid-template-rows: 66px minmax(0, 1fr) 72px; }
   .bookIdentity span { display: none; }
-  .toolbar { gap: 0; }
-  .iconButton { min-width: 34px; min-height: 34px; }
-  .tapZone { width: clamp(88px, 28vw, 128px); }
+  .toolbar {
+    gap: 0;
+    min-width: 0;
+    max-width: min(70vw, 430px);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+  .iconButton { min-width: 44px; min-height: 44px; }
+  .tapZone { width: clamp(44px, 14vw, 64px); }
+  .sidePanelBackdrop { inset-block-start: 66px; }
   .sidePanel {
     position: absolute;
     inset: 0 auto 0 0;
@@ -452,12 +816,553 @@
     box-shadow: 10px 0 30px rgba(0, 0, 0, .28);
   }
   .progressMeta span:first-child { max-width: 55%; }
-  .selectionBar { align-items: stretch; flex-wrap: wrap; }
-  .selectionBar span { flex-basis: 100%; }
+  .selectionBar {
+    top: auto;
+    right: 8px;
+    bottom: 80px;
+    left: 8px;
+    width: auto;
+    max-height: calc(100dvh - 148px);
+    transform: none;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    overflow-y: auto;
+  }
+  .selectionBar > span:first-child { display: none; }
+  .selectionBar button {
+    min-height: 44px;
+    justify-content: center;
+    white-space: normal;
+  }
+  .selectionBar button:last-of-type { grid-column: 1 / -1; }
+  .selectionError { grid-column: 1 / -1; }
 }
 
 @media (max-width: 520px) {
   .toolbar .iconButton:nth-of-type(4),
   .toolbar .iconButton:nth-of-type(6) { display: none; }
   .progressArea { width: calc(100vw - 92px); }
+}
+
+.translationSettings {
+  display: grid;
+  gap: 12px;
+}
+
+.translationSettings label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.translationSettings output {
+  justify-self: end;
+  color: var(--reader-muted);
+  font-weight: 400;
+}
+
+.translationSettings input:not([type='checkbox']):not([type='range']),
+.translationSettings select,
+.translationSettings textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  background: var(--reader-bg);
+  color: inherit;
+  padding: 8px 9px;
+  font: inherit;
+}
+
+.translationSettings textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.translationProfileActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.translationProfileActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  background: var(--reader-panel);
+  color: inherit;
+  padding: 7px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.translationProfileActions button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.translationProfileEditor {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--reader-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--reader-panel) 72%, transparent);
+}
+
+.translationProfileGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.translationModelHealth {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--reader-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--reader-panel) 72%, transparent);
+}
+
+.translationModelHealthHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.translationModelHealthHeader > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.translationModelHealthHeader span,
+.translationModelHealthMeta,
+.translationModelHealthEmpty,
+.translationModelHealthCount {
+  margin: 0;
+  color: var(--reader-muted);
+  font-size: 12px;
+}
+
+.translationModelToolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.translationModelToolbar button {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: var(--reader-panel);
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.translationModelToolbar button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.translationModelHealthList {
+  max-height: 320px;
+  display: grid;
+  gap: 6px;
+  overflow: auto;
+}
+
+.translationModelFamily {
+  overflow: clip;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--reader-bg) 62%, transparent);
+}
+
+.translationModelFamily summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.translationModelFamily summary::-webkit-details-marker {
+  display: none;
+}
+
+.translationModelFamily summary::before {
+  content: '›';
+  color: var(--reader-muted);
+  font-size: 18px;
+  line-height: 1;
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.translationModelFamily[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.translationModelFamily[open] summary {
+  background: color-mix(in srgb, var(--reader-accent) 7%, transparent);
+}
+
+.translationModelFamilyName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.translationModelFamilyStats {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.translationModelFamilyStats > span {
+  min-width: 22px;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--reader-muted) 12%, transparent);
+  color: var(--reader-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.translationModelFamilyStats > span[data-status='ok'] {
+  background: color-mix(in srgb, #2e8b57 14%, transparent);
+  color: color-mix(in srgb, #2e8b57 76%, var(--reader-text));
+}
+
+.translationModelFamilyStats > span[data-status='error'] {
+  background: color-mix(in srgb, #b43c3c 14%, transparent);
+  color: color-mix(in srgb, #b43c3c 76%, var(--reader-text));
+}
+
+.translationModelFamilyStats > span[data-status='checking'] {
+  background: color-mix(in srgb, var(--reader-accent) 14%, transparent);
+  color: var(--reader-accent);
+}
+
+.translationModelFamilyRows {
+  border-top: 1px solid var(--reader-border);
+}
+
+.translationModelHealthRow {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--reader-border) 70%, transparent);
+  padding: 7px 9px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.translationModelHealthRow:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--reader-accent) 8%, transparent);
+}
+
+.translationModelHealthRow[data-selected='true'] {
+  background: color-mix(in srgb, var(--reader-accent) 13%, transparent);
+}
+
+.translationModelHealthRow:disabled {
+  cursor: default;
+}
+
+.translationModelHealthRow:last-child {
+  border-bottom: 0;
+}
+
+.translationModelSelected {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--reader-accent);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.translationModelHealthName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+
+.translationModelHealthStatus {
+  min-width: 74px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: color-mix(in srgb, var(--reader-muted) 12%, transparent);
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.translationModelHealthStatus[data-status='ok'] {
+  background: color-mix(in srgb, #2e8b57 14%, transparent);
+  color: color-mix(in srgb, #2e8b57 76%, var(--reader-text));
+}
+
+.translationModelHealthStatus[data-status='error'] {
+  background: color-mix(in srgb, #b43c3c 14%, transparent);
+  color: color-mix(in srgb, #b43c3c 76%, var(--reader-text));
+}
+
+.translationModelHealthStatus[data-status='checking'] {
+  background: color-mix(in srgb, var(--reader-accent) 14%, transparent);
+  color: var(--reader-accent);
+}
+
+.translationModelHealthSpin {
+  animation: translation-model-health-spin 800ms linear infinite;
+}
+
+@keyframes translation-model-health-spin {
+  to { transform: rotate(360deg); }
+}
+
+.translationWarning,
+.translationError,
+.translationNotice {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.translationWarning {
+  border: 1px solid color-mix(in srgb, #b8860b 45%, var(--reader-border));
+  background: color-mix(in srgb, #b8860b 10%, transparent);
+}
+
+.translationError {
+  border: 1px solid color-mix(in srgb, #b43c3c 50%, var(--reader-border));
+  background: color-mix(in srgb, #b43c3c 10%, transparent);
+}
+
+.translationNotice {
+  border: 1px solid color-mix(in srgb, var(--reader-accent) 45%, var(--reader-border));
+  background: color-mix(in srgb, var(--reader-accent) 10%, transparent);
+}
+
+@media (max-width: 760px) {
+  .translationProfileGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Foliate annotation composer: upstream note/highlight UX adapted to the
+   unified reader engine. All interactive targets are >=44px. */
+.annotationComposerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1010;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 38%);
+}
+
+.annotationComposer {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 32px));
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--reader-border);
+  border-radius: 12px;
+  background: var(--reader-panel);
+  color: var(--reader-text);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 35%);
+}
+
+.annotationComposerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.annotationComposerHeader > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.annotationComposerHeader h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.annotationComposerQuote {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-inline-start: 3px solid var(--reader-accent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--reader-accent) 8%, transparent);
+  color: var(--reader-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.annotationColorFieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.annotationColorFieldset legend,
+.annotationNoteField > span {
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.annotationColorChoices {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.annotationColorButton {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.annotationColorButton > span,
+.annotationColorDot {
+  display: inline-block;
+  border-radius: 999px;
+  background: var(--annotation-color, #f6c945);
+}
+.annotationColorButton > span { width: 28px; height: 28px; }
+.annotationColorDot { width: 10px; height: 10px; flex: 0 0 auto; }
+.annotationColorButton[aria-pressed='true'] { border-color: var(--reader-accent); }
+.annotationColorButton[data-color='yellow'], .annotationColorDot[data-color='yellow'] { --annotation-color: #f6c945; }
+.annotationColorButton[data-color='green'], .annotationColorDot[data-color='green'] { --annotation-color: #5fbd78; }
+.annotationColorButton[data-color='blue'], .annotationColorDot[data-color='blue'] { --annotation-color: #5b9cf6; }
+.annotationColorButton[data-color='red'], .annotationColorDot[data-color='red'] { --annotation-color: #ef6a6a; }
+
+.annotationNoteField {
+  display: grid;
+}
+
+.annotationNoteField textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  box-sizing: border-box;
+  border: 1px solid var(--reader-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--reader-bg);
+  color: var(--reader-text);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.annotationComposerActions {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.annotationComposerActions button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--reader-border);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: var(--reader-panel);
+  color: inherit;
+  cursor: pointer;
+}
+.annotationComposerActions button:disabled { opacity: .55; cursor: wait; }
+.annotationSaveAction { background: var(--reader-accent) !important; color: white !important; border-color: var(--reader-accent) !important; }
+.annotationDeleteAction { color: #b43c3c !important; }
+
+.annotationText {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.itemActions button { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; }
+.searchForm button, .selectionBar button { min-height: 44px; }
+
+@media (max-width: 600px) {
+  .annotationComposerBackdrop {
+    place-items: end center;
+    padding: 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
+  .annotationComposer {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px 12px 8px 8px;
+  }
+  .annotationNoteField textarea { font-size: 16px; }
+  .annotationComposerActions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .annotationComposerActions > span { display: none; }
+  .annotationDeleteAction { grid-column: 1 / -1; }
+}
+.annotationComposerError {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: color-mix(in srgb, #b43c3c 12%, transparent);
+  color: #b43c3c;
+  font-size: 13px;
 }

@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
+import os
 import sys
 
 from . import create_app, limiter
@@ -17,10 +18,33 @@ def request_username():
     return request.authorization.username
 
 
+def hide_console_windows():
+    """Hide the console window on Windows. No-op everywhere else.
+
+    Call this from a script entry point, never from main(). main() is also the
+    `cps` console script (pyproject [project.scripts]), and a Windows user who
+    types `cps` in a terminal wants that terminal: hiding it takes their server
+    output and their Ctrl-C with it while the process keeps running.
+    """
+    if os.name != "nt":
+        return
+
+    import ctypes
+
+    kernel32 = ctypes.WinDLL('kernel32')
+    user32 = ctypes.WinDLL('user32')
+
+    SW_HIDE = 0
+
+    hWnd = kernel32.GetConsoleWindow()
+    if hWnd:
+        user32.ShowWindow(hWnd, SW_HIDE)
+
+
 def main():
     app = create_app()
 
-    from .cwa_functions import switch_theme, library_refresh, convert_library, epub_fixer, cwa_stats, cwa_check_status, cwa_settings, cwa_logs, profile_pictures, cwa_internal
+    from .cwa_functions import switch_theme, library_refresh, convert_library, epub_fixer, cover_enforcer_ui, cwa_stats, cwa_check_status, cwa_settings, cwa_logs, profile_pictures, cwa_internal
     from .web import web
     from .opds import opds
     from .admin import admi
@@ -78,6 +102,7 @@ def main():
         app.register_blueprint(library_refresh)
         app.register_blueprint(convert_library)
         app.register_blueprint(epub_fixer)
+        app.register_blueprint(cover_enforcer_ui)
         app.register_blueprint(cwa_internal)
 
     # Stock CW
@@ -120,6 +145,23 @@ def main():
     if not deployment_profile.is_mcp_managed_library():
         from .services import annotation_sync
         annotation_sync.enable_background_dispatch()
+
+    # Upgrades receive the default-on preference through the settings-table
+    # migration without an admin save, so give that path its one-time trigger.
+    # This is a convenience job: failure must never prevent HTTP startup.
+    try:
+        from .tasks.kepub_backfill import enqueue_startup_kepub_backfill
+        enqueue_startup_kepub_backfill()
+    except Exception as ex:
+        from . import logger
+        logger.create().error_or_exception(f"Could not queue startup KEPUB backfill: {ex}")
+
+    try:
+        from .tasks.kepub_package_repair import enqueue_startup_kepub_package_repair
+        enqueue_startup_kepub_package_repair()
+    except Exception as ex:
+        from . import logger
+        logger.create().error_or_exception(f"Could not queue startup KEPUB package repair: {ex}")
 
     success = web_server.start()
     sys.exit(0 if success else 1)

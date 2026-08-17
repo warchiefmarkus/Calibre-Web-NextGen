@@ -1,199 +1,65 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'wouter';
-import {
-  AlignJustify, Bookmark, BookOpen, ChevronLeft, ChevronRight,
-  Columns2, Highlighter, List, Maximize, Search, Settings,
-  Square, StickyNote, Trash2, Volume2, X,
-} from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState';
 import { SpinnerCentered } from '../components/Spinner';
 import { apiDelete, apiGet, apiPatch, apiPost, resourceUrl } from '../lib/api';
 import {
   useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
-  useReaderBookmarks, useReaderSettings,
-  useSaveReaderSettings, type ReaderBookmark, type ReaderSettings,
+  useReaderBookmarks, useReaderSettings, useReaderTranslationProfiles,
+  useSaveReaderSettings, translateReaderPage, type ReaderBookmark, type ReaderSettings,
+  type ReaderTranslationBlock, type ReaderTranslationResponse,
 } from '../lib/queries';
 import { useT } from '../lib/i18n';
-import { parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
+import { formatReadingProgress, parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
 import styles from './Reader.module.css';
 
-// Vendored at an exact upstream commit; see vendor/foliate-js/UPSTREAM.md.
-import '../vendor/foliate-js/view.js';
-// @ts-expect-error foliate-js intentionally ships browser JavaScript without declarations.
-import { Overlayer } from '../vendor/foliate-js/overlayer.js';
-type TocItem = { label?: string; href?: string; subitems?: TocItem[] };
-type SearchExcerpt = { pre: string; match: string; post: string };
-type SearchResult = { cfi: string; label: string; excerpt: SearchExcerpt };
-type ReaderPanel = 'toc' | 'search' | 'bookmarks' | 'notes' | 'settings' | null;
-
-type FoliateLocation = {
-  fraction?: number;
-  location?: { current?: number; total?: number };
-  tocItem?: { label?: string; href?: string };
-  pageItem?: { label?: string };
-  cfi?: string;
-  range?: Range;
-};
-
-type FoliateAnnotation = {
+// Foliate-specific engine details live behind the reader module boundary.
+import { allowsWheelPageTurn, createFoliateView, flattenToc, formatLanguageMap, isReaderTypingTarget,
+  readerFileName, readerMime, scrolledPageTurnDistance, type FoliateAnnotation, type FoliateLocation,
+  type FoliateView, type SearchExcerpt, type SearchResult, type TocItem } from './reader/FoliateEngine';
+import { ReaderSidePanel, type ReaderPanel } from './reader/ReaderSidePanel';
+import { ReaderToolbar } from './reader/ReaderToolbar';
+import { ReaderBottomBar } from './reader/ReaderBottomBar';
+import { SelectionActions } from './reader/SelectionActions';
+import { AnnotationComposer } from './reader/annotations/AnnotationComposer';
+import { drawFoliateHighlight } from './reader/annotations/draw';
+import { annotationColor, type AnnotationEditorState, type HighlightColor,
+  type ServerAnnotation } from './reader/annotations/types';
+import { useReaderFullscreen } from './reader/fullscreen';
+import { findMoonAnchorCfi } from './reader/useMoonRestore';
+import { useReadingMovement } from './reader/useReadingMovement';
+import { TranslationOverlay } from './reader/translation/TranslationOverlay';
+import { FONT_MAX, FONT_MIN, READER_THEME, readerCss } from './reader/settings/readerStyle';
+import {
+  TRANSLATION_DEBOUNCE_MS, alignTranslatedBlocks, applySentenceCarry, extractVisiblePage,
+  normalizeLanguageCode, sourceAlreadyMatchesTarget, splitTrailingSentenceForNext,
+  translationPageCacheKey, translationPageKey,
+  translationProfileRevision, translationRequestBlocks, translationResponseForMode,
+  translationSourcePageId, type StyledTranslationBlock, type TranslationContentSegment,
+  type TranslationPageLayout, type TranslationPreloadJob, type TranslationPreloadTask,
+  type TranslationSentenceCarry,
+} from './reader/translation/translationPage';
+type PendingReaderSelection = {
   value: string;
-  color?: string;
-  note?: string | null;
-  id?: string;
-  text?: string | null;
+  text: string;
+  leadingWhitespace: string;
+  trailingWhitespace: string;
 };
 
-type FoliateRenderer = HTMLElement & {
-  setStyles?: (css: string | [string, string]) => void;
-  getContents?: () => Array<{ doc: Document; index: number }>;
-};
-type FoliateView = HTMLElement & {
-  book?: {
-    toc?: TocItem[];
-    sections?: unknown[];
-    metadata?: { title?: unknown; author?: unknown; language?: string };
-    dir?: string;
-  };
-  renderer?: FoliateRenderer;
-  lastLocation?: FoliateLocation;
-  open: (file: File) => Promise<void>;
-  init: (options: { lastLocation?: string | { fraction: number }; showTextStart?: boolean }) => Promise<void>;
-  close: () => void;
-  prev: () => Promise<void>;
-  next: () => Promise<void>;
-  goLeft: () => Promise<void>;
-  goRight: () => Promise<void>;
-  goTo: (target: string | number | { fraction: number }) => Promise<unknown>;
-  goToFraction: (fraction: number) => Promise<void>;
-  getSectionFractions: () => number[];
-  getCFI: (index: number, range?: Range) => string;
-  search: (options: Record<string, unknown>) => AsyncGenerator<unknown>;
-  clearSearch: () => void;
-  addAnnotation: (annotation: FoliateAnnotation) => Promise<unknown>;
-  deleteAnnotation: (annotation: FoliateAnnotation) => Promise<unknown>;
-  showAnnotation: (annotation: FoliateAnnotation) => Promise<void>;
-  deselect: () => void;
-};
-
-type ServerAnnotation = {
-  annotation_id: string;
-  cfi_range: string | null;
-  highlighted_text: string | null;
-  highlight_color: string;
-  note_text: string | null;
+type InlineTranslationPatch = {
+  marker: HTMLElement;
+  original: DocumentFragment;
 };
 const FOLIATE_FORMATS = ['EPUB', 'KEPUB', 'FB2', 'FBZ', 'MOBI', 'AZW3', 'AZW', 'CBZ'] as const;
 const FORMAT_PRIORITY = ['EPUB', 'KEPUB', 'FB2', 'MOBI', 'AZW3', 'AZW', 'CBZ'];
-const FONT_MIN = 75;
-const FONT_MAX = 200;
-
-const MIME: Record<string, string> = {
-  EPUB: 'application/epub+zip',
-  KEPUB: 'application/epub+zip',
-  FB2: 'application/x-fictionbook+xml',
-  FBZ: 'application/x-zip-compressed-fb2',
-  MOBI: 'application/x-mobipocket-ebook',
-  AZW: 'application/vnd.amazon.ebook',
-  AZW3: 'application/vnd.amazon.ebook',
-  CBZ: 'application/vnd.comicbook+zip',
-};
-
-const FONT_FAMILY: Record<ReaderSettings['font'], string> = {
-  default: 'Georgia, "Times New Roman", serif',
-  Yahei: '"Microsoft YaHei", sans-serif',
-  SimSun: 'SimSun, serif',
-  KaiTi: 'KaiTi, serif',
-  Arial: 'Arial, sans-serif',
-};
-
-const THEME: Record<ReaderSettings['theme'], { background: string; text: string; link: string }> = {
-  lightTheme: { background: '#fffdf8', text: '#24211d', link: '#225ea8' },
-  sepiaTheme: { background: '#f4ecd8', text: '#433422', link: '#7a4b20' },
-  darkTheme: { background: '#202124', text: '#e8eaed', link: '#8ab4f8' },
-  blackTheme: { background: '#000000', text: '#eeeeee', link: '#8ab4f8' },
-};
-
 const READER_WHEEL_THRESHOLD_PX = 48;
 const READER_WHEEL_COOLDOWN_MS = 320;
 const READER_WHEEL_IDLE_RESET_MS = 160;
 
-function allowsWheelPageTurn(target: EventTarget | null): boolean {
-  const element = target as { closest?: (selector: string) => Element | null } | null;
-  if (!element?.closest) return true;
-  if (element.closest('[data-reader-wheel-page-zone]')) return true;
-  return !element.closest('input, textarea, select, button, [contenteditable="true"], [role="slider"]');
+function chatGptSelectedTextUrl(text: string): string {
+  return `https://chatgpt.com/?q=${encodeURIComponent(text.trim())}`;
 }
 
-function formatLanguageMap(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object') {
-    const entries = Object.values(value as Record<string, unknown>);
-    return entries.find((item): item is string => typeof item === 'string') ?? '';
-  }
-  return '';
-}
-
-function flattenToc(items: TocItem[] = [], depth = 0): Array<TocItem & { depth: number }> {
-  return items.flatMap((item) => [
-    { ...item, depth },
-    ...flattenToc(item.subitems ?? [], depth + 1),
-  ]);
-}
-
-function excerptText(excerpt: SearchExcerpt): string {
-  return `${excerpt.pre}${excerpt.match}${excerpt.post}`;
-}
-
-function fileName(format: string): string {
-  const extension = format === 'KEPUB' ? 'epub' : format.toLowerCase();
-  return `book.${extension}`;
-}
-
-function readerCss(settings: ReaderSettings, compactViewport = false): string {
-  const theme = THEME[settings.theme];
-  const compactReflow = compactViewport ? `
-    html {
-      inline-size: 100% !important;
-      min-inline-size: 0 !important;
-      max-inline-size: 100% !important;
-      overflow-x: hidden !important;
-      box-sizing: border-box !important;
-    }
-    body {
-      inline-size: auto !important;
-      width: auto !important;
-      min-inline-size: 0 !important;
-      min-width: 0 !important;
-      max-inline-size: 100% !important;
-      max-width: 100% !important;
-      margin-inline: 0 !important;
-      overflow-x: hidden !important;
-      box-sizing: border-box !important;
-    }
-    body * {
-      min-inline-size: 0 !important;
-      min-width: 0 !important;
-      max-inline-size: 100% !important;
-      max-width: 100% !important;
-      box-sizing: border-box !important;
-    }
-    h1, h2, h3, h4, h5, h6, p, pre, code {
-      overflow-wrap: anywhere !important;
-    }
-    pre, code { white-space: pre-wrap !important; }
-    table { inline-size: 100% !important; table-layout: fixed !important; }
-  ` : '';
-  return `
-    :root { color-scheme: ${settings.theme === 'lightTheme' || settings.theme === 'sepiaTheme' ? 'light' : 'dark'}; }
-    html, body { background: ${theme.background} !important; color: ${theme.text} !important; }
-    body { font-family: ${FONT_FAMILY[settings.font]} !important; font-size: ${settings.fontSize}% !important;
-      line-height: ${settings.lineHeight / 100} !important; text-align: left !important; }
-    a { color: ${theme.link} !important; }
-    img, svg, video { max-width: 100% !important; }
-    ${compactReflow}
-    ::selection { background: rgba(255, 214, 64, .55); }
-  `;
-}
 export function Reader({ id, format }: { id: string; format?: string }) {
   const t = useT();
   const bookQuery = useBook(id);
@@ -210,14 +76,17 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
   const fmt = selectedFormat?.format.toLowerCase() ?? requested?.toLowerCase() ?? 'epub';
   const settingsQuery = useReaderSettings();
+  const translationProfilesQuery = useReaderTranslationProfiles();
   const positionQuery = useBookmark(id, fmt);
   const bookmarksQuery = useReaderBookmarks(id, fmt);
   const saveSettings = useSaveReaderSettings();
   const createBookmark = useCreateReaderBookmark(id, fmt);
   const deleteBookmark = useDeleteReaderBookmark(id, fmt);
 
-  const { schedule: schedulePosition, saveError } = useReadingPositionSaver(id, fmt, 450);
+  const { schedule: schedulePosition, saveError, savedPositionFraction } = useReadingPositionSaver(id, fmt, 450);
+  const { movementRef: readingMovementRef, markReadingMovement, resetReadingMovement } = useReadingMovement();
 
+  const shellRef = useRef<HTMLElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
@@ -229,11 +98,38 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const wheelDirectionRef = useRef(0);
   const wheelLockUntilRef = useRef(0);
   const wheelIdleTimerRef = useRef<number | null>(null);
+  const translationAbortRef = useRef<AbortController | null>(null);
+  const translationInFlightKeyRef = useRef<string | null>(null);
+  const translationCurrentKeyRef = useRef<string | null>(null);
+  const translationFailureRef = useRef<{ key: string; message: string } | null>(null);
+  const translationStartedAtRef = useRef<number | null>(null);
+  const translationPreloadAbortRef = useRef<AbortController | null>(null);
+  const translationPreloadStartedAtRef = useRef<number | null>(null);
+  const translationPreloadInFlightKeyRef = useRef<string | null>(null);
+  const translationPreloadQueuedRef = useRef<TranslationPreloadJob | null>(null);
+  const translationPreloadTaskRef = useRef<TranslationPreloadTask | null>(null);
+  const translationPreloadRunnerRef = useRef<(job: TranslationPreloadJob) => void>(() => undefined);
+  const translationCacheRef = useRef<Map<string, ReaderTranslationBlock[]>>(new Map());
+  const translationSentenceCarryRef = useRef<Map<string, TranslationSentenceCarry>>(new Map());
+  const translationOverlayRef = useRef<HTMLDivElement>(null);
+  const translationPagerContentRef = useRef<HTMLDivElement>(null);
+  const translationBlocksRef = useRef<StyledTranslationBlock[]>([]);
+  const translationPageIndexRef = useRef(0);
+  const translationPageCountRef = useRef(1);
+  const translationLandingRef = useRef<'first' | 'last' | null>(null);
+  const translationTransitionRef = useRef(false);
+  const translationSkippedRef = useRef(false);
+  const pendingSelectionRangeRef = useRef<{ range: Range; doc: Document } | null>(null);
+  const inlineTranslationPatchesRef = useRef<InlineTranslationPatch[]>([]);
+
+  const { fullscreenSupported, isFullscreen, toggleFullscreen } = useReaderFullscreen(shellRef);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReaderPanel>(null);
   const [title, setTitle] = useState('');
+  const [bookLanguage, setBookLanguage] = useState('');
+  const [bookRtl, setBookRtl] = useState(false);
   const [toc, setToc] = useState<Array<TocItem & { depth: number }>>([]);
   const [sectionFractions, setSectionFractions] = useState<number[]>([]);
   const [location, setLocation] = useState<FoliateLocation>({ fraction: 0 });
@@ -242,15 +138,77 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [searching, setSearching] = useState(false);
   const [searchProgress, setSearchProgress] = useState(0);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [pendingSelection, setPendingSelection] = useState<{ value: string; text: string } | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<PendingReaderSelection | null>(null);
   const [annotations, setAnnotations] = useState<FoliateAnnotation[]>([]);
-  const [selectedAnnotation, setSelectedAnnotation] = useState<FoliateAnnotation | null>(null);
+  const [annotationEditor, setAnnotationEditor] = useState<AnnotationEditorState | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [translationBlocks, setTranslationBlocks] = useState<StyledTranslationBlock[]>([]);
+  const [translationSegments, setTranslationSegments] = useState<TranslationContentSegment[]>([]);
+  const [translationLayout, setTranslationLayout] = useState<TranslationPageLayout | null>(null);
+  const [translationPageIndex, setTranslationPageIndex] = useState(0);
+  const [translationLoading, setTranslationLoading] = useState(false);
+  const [translationPreloading, setTranslationPreloading] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [translationRetry, setTranslationRetry] = useState(0);
+  const [translationSkipped, setTranslationSkipped] = useState(false);
+  const [selectionTranslationLoading, setSelectionTranslationLoading] = useState(false);
+  const [selectionTranslationError, setSelectionTranslationError] = useState<string | null>(null);
+
+  const closePanel = useCallback(() => setPanel(null), []);
+  const closeAnnotationEditor = useCallback(() => setAnnotationEditor(null), []);
+
+  const openEditAnnotation = useCallback((annotation: FoliateAnnotation) => {
+    if (annotation.unanchored) {
+      setAnnotationEditor({
+        mode: 'standalone', annotation, color: 'yellow',
+        note: annotation.note ?? '', focusNote: true,
+      });
+      return;
+    }
+    setAnnotationEditor({
+      mode: 'edit', annotation, color: annotationColor(annotation.color),
+      note: annotation.note ?? '', focusNote: true,
+    });
+  }, []);
+
+  const activeTranslationProfile = useMemo(() => (
+    translationProfilesQuery.data?.profiles.find(
+      (item) => item.id === settings?.translationProfileId,
+    ) ?? null
+  ), [settings?.translationProfileId, translationProfilesQuery.data?.profiles]);
+
+  const activeTranslationProfileRevision = useMemo(
+    () => translationProfileRevision(activeTranslationProfile),
+    [activeTranslationProfile],
+  );
+
+  const translationRequestTimeoutMs = useMemo(() => {
+    const seconds = Math.max(5, Math.min(
+      180, Number(activeTranslationProfile?.timeout_seconds ?? 60),
+    ));
+    return seconds * 1000 + 5000;
+  }, [activeTranslationProfile?.timeout_seconds]);
+
+  useEffect(() => {
+    translationBlocksRef.current = translationBlocks;
+  }, [translationBlocks]);
+
+  useEffect(() => {
+    translationSkippedRef.current = translationSkipped;
+  }, [translationSkipped]);
+
+  useEffect(() => {
+    if (settings && !settings.translationCacheEnabled) {
+      translationCacheRef.current.clear();
+    }
+  }, [settings?.translationCacheEnabled]);
 
   useEffect(() => () => {
     if (wheelIdleTimerRef.current !== null) {
       window.clearTimeout(wheelIdleTimerRef.current);
     }
+    translationAbortRef.current?.abort();
+    translationPreloadAbortRef.current?.abort();
   }, []);
 
   const applySettings = useCallback((next: ReaderSettings) => {
@@ -278,7 +236,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       compactViewport || next.spread === 'nonespread' ? 1 : next.maxColumnCount,
     ));
     renderer.toggleAttribute('animated', next.animated && next.flow === 'paginated');
-    renderer.setAttribute('background', THEME[next.theme].background);
+    renderer.setAttribute('background', READER_THEME[next.theme].background);
     renderer.setStyles?.(readerCss(next, compactViewport));
   }, []);
 
@@ -292,6 +250,201 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       return next;
     });
   }, [applySettings, saveSettings]);
+
+  const cacheTranslatedPage = useCallback((key: string, blocks: ReaderTranslationBlock[]) => {
+    translationCacheRef.current.set(key, blocks);
+    if (translationCacheRef.current.size > 100) {
+      const oldest = translationCacheRef.current.keys().next().value as string | undefined;
+      if (oldest) translationCacheRef.current.delete(oldest);
+    }
+  }, []);
+
+  const cancelTranslationPreload = useCallback(() => {
+    translationPreloadAbortRef.current?.abort();
+    translationPreloadAbortRef.current = null;
+    translationPreloadInFlightKeyRef.current = null;
+    translationPreloadStartedAtRef.current = null;
+    translationPreloadQueuedRef.current = null;
+    translationPreloadTaskRef.current = null;
+    setTranslationPreloading(false);
+  }, []);
+
+  const runTranslationPreload = useCallback((job: TranslationPreloadJob) => {
+    const currentSettings = settingsRef.current;
+    const enabled = !!currentSettings?.translationEnabled
+      && currentSettings.translationView === 'translated'
+      && currentSettings.translationCacheEnabled
+      && currentSettings.translationPreloadNextPage
+      && !!currentSettings.translationProfileId;
+    const currentConfigMatches = !!currentSettings
+      && currentSettings.translationProfileId === job.settings.translationProfileId
+      && activeTranslationProfileRevision === job.profileRevision
+      && currentSettings.translationSourceLanguage === job.settings.translationSourceLanguage
+      && currentSettings.translationTargetLanguage === job.settings.translationTargetLanguage
+      && currentSettings.translationMode === job.settings.translationMode
+      && currentSettings.translationPrompt === job.settings.translationPrompt
+      && currentSettings.flow === job.settings.flow
+      && currentSettings.font === job.settings.font
+      && currentSettings.fontSize === job.settings.fontSize
+      && currentSettings.lineHeight === job.settings.lineHeight
+      && currentSettings.margin === job.settings.margin
+      && currentSettings.maxColumnCount === job.settings.maxColumnCount
+      && currentSettings.maxInlineSize === job.settings.maxInlineSize
+      && currentSettings.spread === job.settings.spread;
+    if (!enabled || !currentConfigMatches || translationCacheRef.current.has(job.key)
+        || translationPreloadInFlightKeyRef.current === job.key) return;
+
+    if (translationPreloadInFlightKeyRef.current) {
+      translationPreloadQueuedRef.current = job;
+      return;
+    }
+
+    const controller = new AbortController();
+    translationPreloadAbortRef.current = controller;
+    translationPreloadInFlightKeyRef.current = job.key;
+    translationPreloadStartedAtRef.current = Date.now();
+    setTranslationPreloading(true);
+    const configuredSource = normalizeLanguageCode(job.settings.translationSourceLanguage);
+    const promise = translateReaderPage(id, {
+      profile_id: job.settings.translationProfileId,
+      format: fmt,
+      source_language: configuredSource === 'auto' || !configuredSource
+        ? bookLanguage || 'auto'
+        : configuredSource,
+      target_language: job.settings.translationTargetLanguage,
+      mode: job.settings.translationMode,
+      prompt: job.settings.translationPrompt,
+      cache_enabled: true,
+      blocks: translationRequestBlocks(job.settings.translationMode, job.blocks),
+    }, controller.signal).then((response) => (
+      translationResponseForMode(job.settings.translationMode, job.blocks, response)
+    ));
+    translationPreloadTaskRef.current = { key: job.key, controller, promise };
+    void promise.then((response) => {
+      if (!controller.signal.aborted && !response.skipped) {
+        cacheTranslatedPage(job.key, response.blocks);
+      }
+    }).catch(() => {
+      // Preloading is opportunistic. If the user opens this page while the
+      // request is active, the foreground path joins the same promise and will
+      // surface its provider error instead of starting a duplicate request.
+    }).finally(() => {
+      if (translationPreloadInFlightKeyRef.current === job.key) {
+        translationPreloadInFlightKeyRef.current = null;
+        translationPreloadStartedAtRef.current = null;
+      }
+      if (translationPreloadAbortRef.current === controller) {
+        translationPreloadAbortRef.current = null;
+      }
+      if (translationPreloadTaskRef.current?.controller === controller) {
+        translationPreloadTaskRef.current = null;
+      }
+      const queued = translationPreloadQueuedRef.current;
+      translationPreloadQueuedRef.current = null;
+      setTranslationPreloading(false);
+      if (queued && queued.key !== job.key) {
+        window.queueMicrotask(() => translationPreloadRunnerRef.current(queued));
+      }
+    });
+  }, [activeTranslationProfileRevision, bookLanguage, cacheTranslatedPage, fmt, id]);
+
+  useEffect(() => {
+    translationPreloadRunnerRef.current = runTranslationPreload;
+  }, [runTranslationPreload]);
+
+  const scheduleNextTranslationPreload = useCallback((activeSettings: ReaderSettings) => {
+    if (!activeSettings.translationEnabled
+        || activeSettings.translationView !== 'translated'
+        || !activeSettings.translationCacheEnabled
+        || !activeSettings.translationPreloadNextPage
+        || !activeSettings.translationProfileId) return;
+
+    const renderer = viewRef.current?.renderer;
+    const extraction = extractVisiblePage(renderer, 1);
+    const pageId = translationSourcePageId(renderer, 1);
+    const key = translationPageCacheKey(
+      activeSettings, activeTranslationProfileRevision, pageId,
+    );
+    if (!extraction || !key) return;
+
+    let blocks = applySentenceCarry(
+      extraction.blocks,
+      pageId ? translationSentenceCarryRef.current.get(pageId) : undefined,
+    );
+    const following = extractVisiblePage(renderer, 2);
+    if (following) {
+      const split = splitTrailingSentenceForNext(blocks, following.blocks);
+      blocks = split.blocks;
+      const followingPageId = translationSourcePageId(renderer, 2);
+      if (split.carry && followingPageId) {
+        translationSentenceCarryRef.current.set(followingPageId, split.carry);
+      }
+    }
+
+    if (!blocks.length || sourceAlreadyMatchesTarget(activeSettings, bookLanguage, blocks)) return;
+    if (translationCacheRef.current.has(key)
+        || translationPreloadInFlightKeyRef.current === key) return;
+    translationPreloadRunnerRef.current({
+      key,
+      settings: { ...activeSettings },
+      profileRevision: activeTranslationProfileRevision,
+      blocks,
+    });
+  }, [activeTranslationProfileRevision, bookLanguage]);
+
+  useEffect(() => {
+    // Any translation configuration change invalidates an active speculative
+    // request. The next completed current page will schedule a fresh preload.
+    cancelTranslationPreload();
+  }, [activeTranslationProfileRevision, cancelTranslationPreload,
+    settings?.flow, settings?.font, settings?.fontSize, settings?.lineHeight,
+    settings?.margin, settings?.maxColumnCount, settings?.maxInlineSize, settings?.spread,
+    settings?.translationCacheEnabled, settings?.translationEnabled,
+    settings?.translationPreloadNextPage, settings?.translationProfileId,
+    settings?.translationMode, settings?.translationPrompt, settings?.translationSourceLanguage,
+    settings?.translationTargetLanguage, settings?.translationView]);
+
+  useEffect(() => {
+    translationSentenceCarryRef.current.clear();
+  }, [settings?.flow, settings?.font, settings?.fontSize, settings?.lineHeight,
+    settings?.margin, settings?.maxColumnCount, settings?.maxInlineSize, settings?.spread]);
+
+  useEffect(() => {
+    if (!translationLoading && !translationPreloading) return;
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const foregroundStarted = translationStartedAtRef.current;
+      if (translationLoading
+          && !translationInFlightKeyRef.current
+          && !translationTransitionRef.current) {
+        translationStartedAtRef.current = null;
+        setTranslationLoading(false);
+      } else if (translationLoading && foregroundStarted !== null
+          && now - foregroundStarted > translationRequestTimeoutMs) {
+        const failedKey = translationInFlightKeyRef.current;
+        const message = t('Page translation timed out.');
+        translationAbortRef.current?.abort();
+        translationAbortRef.current = null;
+        translationInFlightKeyRef.current = null;
+        translationStartedAtRef.current = null;
+        if (failedKey) translationFailureRef.current = { key: failedKey, message };
+        cancelTranslationPreload();
+        setTranslationLoading(false);
+        setTranslationError(message);
+      }
+
+      const preloadStarted = translationPreloadStartedAtRef.current;
+      if (translationPreloading && !translationPreloadInFlightKeyRef.current) {
+        translationPreloadStartedAtRef.current = null;
+        setTranslationPreloading(false);
+      } else if (translationPreloading && preloadStarted !== null
+          && now - preloadStarted > translationRequestTimeoutMs) {
+        cancelTranslationPreload();
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cancelTranslationPreload, t, translationLoading, translationPreloading,
+    translationRequestTimeoutMs]);
 
   useEffect(() => {
     if (!settings) return;
@@ -311,25 +464,137 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
 
   const dismissSelection = useCallback(() => {
+    pendingSelectionRangeRef.current = null;
     setPendingSelection(null);
+    setSelectionTranslationError(null);
     viewRef.current?.deselect();
   }, []);
 
-  const navigate = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
+  const restoreInlineTranslations = useCallback(() => {
+    const patches = inlineTranslationPatchesRef.current.splice(0).reverse();
+    for (const patch of patches) {
+      if (patch.marker.isConnected) patch.marker.replaceWith(patch.original);
+    }
+  }, []);
+
+  const navigate = useCallback(async (action: 'prev' | 'next' | 'left' | 'right') => {
+    restoreInlineTranslations();
     dismissSelection();
     const view = viewRef.current;
     if (!view) return;
-    if (action === 'prev') void view.prev();
-    else if (action === 'next') void view.next();
-    else if (action === 'left') void view.goLeft();
-    else void view.goRight();
-  }, [dismissSelection]);
+
+    const distance = scrolledPageTurnDistance(view.renderer);
+    if (distance !== undefined) {
+      const rtl = view.book?.dir === 'rtl';
+      const logical = action === 'left'
+        ? (rtl ? 'next' : 'prev')
+        : action === 'right'
+          ? (rtl ? 'prev' : 'next')
+          : action;
+      if (logical === 'prev') await view.prev(distance);
+      else await view.next(distance);
+      return;
+    }
+
+    if (action === 'prev') await view.prev();
+    else if (action === 'next') await view.next();
+    else if (action === 'left') await view.goLeft();
+    else await view.goRight();
+  }, [dismissSelection, restoreInlineTranslations]);
+
+  const showTranslationPage = useCallback((index: number) => {
+    const bounded = Math.max(0, Math.min(translationPageCountRef.current - 1, index));
+    translationPageIndexRef.current = bounded;
+    setTranslationPageIndex(bounded);
+  }, []);
+
+  const navigateTranslation = useCallback((direction: 'prev' | 'next'): boolean => {
+    const currentSettings = settingsRef.current;
+    const active = !!currentSettings?.translationEnabled
+      && currentSettings.translationView === 'translated'
+      && translationBlocksRef.current.length > 0
+      && !translationSkippedRef.current;
+    if (!active) return false;
+    if (translationTransitionRef.current) return true;
+
+    if (currentSettings.flow === 'scrolled') {
+      const overlay = translationOverlayRef.current;
+      if (overlay) {
+        const maxScroll = Math.max(0, overlay.scrollHeight - overlay.clientHeight);
+        const step = Math.max(120, overlay.clientHeight * 0.88);
+        if (direction === 'next' && overlay.scrollTop < maxScroll - 2) {
+          overlay.scrollBy({ top: step, behavior: 'smooth' });
+          return true;
+        }
+        if (direction === 'prev' && overlay.scrollTop > 2) {
+          overlay.scrollBy({ top: -step, behavior: 'smooth' });
+          return true;
+        }
+      }
+    } else {
+      const current = translationPageIndexRef.current;
+      const count = translationPageCountRef.current;
+      if (direction === 'next' && current < count - 1) {
+        showTranslationPage(current + 1);
+        return true;
+      }
+      if (direction === 'prev' && current > 0) {
+        showTranslationPage(current - 1);
+        return true;
+      }
+    }
+
+    translationLandingRef.current = direction === 'next' ? 'first' : 'last';
+    translationTransitionRef.current = true;
+    setTranslationLoading(true);
+    void navigate(direction).catch((cause) => {
+      translationTransitionRef.current = false;
+      translationLandingRef.current = null;
+      setTranslationLoading(false);
+      setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
+    });
+    return true;
+  }, [navigate, showTranslationPage, t]);
+
+  const navigateReader = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
+    markReadingMovement();
+    const direction = action === 'prev' || action === 'next'
+      ? action
+      : action === 'left'
+        ? (bookRtl ? 'next' : 'prev')
+        : (bookRtl ? 'prev' : 'next');
+    if (navigateTranslation(direction)) return;
+    void navigate(action);
+  }, [bookRtl, markReadingMovement, navigate, navigateTranslation]);
+
+  const navigateReaderOrClosePanel = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
+    if (panel) {
+      setPanel(null);
+      return;
+    }
+    navigateReader(action);
+  }, [navigateReader, panel]);
 
   const handleReaderWheel = useCallback((event: WheelEvent) => {
-    if (settingsRef.current?.flow !== 'paginated') return;
+    const currentSettings = settingsRef.current;
+    if (!currentSettings) return;
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (!allowsWheelPageTurn(event.target) || event.deltaY === 0) return;
+    markReadingMovement();
+
+    if (currentSettings.flow === 'scrolled') {
+      const overlay = translationOverlayRef.current;
+      const translationActive = currentSettings.translationEnabled
+        && currentSettings.translationView === 'translated'
+        && !!overlay && translationBlocksRef.current.length > 0;
+      if (!translationActive) return;
+      const maxScroll = Math.max(0, overlay.scrollHeight - overlay.clientHeight);
+      const canScrollInside = event.deltaY > 0
+        ? overlay.scrollTop < maxScroll - 2
+        : overlay.scrollTop > 2;
+      if (canScrollInside) return;
+    }
 
     event.preventDefault();
     const now = performance.now();
@@ -362,8 +627,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     wheelDeltaRef.current = 0;
     wheelDirectionRef.current = 0;
     wheelLockUntilRef.current = now + READER_WHEEL_COOLDOWN_MS;
-    navigate(action);
-  }, [navigate]);
+    navigateReader(action);
+  }, [markReadingMovement, navigateReader]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -373,46 +638,409 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, [handleReaderWheel]);
 
   useEffect(() => {
+    if (!ready || !settings?.translationEnabled
+        || settings.translationView !== 'translated'
+        || !settings.translationProfileId) {
+      cancelTranslationPreload();
+      translationAbortRef.current?.abort();
+      translationAbortRef.current = null;
+      translationInFlightKeyRef.current = null;
+      translationCurrentKeyRef.current = null;
+      translationTransitionRef.current = false;
+      translationLandingRef.current = null;
+      setTranslationLoading(false);
+      setTranslationError(null);
+      setTranslationSkipped(false);
+      setTranslationBlocks([]);
+      setTranslationSegments([]);
+      setTranslationLayout(null);
+      showTranslationPage(0);
+      return;
+    }
+
+    if (sourceAlreadyMatchesTarget(settings, bookLanguage)) {
+      cancelTranslationPreload();
+      translationAbortRef.current?.abort();
+      translationAbortRef.current = null;
+      translationInFlightKeyRef.current = null;
+      translationTransitionRef.current = false;
+      translationLandingRef.current = null;
+      setTranslationBlocks([]);
+      setTranslationSegments([]);
+      setTranslationLayout(null);
+      showTranslationPage(0);
+      setTranslationLoading(false);
+      setTranslationError(null);
+      setTranslationSkipped(true);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      const renderer = viewRef.current?.renderer;
+      const extraction = extractVisiblePage(renderer);
+      if (!extraction) {
+        if (!translationTransitionRef.current) {
+          setTranslationBlocks([]);
+          setTranslationSegments([]);
+          setTranslationLayout(null);
+        }
+        setTranslationLoading(false);
+        setTranslationSkipped(false);
+        setTranslationError(t('No visible text was found on this page.'));
+        return;
+      }
+      const { styles: sourceStyles, sourceRuns, segments, layout } = extraction;
+      const pageId = translationSourcePageId(renderer);
+      const pageCacheKey = translationPageCacheKey(
+        settings, activeTranslationProfileRevision, pageId,
+      );
+      let blocks = applySentenceCarry(
+        extraction.blocks,
+        pageId ? translationSentenceCarryRef.current.get(pageId) : undefined,
+      );
+      const nextExtraction = extractVisiblePage(renderer, 1);
+      if (nextExtraction) {
+        const split = splitTrailingSentenceForNext(blocks, nextExtraction.blocks);
+        blocks = split.blocks;
+        const nextPageId = translationSourcePageId(renderer, 1);
+        if (split.carry && nextPageId) {
+          translationSentenceCarryRef.current.set(nextPageId, split.carry);
+        }
+      }
+      if (!blocks.length) {
+        translationAbortRef.current?.abort();
+        translationAbortRef.current = null;
+        translationInFlightKeyRef.current = null;
+        setTranslationBlocks([]);
+        setTranslationSegments(segments);
+        setTranslationLayout(layout);
+        setTranslationLoading(false);
+        setTranslationError(null);
+        setTranslationSkipped(false);
+        translationTransitionRef.current = false;
+        scheduleNextTranslationPreload(settings);
+        return;
+      }
+      if (sourceAlreadyMatchesTarget(settings, bookLanguage, blocks)) {
+        cancelTranslationPreload();
+        translationAbortRef.current?.abort();
+        translationAbortRef.current = null;
+        translationInFlightKeyRef.current = null;
+        translationTransitionRef.current = false;
+        translationLandingRef.current = null;
+        setTranslationBlocks([]);
+        setTranslationSegments([]);
+        setTranslationLayout(null);
+        setTranslationLoading(false);
+        setTranslationError(null);
+        setTranslationSkipped(true);
+        return;
+      }
+
+      const key = translationPageKey(settings, blocks, activeTranslationProfileRevision);
+      translationCurrentKeyRef.current = key;
+      const previousFailure = translationFailureRef.current;
+      if (previousFailure?.key === key) {
+        translationTransitionRef.current = false;
+        translationLandingRef.current = null;
+        setTranslationBlocks([]);
+        setTranslationSegments([]);
+        setTranslationLayout(null);
+        setTranslationLoading(false);
+        setTranslationError(previousFailure.message);
+        return;
+      }
+      const styled = (translated: ReaderTranslationBlock[]): StyledTranslationBlock[] =>
+        translated.map((block) => ({
+          ...block,
+          style: sourceStyles[block.id],
+          sourceRuns: sourceRuns[block.id],
+        }));
+      const applyTranslationResponse = (response: ReaderTranslationResponse) => {
+        if (translationFailureRef.current?.key === key) translationFailureRef.current = null;
+        setTranslationError(null);
+        if (response.skipped) {
+          translationTransitionRef.current = false;
+          translationLandingRef.current = null;
+          setTranslationSkipped(true);
+          setTranslationBlocks([]);
+          setTranslationSegments([]);
+          setTranslationLayout(null);
+          return;
+        }
+        const alignedBlocks = alignTranslatedBlocks(blocks, response.blocks);
+        if (settings.translationCacheEnabled) {
+          cacheTranslatedPage(key, alignedBlocks);
+          if (pageCacheKey) cacheTranslatedPage(pageCacheKey, alignedBlocks);
+        }
+        setTranslationLayout(layout);
+        setTranslationSegments(segments);
+        setTranslationBlocks(styled(alignedBlocks));
+        translationTransitionRef.current = false;
+        scheduleNextTranslationPreload(settings);
+      };
+      setTranslationSkipped(false);
+      const exactLocal = settings.translationCacheEnabled
+        ? translationCacheRef.current.get(key)
+        : undefined;
+      const pageLocal = settings.translationCacheEnabled && pageCacheKey
+        ? translationCacheRef.current.get(pageCacheKey)
+        : undefined;
+      const local = exactLocal ?? (pageLocal ? alignTranslatedBlocks(blocks, pageLocal) : undefined);
+      if (local) {
+        if (!exactLocal && settings.translationCacheEnabled) cacheTranslatedPage(key, local);
+        setTranslationLayout(layout);
+        setTranslationSegments(segments);
+        setTranslationBlocks(styled(local));
+        setTranslationLoading(false);
+        setTranslationError(null);
+        translationTransitionRef.current = false;
+        scheduleNextTranslationPreload(settings);
+        return;
+      }
+      if (translationInFlightKeyRef.current === key) return;
+
+      const preloadTask = translationPreloadTaskRef.current;
+      if (preloadTask && preloadTask.key !== pageCacheKey) {
+        cancelTranslationPreload();
+      }
+      if (pageCacheKey && preloadTask?.key === pageCacheKey) {
+        translationInFlightKeyRef.current = key;
+        translationStartedAtRef.current = translationPreloadStartedAtRef.current ?? Date.now();
+        if (!translationTransitionRef.current) {
+          setTranslationBlocks([]);
+          setTranslationSegments([]);
+          setTranslationLayout(layout);
+        }
+        setTranslationLoading(true);
+        setTranslationError(null);
+        try {
+          const response = await preloadTask.promise;
+          if (!preloadTask.controller.signal.aborted) applyTranslationResponse(response);
+        } catch (cause) {
+          if (!preloadTask.controller.signal.aborted) {
+            const message = cause instanceof Error ? cause.message : t('Page translation failed.');
+            translationFailureRef.current = { key, message };
+            cancelTranslationPreload();
+            setTranslationError(message);
+          }
+        } finally {
+          if (translationInFlightKeyRef.current === key) {
+            translationInFlightKeyRef.current = null;
+            translationStartedAtRef.current = null;
+            setTranslationLoading(false);
+          }
+        }
+        return;
+      }
+
+      translationAbortRef.current?.abort();
+      const controller = new AbortController();
+      translationAbortRef.current = controller;
+      translationInFlightKeyRef.current = key;
+      translationStartedAtRef.current = Date.now();
+      if (!translationTransitionRef.current) {
+        setTranslationBlocks([]);
+        setTranslationSegments([]);
+        setTranslationLayout(layout);
+      }
+      setTranslationLoading(true);
+      setTranslationError(null);
+      try {
+        const configuredSource = normalizeLanguageCode(settings.translationSourceLanguage);
+        const response = await translateReaderPage(id, {
+          profile_id: settings.translationProfileId,
+          format: fmt,
+          source_language: configuredSource === 'auto' || !configuredSource
+            ? bookLanguage || 'auto'
+            : configuredSource,
+          target_language: settings.translationTargetLanguage,
+          mode: settings.translationMode,
+          prompt: settings.translationPrompt,
+          cache_enabled: settings.translationCacheEnabled,
+          blocks: translationRequestBlocks(settings.translationMode, blocks),
+        }, controller.signal);
+        if (controller.signal.aborted) return;
+        applyTranslationResponse(translationResponseForMode(
+          settings.translationMode, blocks, response,
+        ));
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        const message = cause instanceof Error ? cause.message : t('Page translation failed.');
+        translationFailureRef.current = { key, message };
+        cancelTranslationPreload();
+        setTranslationError(message);
+      } finally {
+        if (translationInFlightKeyRef.current === key) {
+          translationInFlightKeyRef.current = null;
+          translationStartedAtRef.current = null;
+        }
+        if (translationAbortRef.current === controller) translationAbortRef.current = null;
+        if (!controller.signal.aborted) setTranslationLoading(false);
+      }
+    }, TRANSLATION_DEBOUNCE_MS);
+
+    // Relocate can fire several times while Foliate settles the same page.
+    // Cancel only the pending debounce here. An in-flight request is kept until
+    // the next stable page signature is known; identical signatures are deduped.
+    return () => window.clearTimeout(timer);
+  }, [activeTranslationProfileRevision, bookLanguage, fmt, id,
+    location.cfi, location.fraction, ready,
+    settings?.flow, settings?.font, settings?.fontSize, settings?.lineHeight,
+    settings?.margin, settings?.maxColumnCount, settings?.maxInlineSize, settings?.spread,
+    settings?.translationEnabled, settings?.translationProfileId,
+    settings?.translationCacheEnabled, settings?.translationPreloadNextPage,
+    settings?.translationMode, settings?.translationPrompt, settings?.translationSourceLanguage,
+    settings?.translationTargetLanguage, settings?.translationView,
+    cacheTranslatedPage, cancelTranslationPreload, scheduleNextTranslationPreload,
+    showTranslationPage, t, translationRetry]);
+
+  useLayoutEffect(() => {
+    const content = translationPagerContentRef.current;
+    if (!content || !translationLayout || !translationSegments.length) {
+      translationPageCountRef.current = 1;
+      showTranslationPage(0);
+      return;
+    }
+
+    let frame = 0;
+    const measure = () => {
+      const landing = translationLandingRef.current;
+      if (settings?.flow === 'scrolled') {
+        translationPageCountRef.current = 1;
+        showTranslationPage(0);
+        const overlay = translationOverlayRef.current;
+        if (overlay && landing) {
+          overlay.scrollTop = landing === 'last'
+            ? Math.max(0, overlay.scrollHeight - overlay.clientHeight)
+            : 0;
+        }
+        translationLandingRef.current = null;
+        return;
+      }
+      const step = Math.max(1, translationLayout.contentWidth + translationLayout.columnGap);
+      const count = Math.max(1, Math.ceil(
+        (content.scrollWidth + translationLayout.columnGap - 0.5) / step,
+      ));
+      translationPageCountRef.current = count;
+      const nextIndex = landing === 'last'
+        ? count - 1
+        : landing === 'first'
+          ? 0
+          : Math.min(translationPageIndexRef.current, count - 1);
+      translationLandingRef.current = null;
+      showTranslationPage(nextIndex);
+    };
+    const schedule = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+    schedule();
+    void document.fonts?.ready?.then(schedule);
+    const observer = new ResizeObserver(schedule);
+    observer.observe(content);
+    if (stageRef.current) observer.observe(stageRef.current);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [settings?.flow, showTranslationPage, translationBlocks, translationLayout, translationSegments]);
+
+  useEffect(() => {
     if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
     let cancelled = false;
+    let restoringInitialPosition = true;
+    resetReadingMovement();
     const host = hostRef.current;
-    const view = document.createElement('foliate-view') as FoliateView;
-    view.className = styles.foliateView;
+    const view = createFoliateView(styles.foliateView);
     viewRef.current = view;
     host.replaceChildren(view);
+    annotationsRef.current.clear();
+    setAnnotations([]);
+    setAnnotationEditor(null);
     setReady(false);
     setError(null);
+    setBookLanguage('');
+    setBookRtl(false);
     const initialSettings = settingsQuery.data.reader;
     settingsRef.current = initialSettings;
     setSettings(initialSettings);
 
     const onRelocate = (event: Event) => {
-      dismissSelection();
       const detail = (event as CustomEvent<FoliateLocation>).detail;
+      if (inlineTranslationPatchesRef.current.length) {
+        const previous = currentRef.current;
+        const sameLogicalPage = (
+          detail.location?.current && previous.location?.current
+            ? detail.location.current === previous.location.current
+            : Math.abs((detail.fraction ?? 0) - (previous.fraction ?? 0)) < 0.0005
+        );
+        // Ignore only reflow caused by the temporary replacement. Native swipe
+        // or another Foliate navigation path still restores the original DOM.
+        if (sameLogicalPage) return;
+        restoreInlineTranslations();
+      }
+      dismissSelection();
       currentRef.current = detail;
       setLocation(detail);
-      if (detail.cfi) schedulePosition(detail.cfi, detail.fraction ?? 0);
+      if (detail.cfi && !restoringInitialPosition && readingMovementRef.current) {
+        const anchorText = detail.range?.toString().replace(/\s+/gu, ' ').trim().slice(0, 1000);
+        schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText || undefined);
+      }
     };
 
     const attachSelection = (doc: Document, index: number) => {
-      const readSelection = () => {
+      let selectionTimer: number | null = null;
+      const readSelection = (dismissCollapsed: boolean) => {
+        if (cancelled) return;
         const selection = doc.getSelection();
         if (!selection || selection.isCollapsed || !selection.rangeCount) {
-          dismissSelection();
+          if (dismissCollapsed) dismissSelection();
           return;
         }
         const range = selection.getRangeAt(0).cloneRange();
-        const text = selection.toString().replace(/\s+/g, ' ').trim();
+        const rawText = selection.toString();
+        const text = rawText.replace(/\s+/g, ' ').trim();
         if (!text) return;
-        setPendingSelection({ value: view.getCFI(index, range), text });
+        pendingSelectionRangeRef.current = { range, doc };
+        setSelectionTranslationError(null);
+        setPendingSelection({
+          value: view.getCFI(index, range),
+          text,
+          leadingWhitespace: rawText.match(/^\s+/u)?.[0] ?? '',
+          trailingWhitespace: rawText.match(/\s+$/u)?.[0] ?? '',
+        });
       };
-      doc.addEventListener('mouseup', readSelection);
-      doc.addEventListener('keyup', readSelection);
+      const scheduleSelectionRead = (dismissCollapsed: boolean, delay = 0) => {
+        if (selectionTimer !== null) window.clearTimeout(selectionTimer);
+        selectionTimer = window.setTimeout(() => {
+          selectionTimer = null;
+          readSelection(dismissCollapsed);
+        }, delay);
+      };
+      doc.addEventListener('mouseup', () => scheduleSelectionRead(true));
+      doc.addEventListener('keyup', () => scheduleSelectionRead(true));
+      doc.addEventListener('touchend', () => scheduleSelectionRead(false, 120), { passive: true });
+      doc.addEventListener('contextmenu', () => scheduleSelectionRead(false, 120));
+      doc.addEventListener('selectionchange', () => scheduleSelectionRead(false, 80));
+      const armMovement = markReadingMovement;
+      const armPointerDrag = (event: PointerEvent) => {
+        if (event.pointerType === 'touch' || event.buttons !== 0) armMovement();
+      };
+      const armLinkNavigation = (event: MouseEvent) => {
+        if (event.target instanceof Element && event.target.closest('a[href]')) armMovement();
+      };
+      doc.addEventListener('pointermove', armPointerDrag, { passive: true });
+      doc.addEventListener('touchmove', armMovement, { passive: true });
+      doc.addEventListener('wheel', armMovement, { passive: true });
+      doc.addEventListener('keydown', armMovement);
+      doc.addEventListener('click', armLinkNavigation, { capture: true, passive: true });
       doc.addEventListener('keydown', onReaderKeyDown);
       doc.addEventListener('wheel', handleReaderWheel, { passive: false });
     };
     const onLoad = (event: Event) => {
       const detail = (event as CustomEvent<{ doc: Document; index: number }>).detail;
+      setBookLanguage((current) => current || normalizeLanguageCode(detail.doc.documentElement.lang));
       attachSelection(detail.doc, detail.index);
     };
     const onDrawAnnotation = (event: Event) => {
@@ -420,16 +1048,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         draw: (fn: unknown, options: unknown) => void;
         annotation: FoliateAnnotation;
       }>).detail;
-      draw(Overlayer.highlight, { color: annotation.color ?? 'yellow' });
+      draw(drawFoliateHighlight, { color: annotation.color ?? 'yellow', hasNote: !!annotation.note });
     };
     const onShowAnnotation = (event: Event) => {
       const value = (event as CustomEvent<{ value: string }>).detail.value;
-      setSelectedAnnotation(annotationsRef.current.get(value) ?? null);
-      setPanel('notes');
+      const annotation = annotationsRef.current.get(value);
+      if (annotation) openEditAnnotation(annotation);
     };
     const redrawAnnotations = () => {
       for (const annotation of annotationsRef.current.values()) {
-        void view.addAnnotation(annotation);
+        if (!annotation.unanchored) void view.addAnnotation(annotation);
       }
     };
 
@@ -442,43 +1070,78 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     const open = async () => {
       try {
         const formatName = selectedFormat.format.toUpperCase();
+        const annotationPromise = apiGet<{ annotations: ServerAnnotation[]; devices?: Record<string, { label?: string }> }>(
+          `/annotations/${id}/data.json?format=${encodeURIComponent(fmt)}`,
+        ).catch(() => ({ annotations: [], devices: {} }));
         const response = await fetch(resourceUrl(`/show/${id}/${formatName.toLowerCase()}`), {
           credentials: 'include',
         });
         if (!response.ok) throw new Error(t('Could not load the book file ({status})', { status: response.status }));
         const data = await response.arrayBuffer();
         if (cancelled) return;
-        await view.open(new File([data], fileName(formatName), { type: MIME[formatName] ?? '' }));
+        await view.open(new File([data], readerFileName(formatName), { type: readerMime(formatName) }));
         if (cancelled) return;
         applySettings(initialSettings);
+        setBookRtl(view.book?.dir === 'rtl');
+        setBookLanguage((current) => normalizeLanguageCode(view.book?.metadata?.language) || current);
         setTitle(formatLanguageMap(view.book?.metadata?.title) || bookQuery.data?.title || t('Untitled'));
         setToc(flattenToc(view.book?.toc ?? []));
         setSectionFractions(view.getSectionFractions());
-        const annotationPayload = await apiGet<{ annotations: ServerAnnotation[] }>(
-          `/annotations/${id}/data.json?format=${encodeURIComponent(fmt)}`,
-        ).catch(() => ({ annotations: [] }));
-        const loaded = annotationPayload.annotations
-          .filter((row) => !!row.cfi_range)
-          .map((row): FoliateAnnotation => ({
-            value: row.cfi_range ?? '',
-            color: row.highlight_color || 'yellow',
-            note: row.note_text,
-            id: row.annotation_id,
-            text: row.highlighted_text,
-          }));
-        annotationsRef.current = new Map(loaded.map((item) => [item.value, item]));
-        setAnnotations(loaded);
+
 
         const savedLocator = positionQuery.data?.bookmark;
         const legacyFb2Fraction = fmt === 'fb2' ? parseFb2ScrollBookmark(savedLocator) : null;
         const savedFraction = Number(positionQuery.data?.position_fraction ?? legacyFb2Fraction ?? 0);
-        const lastLocation = savedFraction > 0
-          ? { fraction: Math.min(1, Math.max(0, savedFraction)) }
-          : savedLocator || undefined;
-        await view.init({ lastLocation, showTextStart: true });
+        const moonAnchor = positionQuery.data?.position_source === 'moonreader'
+          ? positionQuery.data?.position_anchor?.trim()
+          : '';
+        const savedFoliateCfi = savedLocator?.startsWith('epubcfi(') ? savedLocator : undefined;
+        const fallbackLocation = savedFoliateCfi
+          ?? (savedFraction > 0 ? { fraction: Math.min(1, Math.max(0, savedFraction)) } : undefined);
+
+        if (moonAnchor) {
+          // Moon's percentage and Foliate's section-size fraction are different
+          // coordinate systems. Initialize without that fraction, resolve the
+          // Moon chapter/offset by visible text in Foliate's own DOM, then go to
+          // the resulting native CFI. Suppress relocate writes during restore so
+          // merely opening the book cannot push Foliate's fraction back to Moon.
+          await view.init({ showTextStart: true });
+          const moonCfi = await findMoonAnchorCfi(
+            view, moonAnchor,
+            positionQuery.data?.position_section ?? positionQuery.data?.position_chapter,
+          );
+          if (moonCfi) await view.goTo(moonCfi);
+          else if (savedFraction > 0) await view.goToFraction(Math.min(1, Math.max(0, savedFraction)));
+          else if (savedLocator) await view.goTo(savedLocator);
+        } else {
+          await view.init({ lastLocation: fallbackLocation, showTextStart: true });
+        }
         if (cancelled) return;
-        redrawAnnotations();
+        restoringInitialPosition = false;
+        resetReadingMovement();
         setReady(true);
+        void annotationPromise.then((annotationPayload) => {
+          if (cancelled) return;
+          const deviceMap: Record<string, { label?: string }> = annotationPayload.devices ?? {};
+          const loaded = annotationPayload.annotations.map((row): FoliateAnnotation => {
+            const unanchored = row.position_type === 'unanchored';
+            const deviceLabel = row.origin_device_id
+              ? deviceMap[row.origin_device_id]?.label
+              : undefined;
+            const sourceLabel = deviceLabel
+              || (row.source && row.source !== 'webreader' ? row.source : undefined);
+            return {
+              value: row.cfi_range ?? `unanchored:${row.annotation_id}`,
+              color: annotationColor(row.highlight_color),
+              note: row.note_text, id: row.annotation_id, text: row.highlighted_text, unanchored, sourceLabel,
+            };
+          });
+          for (const annotation of loaded) annotationsRef.current.set(annotation.value, annotation);
+          setAnnotations(Array.from(annotationsRef.current.values()));
+          for (const annotation of loaded) {
+            if (!annotation.unanchored) void view.addAnnotation(annotation);
+          }
+        });
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : t('Could not open this book.'));
       }
@@ -487,6 +1150,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
     return () => {
       cancelled = true;
+      restoreInlineTranslations();
       window.speechSynthesis?.cancel();
       view.removeEventListener('relocate', onRelocate);
       view.removeEventListener('load', onLoad);
@@ -498,16 +1162,44 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (viewRef.current === view) viewRef.current = null;
     };
   }, [applySettings, bookQuery.data?.title, fmt, id, positionQuery.data?.bookmark,
-    positionQuery.data?.position_fraction, positionQuery.isFetched, selectedFormat,
-    settingsQuery.data, schedulePosition, dismissSelection, handleReaderWheel, t]);
+    positionQuery.data?.position_fraction, positionQuery.data?.position_source,
+    positionQuery.data?.position_anchor, positionQuery.data?.position_chapter,
+    positionQuery.data?.position_section,
+    positionQuery.isFetched, selectedFormat,
+    settingsQuery.data, schedulePosition, dismissSelection, handleReaderWheel,
+    markReadingMovement, openEditAnnotation, resetReadingMovement, restoreInlineTranslations, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isReaderTypingTarget(event.target)) return;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      navigate('left');
+      navigateReader('left');
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      navigate('right');
+      navigateReader('right');
+    } else if (!event.repeat && (event.key === '+' || event.code === 'NumpadAdd'
+        || (event.code === 'Equal' && event.shiftKey))) {
+      event.preventDefault();
+      const currentSettings = settingsRef.current;
+      if (currentSettings) {
+        updateSettings({ fontSize: Math.min(FONT_MAX, currentSettings.fontSize + 1) });
+      }
+    } else if (!event.repeat && (event.key === '-' || event.code === 'NumpadSubtract')) {
+      event.preventDefault();
+      const currentSettings = settingsRef.current;
+      if (currentSettings) {
+        updateSettings({ fontSize: Math.max(FONT_MIN, currentSettings.fontSize - 1) });
+      }
+    } else if (!event.repeat && event.key.toLowerCase() === 't') {
+      event.preventDefault();
+      const currentSettings = settingsRef.current;
+      if (!currentSettings?.translationProfileId) {
+        setPanel('translation');
+      } else if (currentSettings.translationView === 'translated') {
+        updateSettings({ translationView: 'original' });
+      } else {
+        updateSettings({ translationEnabled: true, translationView: 'translated' });
+      }
     } else if (event.key === 'Escape') {
       setPanel(null);
       dismissSelection();
@@ -543,55 +1235,168 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (run === searchRunRef.current) setSearching(false);
     }
   };
-  const createHighlight = async (withNote = false) => {
-    const selection = pendingSelection;
-    const view = viewRef.current;
-    if (!selection || !view) return;
-    const note = withNote ? window.prompt(t('Note'), '') : null;
-    if (withNote && note === null) return;
-    const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
-      cfi_range: selection.value,
-      highlighted_text: selection.text,
-      highlight_color: 'yellow',
-      note_text: note || null,
-      format: fmt.toUpperCase(),
-    });
-    const annotation: FoliateAnnotation = {
-      value: row.cfi_range ?? selection.value,
-      color: row.highlight_color || 'yellow',
-      note: row.note_text,
-      id: row.annotation_id,
-      text: row.highlighted_text,
-    };
+  const upsertAnnotation = useCallback((annotation: FoliateAnnotation) => {
     annotationsRef.current.set(annotation.value, annotation);
     setAnnotations(Array.from(annotationsRef.current.values()));
-    await view.addAnnotation(annotation);
-    view.deselect();
-    setPendingSelection(null);
-  };
+  }, []);
 
-  const removeAnnotation = async (annotation: FoliateAnnotation) => {
+  const openCreateHighlight = useCallback((focusNote: boolean) => {
+    if (!pendingSelection) return;
+    setAnnotationEditor({
+      mode: 'create',
+      selection: { value: pendingSelection.value, text: pendingSelection.text },
+      color: 'yellow', note: '', focusNote,
+    });
+  }, [pendingSelection]);
+
+  const openStandaloneNote = useCallback(() => {
+    setAnnotationEditor({ mode: 'standalone', color: 'yellow', note: '', focusNote: true });
+  }, []);
+
+
+
+  const saveAnnotationEditor = useCallback(async (color: HighlightColor, note: string) => {
+    const editor = annotationEditor;
+    if (!editor) return;
+    if (editor.mode === 'create') {
+      const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
+        cfi_range: editor.selection.value,
+        highlighted_text: editor.selection.text,
+        highlight_color: color,
+        note_text: note || null,
+        format: fmt.toUpperCase(),
+      });
+      const annotation: FoliateAnnotation = {
+        value: row.cfi_range ?? editor.selection.value,
+        color: annotationColor(row.highlight_color ?? color),
+        note: row.note_text,
+        id: row.annotation_id,
+        text: row.highlighted_text,
+      };
+      upsertAnnotation(annotation);
+      await viewRef.current?.addAnnotation(annotation);
+      dismissSelection();
+    } else if (editor.mode === 'standalone') {
+      const existing = editor.annotation;
+      if (existing?.id) {
+        const row = await apiPatch<ServerAnnotation>(
+          `/annotations/${id}/${encodeURIComponent(existing.id)}`,
+          { note_text: note || null, format: fmt.toUpperCase() },
+        );
+        upsertAnnotation({ ...existing, note: row.note_text });
+      } else {
+        const row = await apiPost<ServerAnnotation>(`/annotations/${id}`, {
+          position_type: 'unanchored',
+          note_text: note,
+          chapter_progress: currentRef.current.fraction ?? 0,
+          format: fmt.toUpperCase(),
+        });
+        upsertAnnotation({
+          value: `unanchored:${row.annotation_id}`,
+          color: 'yellow', note: row.note_text ?? note,
+          id: row.annotation_id, text: null, unanchored: true,
+        });
+      }
+    } else {
+      const existing = editor.annotation;
+      if (!existing.id) return;
+      const row = await apiPatch<ServerAnnotation>(
+        `/annotations/${id}/${encodeURIComponent(existing.id)}`,
+        { highlight_color: color, note_text: note || null, format: fmt.toUpperCase() },
+      );
+      const updated: FoliateAnnotation = {
+        ...existing,
+        color: annotationColor(row.highlight_color ?? color),
+        note: row.note_text,
+      };
+      await viewRef.current?.deleteAnnotation(existing);
+      upsertAnnotation(updated);
+      await viewRef.current?.addAnnotation(updated);
+    }
+    setAnnotationEditor(null);
+  }, [annotationEditor, dismissSelection, fmt, id, upsertAnnotation]);
+
+  const removeAnnotation = useCallback(async (annotation: FoliateAnnotation) => {
     if (!annotation.id) return;
     await apiDelete(`/annotations/${id}/${encodeURIComponent(annotation.id)}?format=${encodeURIComponent(fmt)}`);
     annotationsRef.current.delete(annotation.value);
     setAnnotations(Array.from(annotationsRef.current.values()));
-    await viewRef.current?.deleteAnnotation(annotation);
-    if (selectedAnnotation?.id === annotation.id) setSelectedAnnotation(null);
+    if (!annotation.unanchored) await viewRef.current?.deleteAnnotation(annotation);
+    setAnnotationEditor((current) => {
+      if (!current || current.mode === 'create') return current;
+      const currentId = current.mode === 'edit' ? current.annotation.id : current.annotation?.id;
+      return currentId === annotation.id ? null : current;
+    });
+  }, [fmt, id]);
+
+  const openSelectedTextInChatGpt = () => {
+    const text = pendingSelection?.text.trim();
+    if (!text) return;
+    const opened = window.open(chatGptSelectedTextUrl(text), '_blank', 'noopener,noreferrer');
+    if (opened) opened.opener = null;
   };
 
-  const updateAnnotationNote = async (annotation: FoliateAnnotation) => {
-    if (!annotation.id) return;
-    const note = window.prompt(t('Note'), annotation.note ?? '');
-    if (note === null) return;
-    const row = await apiPatch<ServerAnnotation>(
-      `/annotations/${id}/${encodeURIComponent(annotation.id)}`,
-      { note_text: note || null, format: fmt.toUpperCase() },
-    );
-    const updated = { ...annotation, note: row.note_text };
-    annotationsRef.current.set(updated.value, updated);
-    setAnnotations(Array.from(annotationsRef.current.values()));
-    setSelectedAnnotation(updated);
+  const translateSelectedText = async () => {
+    const selection = pendingSelection;
+    const source = pendingSelectionRangeRef.current;
+    const currentSettings = settingsRef.current;
+    if (!selection || !source || selectionTranslationLoading) return;
+    if (!currentSettings?.translationProfileId) {
+      setPanel('translation');
+      return;
+    }
+    if (!source.range.commonAncestorContainer.isConnected) {
+      dismissSelection();
+      return;
+    }
+
+    setSelectionTranslationLoading(true);
+    setSelectionTranslationError(null);
+    try {
+      const configuredSource = normalizeLanguageCode(currentSettings.translationSourceLanguage);
+      const response = await translateReaderPage(id, {
+        profile_id: currentSettings.translationProfileId,
+        format: fmt,
+        source_language: configuredSource === 'auto' || !configuredSource
+          ? bookLanguage || 'auto'
+          : configuredSource,
+        target_language: currentSettings.translationTargetLanguage,
+        mode: 'simple',
+        prompt: currentSettings.translationPrompt,
+        cache_enabled: false,
+        blocks: [{ id: 'selection', tag: 'span', text: selection.text }],
+      });
+      if (response.skipped) {
+        setSelectionTranslationError(t('The selected text is already in the target language.'));
+        return;
+      }
+      const translated = response.blocks.find((block) => block.id === 'selection')?.text.trim();
+      if (!translated) throw new Error(t('Page translation failed.'));
+
+      const { range, doc } = source;
+      const original = range.extractContents();
+      const marker = doc.createElement('span');
+      marker.setAttribute('data-reader-inline-translation', 'true');
+      marker.lang = normalizeLanguageCode(currentSettings.translationTargetLanguage);
+      marker.title = selection.text;
+      marker.textContent = `${selection.leadingWhitespace}${translated}${selection.trailingWhitespace}`;
+      marker.style.font = 'inherit';
+      marker.style.color = 'inherit';
+      marker.style.background = 'transparent';
+      marker.style.borderBottom = '1px dotted currentColor';
+      marker.style.boxDecorationBreak = 'clone';
+      range.insertNode(marker);
+      inlineTranslationPatchesRef.current.push({ marker, original });
+      doc.getSelection()?.removeAllRanges();
+      pendingSelectionRangeRef.current = null;
+      setPendingSelection(null);
+    } catch (cause) {
+      setSelectionTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
+    } finally {
+      setSelectionTranslationLoading(false);
+    }
   };
+
   const addReaderBookmark = () => {
     const locator = currentRef.current.cfi;
     if (!locator) return;
@@ -604,6 +1409,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   };
 
   const openReaderBookmark = (bookmark: ReaderBookmark) => {
+    markReadingMovement();
+    restoreInlineTranslations();
     void viewRef.current?.goTo(bookmark.locator);
     setPanel(null);
   };
@@ -628,13 +1435,21 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     synth.speak(utterance);
   };
 
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void hostRef.current?.parentElement?.requestFullscreen();
-  };
-
   const progress = Math.max(0, Math.min(1, location.fraction ?? 0));
-  const percent = Math.round(progress * 100);
+  const serverProgress = Number(savedPositionFraction ?? positionQuery.data?.position_fraction);
+  const canonicalProgress = Number.isFinite(serverProgress)
+    ? Math.max(0, Math.min(1, serverProgress))
+    : progress;
+  const percent = formatReadingProgress(canonicalProgress * 100);
+  const leftPageLabel = bookRtl ? t('Next page') : t('Previous page');
+  const rightPageLabel = bookRtl ? t('Previous page') : t('Next page');
+  const translationRequested = !!settings?.translationEnabled
+    && settings.translationView === 'translated'
+    && !!settings.translationProfileId;
+  const translationOverlayVisible = translationRequested
+    && !translationSkipped && !!translationLayout && translationSegments.length > 0;
+  const translationActivity = translationRequested && !translationError
+    && (translationLoading || translationPreloading);
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
   const loading = bookQuery.isLoading || settingsQuery.isLoading || positionQuery.isLoading;
 
@@ -642,77 +1457,70 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   if (bookQuery.error) return <EmptyState message={t('Could not load the book.')} />;
   if (!selectedFormat) return <EmptyState message={t('No supported reader format is available.')} />;
   return (
-    <main className={`${styles.reader} ${styles[settings?.theme ?? 'lightTheme']}`}>
-      <header className={styles.topBar}>
-        <Link href={`/book/${id}`} className={styles.iconButton} title={t('Close reader')}>
-          <X size={20} aria-hidden="true" />
-        </Link>
-        <div className={styles.bookIdentity}>
-          <strong>{title || bookQuery.data?.title}</strong>
-          <span>{selectedFormat.format.toUpperCase()}</span>
-        </div>
-        <nav className={styles.toolbar} aria-label={t('Reader tools')}>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'toc' ? null : 'toc')}
-            title={t('Table of contents')} aria-pressed={panel === 'toc'}>
-            <List size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'search' ? null : 'search')}
-            title={t('Search in book')} aria-pressed={panel === 'search'}>
-            <Search size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={addReaderBookmark}
-            title={t('Add bookmark')} disabled={!location.cfi || createBookmark.isPending}>
-            <Bookmark size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'bookmarks' ? null : 'bookmarks')}
-            title={t('Bookmarks')} aria-pressed={panel === 'bookmarks'}>
-            <BookOpen size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'notes' ? null : 'notes')}
-            title={t('Highlights and notes')} aria-pressed={panel === 'notes'}>
-            <StickyNote size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={toggleSpeech}
-            title={speaking ? t('Stop reading aloud') : t('Read aloud')} aria-pressed={speaking}>
-            {speaking ? <Square size={18} aria-hidden="true" /> : <Volume2 size={19} aria-hidden="true" />}
-          </button>
-          <button className={styles.iconButton} onClick={() => setPanel(panel === 'settings' ? null : 'settings')}
-            title={t('Reader settings')} aria-pressed={panel === 'settings'}>
-            <Settings size={19} aria-hidden="true" />
-          </button>
-          <button className={styles.iconButton} onClick={toggleFullscreen} title={t('Full screen')}>
-            <Maximize size={19} aria-hidden="true" />
-          </button>
-        </nav>
-      </header>
+    <main ref={shellRef} className={`${styles.reader} ${styles[settings?.theme ?? 'lightTheme']}`}>
+      <ReaderToolbar
+        bookId={id} title={title || bookQuery.data?.title || t('Untitled')} format={selectedFormat.format}
+        panel={panel} setPanel={setPanel} canBookmark={!!location.cfi && !createBookmark.isPending}
+        addBookmark={addReaderBookmark} speaking={speaking} toggleSpeech={toggleSpeech}
+        settings={settings} updateSettings={updateSettings}
+        translationSkipped={translationSkipped} translationActivity={translationActivity}
+        translationLoading={translationLoading} translationPreloading={translationPreloading}
+        fullscreenSupported={fullscreenSupported} isFullscreen={isFullscreen} toggleFullscreen={toggleFullscreen}
+      />
 
-      {pendingSelection && (
-        <div className={styles.selectionBar} role="toolbar" aria-label={t('Selected text actions')}>
-          <span>{pendingSelection.text.slice(0, 120)}</span>
-          <button onClick={() => void createHighlight(false)}>
-            <Highlighter size={17} aria-hidden="true" /> {t('Highlight')}
-          </button>
-          <button onClick={() => void createHighlight(true)}>
-            <StickyNote size={17} aria-hidden="true" /> {t('Add note')}
-          </button>
-          <button onClick={dismissSelection}>
-            <X size={17} aria-hidden="true" /> {t('Cancel')}
-          </button>
-        </div>
+      {pendingSelection && <SelectionActions
+        text={pendingSelection.text} openHighlight={openCreateHighlight}
+        translate={() => void translateSelectedText()} translationLoading={selectionTranslationLoading}
+        openChatGpt={openSelectedTextInChatGpt} dismiss={dismissSelection} error={selectionTranslationError}
+      />}
+
+      {annotationEditor && (
+        <AnnotationComposer
+          key={annotationEditor.mode === 'edit' ? annotationEditor.annotation.id :
+            annotationEditor.mode === 'standalone' ? annotationEditor.annotation?.id ?? 'new-note' :
+              `new-${annotationEditor.selection.value}`}
+          state={annotationEditor}
+          onClose={closeAnnotationEditor}
+          onSave={saveAnnotationEditor}
+          onDelete={annotationEditor.mode === 'edit'
+            ? () => removeAnnotation(annotationEditor.annotation)
+            : annotationEditor.mode === 'standalone' && annotationEditor.annotation
+              ? () => removeAnnotation(annotationEditor.annotation!)
+              : undefined}
+        />
       )}
 
       <div className={styles.workspace}>
+        {panel && (
+          <button
+            type="button"
+            className={styles.sidePanelBackdrop}
+            onClick={closePanel}
+            tabIndex={-1}
+            aria-label={t('Close')}
+            title={t('Close')}
+          />
+        )}
         {panel && <ReaderSidePanel
-          panel={panel} onClose={() => setPanel(null)} toc={toc}
-          onNavigate={(target) => { dismissSelection(); void viewRef.current?.goTo(target); setPanel(null); }}
+          panel={panel} onClose={closePanel} toc={toc}
+          onNavigate={(target) => { markReadingMovement(); restoreInlineTranslations(); dismissSelection(); void viewRef.current?.goTo(target); closePanel(); }}
           searchText={searchText} setSearchText={setSearchText} runSearch={() => void runSearch()}
           searching={searching} searchProgress={searchProgress} searchResults={searchResults}
           bookmarks={bookmarks} openBookmark={openReaderBookmark}
           deleteBookmark={(bookmarkId) => deleteBookmark.mutate(bookmarkId)}
           annotations={annotations}
-          showAnnotation={(annotation) => { void viewRef.current?.showAnnotation(annotation); setPanel(null); }}
+          createStandaloneNote={openStandaloneNote}
+          showAnnotation={(annotation) => {
+            if (annotation.unanchored) return;
+            // A jump to a highlight is inspection, not reading progress. Clear
+            // any previously armed movement before Foliate emits relocate.
+            resetReadingMovement();
+            restoreInlineTranslations();
+            void viewRef.current?.showAnnotation(annotation);
+            closePanel();
+          }}
+          editAnnotation={openEditAnnotation}
           removeAnnotation={(annotation) => void removeAnnotation(annotation)}
-          updateAnnotationNote={(annotation) => void updateAnnotationNote(annotation)}
           settings={settings} updateSettings={updateSettings}
         />}
         <section
@@ -723,246 +1531,70 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
           {error && <EmptyState message={error} />}
           <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
+          {translationRequested && (translationError || translationSkipped) && (
+            <div className={styles.translationStatus} role={translationError ? 'alert' : 'status'}>
+              {translationSkipped && (
+                <span>{t('The book is already in the target language.')}</span>
+              )}
+              {translationError && (
+                <>
+                  <span>{translationError}</span>
+                  <button type="button" onClick={() => {
+                    if (translationFailureRef.current?.key === translationCurrentKeyRef.current) {
+                      translationFailureRef.current = null;
+                    }
+                    setTranslationError(null);
+                    setTranslationRetry((value) => value + 1);
+                  }}>
+                    {t('Retry')}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {translationOverlayVisible && settings && translationLayout && (
+            <TranslationOverlay settings={settings} layout={translationLayout} segments={translationSegments}
+              blocks={translationBlocks} pageIndex={translationPageIndex}
+              overlayRef={translationOverlayRef} pagerContentRef={translationPagerContentRef} />
+          )}
+
           {settings?.tapToTurn && settings.flow === 'paginated' && ready && !error && (
             <>
-              <button className={`${styles.tapZone} ${styles.tapZoneLeft}`}
+              <button className={`${styles.tapZone} ${styles.tapZoneLeft} ${
+                translationOverlayVisible ? styles.translationTapZone : ''
+              }`}
                 data-reader-wheel-page-zone
-                onClick={(event) => { navigate('left'); event.currentTarget.blur(); }}
-                title={t('Previous page')} aria-label={t('Previous page')}>
+                onClick={(event) => { navigateReaderOrClosePanel('left'); event.currentTarget.blur(); }}
+                title={leftPageLabel} aria-label={leftPageLabel}>
                 <ChevronLeft size={30} aria-hidden="true" />
               </button>
-              <button className={`${styles.tapZone} ${styles.tapZoneRight}`}
+              <button className={`${styles.tapZone} ${styles.tapZoneRight} ${
+                translationOverlayVisible ? styles.translationTapZone : ''
+              }`}
                 data-reader-wheel-page-zone
-                onClick={(event) => { navigate('right'); event.currentTarget.blur(); }}
-                title={t('Next page')} aria-label={t('Next page')}>
+                onClick={(event) => { navigateReaderOrClosePanel('right'); event.currentTarget.blur(); }}
+                title={rightPageLabel} aria-label={rightPageLabel}>
                 <ChevronRight size={30} aria-hidden="true" />
               </button>
             </>
           )}
         </section>
       </div>
-      <footer className={styles.bottomBar}>
-        <button className={styles.pageButton} onClick={() => navigate('prev')} title={t('Previous page')}>
-          <ChevronLeft size={22} aria-hidden="true" />
-        </button>
-        <div className={styles.progressArea}>
-          <div className={styles.progressMeta}>
-            <span>{location.tocItem?.label || t('Book')}</span>
-            <span>
-              {location.pageItem?.label ? `${t('Page')} ${location.pageItem.label} · ` : ''}
-              {location.location?.current && location.location?.total
-                ? `${t('Location')} ${location.location.current}/${location.location.total} · ` : ''}
-              {percent}%
-            </span>
-          </div>
-          <input className={styles.progressSlider} type="range" min={0} max={1000}
-            value={Math.round(progress * 1000)} list="reader-section-marks"
-            aria-label={t('Reading progress')}
-            onChange={(event) => {
-              const fraction = Number(event.target.value) / 1000;
-              dismissSelection();
-              setLocation((current) => ({ ...current, fraction }));
-              void viewRef.current?.goToFraction(fraction);
-            }} />
-          <datalist id="reader-section-marks">
-            {sectionFractions.map((fraction) => <option key={fraction} value={Math.round(fraction * 1000)} />)}
-          </datalist>
-        </div>
-        <button className={styles.pageButton} onClick={() => navigate('next')} title={t('Next page')}>
-          <ChevronRight size={22} aria-hidden="true" />
-        </button>
-      </footer>
+      <ReaderBottomBar location={location} percent={percent} progress={progress}
+        sectionFractions={sectionFractions}
+        previous={() => navigateReaderOrClosePanel('prev')}
+        next={() => navigateReaderOrClosePanel('next')}
+        changeProgress={(fraction) => {
+          markReadingMovement();
+          restoreInlineTranslations();
+          dismissSelection();
+          setLocation((current) => ({ ...current, fraction }));
+          void viewRef.current?.goToFraction(fraction);
+        }}
+      />
       {saveError && <div className={styles.saveError} role="alert">
         {t('Could not save reading position. It will be retried automatically.')}
       </div>}
     </main>
-  );
-}
-type ReaderSidePanelProps = {
-  panel: Exclude<ReaderPanel, null>;
-  onClose: () => void;
-  toc: Array<TocItem & { depth: number }>;
-  onNavigate: (target: string) => void;
-  searchText: string;
-  setSearchText: (value: string) => void;
-  runSearch: () => void;
-  searching: boolean;
-  searchProgress: number;
-  searchResults: SearchResult[];
-  bookmarks: ReaderBookmark[];
-  openBookmark: (bookmark: ReaderBookmark) => void;
-  deleteBookmark: (bookmarkId: string) => void;
-  annotations: FoliateAnnotation[];
-  showAnnotation: (annotation: FoliateAnnotation) => void;
-  removeAnnotation: (annotation: FoliateAnnotation) => void;
-  updateAnnotationNote: (annotation: FoliateAnnotation) => void;
-  settings: ReaderSettings | null;
-  updateSettings: (patch: Partial<ReaderSettings>) => void;
-};
-
-function ReaderSidePanel(props: ReaderSidePanelProps) {
-  const t = useT();
-  const { panel, onClose } = props;
-  const title = {
-    toc: t('Table of contents'), search: t('Search in book'),
-    bookmarks: t('Bookmarks'), notes: t('Highlights and notes'),
-    settings: t('Reader settings'),
-  }[panel];
-  return (
-    <aside className={styles.sidePanel} aria-label={title}>
-      <header className={styles.panelHeader}>
-        <h2>{title}</h2>
-        <button className={styles.iconButton} onClick={onClose} title={t('Close')}>
-          <X size={18} aria-hidden="true" />
-        </button>
-      </header>
-
-      {panel === 'toc' && (
-        <div className={styles.panelList}>
-          {props.toc.length === 0 && <p className={styles.muted}>{t('No contents found.')}</p>}
-          {props.toc.map((item, index) => (
-            <button key={`${item.href}-${index}`} className={styles.listButton}
-              style={{ paddingInlineStart: `${12 + item.depth * 16}px` }}
-              disabled={!item.href}
-              onClick={() => item.href && props.onNavigate(item.href)}>
-              {item.label || t('Untitled')}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {panel === 'search' && (
-        <div className={styles.panelBody}>
-          <form className={styles.searchForm} onSubmit={(event) => { event.preventDefault(); props.runSearch(); }}>
-            <input value={props.searchText} onChange={(event) => props.setSearchText(event.target.value)}
-              placeholder={t('Search in book')} aria-label={t('Search in book')} />
-            <button type="submit" disabled={!props.searchText.trim() || props.searching}>{t('Search')}</button>
-          </form>
-          {props.searching && <progress max={1} value={props.searchProgress} />}
-          <div className={styles.panelList}>
-            {props.searchResults.map((result, index) => (
-              <button key={`${result.cfi}-${index}`} className={styles.searchResult}
-                onClick={() => props.onNavigate(result.cfi)}>
-                <strong>{result.label || t('Book')}</strong>
-                <span>{excerptText(result.excerpt)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {panel === 'bookmarks' && (
-        <div className={styles.panelList}>
-          {props.bookmarks.length === 0 && <p className={styles.muted}>{t('No bookmarks yet.')}</p>}
-          {props.bookmarks.map((bookmark) => (
-            <div className={styles.savedItem} key={bookmark.bookmark_id}>
-              <button onClick={() => props.openBookmark(bookmark)}>
-                <strong>{bookmark.chapter || t('Bookmark')}</strong>
-                <span>{Math.round(bookmark.progression * 100)}%
-                  {bookmark.label ? ` · ${bookmark.label}` : ''}</span>
-              </button>
-              <button className={styles.deleteButton} onClick={() => props.deleteBookmark(bookmark.bookmark_id)}
-                title={t('Delete')}><Trash2 size={16} aria-hidden="true" /></button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {panel === 'notes' && (
-        <div className={styles.panelList}>
-          {props.annotations.length === 0 && <p className={styles.muted}>{t('No highlights yet.')}</p>}
-          {props.annotations.map((annotation) => (
-            <div className={styles.annotationItem} key={annotation.id ?? annotation.value}>
-              <button onClick={() => props.showAnnotation(annotation)}>
-                <span className={styles.annotationText}>{annotation.text || t('Highlight')}</span>
-                {annotation.note && <span className={styles.annotationNote}>{annotation.note}</span>}
-              </button>
-              <div className={styles.itemActions}>
-                <button onClick={() => props.updateAnnotationNote(annotation)}>{t('Note')}</button>
-                <button className={styles.deleteButton} onClick={() => props.removeAnnotation(annotation)}
-                  title={t('Delete')}><Trash2 size={16} aria-hidden="true" /></button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {panel === 'settings' && props.settings && (
-        <ReaderSettingsPanel settings={props.settings} update={props.updateSettings} />
-      )}
-    </aside>
-  );
-}
-function ReaderSettingsPanel({ settings, update }: {
-  settings: ReaderSettings;
-  update: (patch: Partial<ReaderSettings>) => void;
-}) {
-  const t = useT();
-  return (
-    <div className={styles.settingsPanel}>
-      <label>{t('Reading mode')}
-        <select value={settings.flow} onChange={(event) => update({ flow: event.target.value as ReaderSettings['flow'] })}>
-          <option value="paginated">{t('Pages')}</option>
-          <option value="scrolled">{t('Continuous scroll')}</option>
-        </select>
-      </label>
-      <label>{t('Columns')}
-        <select value={settings.spread} onChange={(event) => update({ spread: event.target.value as ReaderSettings['spread'] })}
-          disabled={settings.flow === 'scrolled'}>
-          <option value="nonespread">{t('One column')}</option>
-          <option value="spread">{t('Two columns')}</option>
-        </select>
-      </label>
-      <label>{t('Theme')}
-        <select value={settings.theme} onChange={(event) => update({ theme: event.target.value as ReaderSettings['theme'] })}>
-          <option value="lightTheme">{t('Light')}</option>
-          <option value="sepiaTheme">{t('Sepia')}</option>
-          <option value="darkTheme">{t('Dark')}</option>
-          <option value="blackTheme">{t('Black')}</option>
-        </select>
-      </label>
-      <label>{t('Font')}
-        <select value={settings.font} onChange={(event) => update({ font: event.target.value as ReaderSettings['font'] })}>
-          <option value="default">{t('Publisher / serif')}</option>
-          <option value="Arial">Arial</option>
-          <option value="Yahei">Microsoft YaHei</option>
-          <option value="SimSun">SimSun</option>
-          <option value="KaiTi">KaiTi</option>
-        </select>
-      </label>
-      <label>{t('Font size')} <output>{settings.fontSize}%</output>
-        <input type="range" min={FONT_MIN} max={FONT_MAX} value={settings.fontSize}
-          onChange={(event) => update({ fontSize: Number(event.target.value) })} />
-      </label>
-      <label>{t('Line height')} <output>{(settings.lineHeight / 100).toFixed(1)}</output>
-        <input type="range" min={100} max={220} step={5} value={settings.lineHeight}
-          onChange={(event) => update({ lineHeight: Number(event.target.value) })} />
-      </label>
-      <label>{t('Page margins')} <output>{settings.margin}px</output>
-        <input type="range" min={0} max={80} step={4} value={settings.margin}
-          onChange={(event) => update({ margin: Number(event.target.value) })} />
-      </label>
-      <label>{t('Text width')} <output>{settings.maxInlineSize}px</output>
-        <input type="range" min={420} max={1200} step={20} value={settings.maxInlineSize}
-          onChange={(event) => update({ maxInlineSize: Number(event.target.value) })} />
-      </label>
-      <label className={styles.checkboxLabel}>
-        <input type="checkbox" checked={settings.animated}
-          onChange={(event) => update({ animated: event.target.checked })} />
-        {t('Animated page turns')}
-      </label>
-      <label className={styles.checkboxLabel}>
-        <input type="checkbox" checked={settings.tapToTurn}
-          onChange={(event) => update({ tapToTurn: event.target.checked })} />
-        {t('Turn pages by clicking the left or right side')}
-      </label>
-      <div className={styles.settingsHint}>
-        <AlignJustify size={18} aria-hidden="true" />
-        <span>{t('Reader settings are saved to your account and follow you across devices.')}</span>
-      </div>
-      <div className={styles.settingsHint}>
-        <Columns2 size={18} aria-hidden="true" />
-        <span>{t('Page count changes with font, margins, and window size; progress remains stable.')}</span>
-      </div>
-    </div>
   );
 }

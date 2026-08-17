@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
+from importlib import metadata
 import sys
 import os
 from collections import namedtuple
@@ -28,6 +29,22 @@ STATIC_DIR          = os.path.join(BASE_DIR, 'cps', 'static')
 TEMPLATES_DIR       = os.path.join(BASE_DIR, 'cps', 'templates')
 TRANSLATIONS_DIR    = os.path.join(BASE_DIR, 'cps', 'translations')
 
+SCRIPTS_DIR         = os.path.join(BASE_DIR, 'scripts')
+
+# Honour CWA_DIRS_JSON, the knob scripts/app_paths.py already reads. scripts/
+# and cps have to agree on which dirs.json is authoritative: it names the
+# library directory, and a packager pointing scripts/ at an out-of-tree copy
+# (so an upgrade that replaces the checkout cannot clobber it) while cps kept
+# reading BASE_DIR/dirs.json would put the ingest and the app on two different
+# libraries. Unset in the image, so Docker resolves to BASE_DIR as before.
+# A relative value is anchored to BASE_DIR, matching app_paths.dirs_json().
+# The two run with different working directories -- scripts/ from scripts/,
+# cps.py from the app root under systemd -- so an unanchored relative path
+# names two different files and splits the ingest from the app.
+_dirs_json_override = (os.environ.get('CWA_DIRS_JSON') or '').strip()
+DIRS_JSON           = (os.path.join(BASE_DIR, _dirs_json_override) if _dirs_json_override
+                       else os.path.join(BASE_DIR, 'dirs.json'))
+
 # Cache dir - use CACHE_DIR environment variable, otherwise use the default directory: cps/cache
 DEFAULT_CACHE_DIR   = os.path.join(BASE_DIR, 'cps', 'cache')
 CACHE_DIR           = os.environ.get('CACHE_DIR', DEFAULT_CACHE_DIR)
@@ -44,6 +61,19 @@ else:
     if getattr(sys, 'frozen', False):
         CONFIG_DIR = os.path.abspath(os.path.join(CONFIG_DIR, os.pardir))
 
+# Where the metadata/cover enforcer (scripts/cover_enforcer.py, driven by the
+# metadata-change-detector s6 service) watches for change logs. Env-overridable
+# for tests.
+CWA_METADATA_CHANGE_LOGS_DIR = os.environ.get(
+    "CWA_METADATA_CHANGE_LOGS_DIR",
+    os.path.join(CONFIG_DIR, "metadata_change_logs"))
+
+CWA_METADATA_TEMP_DIR = os.environ.get(
+    "CWA_METADATA_TEMP_DIR",
+    os.path.join(CONFIG_DIR, "metadata_temp"))
+
+# Folder where the log files are stored
+LOG_ARCHIVE = os.path.join(CONFIG_DIR, "log_archive")
 
 DEFAULT_SETTINGS_FILE = "app.db"
 DEFAULT_GDRIVE_FILE = "gdrive.db"
@@ -149,7 +179,7 @@ EXTENSIONS_CONVERT_TO = ['pdf', 'epub', 'mobi', 'azw3', 'docx', 'rtf', 'fb2',
                          'lit', 'lrf', 'txt', 'htmlz', 'rtf', 'odt']
 EXTENSIONS_UPLOAD = {'txt', 'pdf', 'epub', 'kepub', 'mobi', 'azw', 'azw3', 'cbr', 'cbz', 'cbt', 'cb7', 'djvu', 'djv',
                      'prc', 'doc', 'docx', 'fb2', 'html', 'rtf', 'lit', 'odt', 'mp3', 'mp4', 'ogg',
-                     'opus', 'wav', 'flac', 'm4a', 'm4b', 'acsm', 'kfx', 'kfx-zip'}
+                     'opus', 'wav', 'flac', 'm4a', 'm4b', 'acsm', 'lcpl', 'kfx', 'kfx-zip'}
 
 _extension = ""
 if sys.platform == "win32":
@@ -169,30 +199,30 @@ def selected_roles(dictionary):
 BookMeta = namedtuple('BookMeta', 'file_path, extension, title, author, cover, description, tags, series, '
                                   'series_id, languages, publisher, pubdate, identifiers')
 
-def _read_text(path: str, default: str = "") -> str:
-    # An empty file falls back too: a zero-byte /app/CWA_RELEASE used to make
+def _get_version(default: str = "") -> str:
+    # If the Python package version cannot be retrieved, it makes
     # INSTALLED_VERSION the empty string, which silently disables the update
     # indicator instead of reading as an unknown version.
     try:
-        with open(path, 'r') as f:
-            return f.read().strip() or default
+        return 'v' + metadata.version("calibre-web-automated")
     except Exception:
         return default
 
 # What INSTALLED_VERSION reads as when the build never stamped a version —
-# a source checkout, a bare-metal install, or a zero-byte /app/CWA_RELEASE.
+# a source checkout or a bare-metal install with the package not installed,
+# so neither the env stamp nor package metadata resolves.
 # It has to parse as a version so ordering comparisons keep working, which
 # also means it parses as a *release tag*: consumers that turn a version into
 # a release link must special-case it or they emit a link to a tag that was
 # never published (fork #1231).
 UNKNOWN_VERSION = "v0.0.0"
 
-# The installed version is baked at build time and surfaced by cwa-init via
+# The installed version comes from the Python package, unless overridden by the
 # env; avoid any network or slow I/O during module import. The *latest
 # published* version deliberately does NOT live here — a module-level binding
 # read once at import can never go anything but stale (fork #1108). It is
 # resolved on demand and cached by cps/services/latest_release.py.
-_stamped_version = os.environ.get("CWA_INSTALLED_VERSION") or _read_text("/app/CWA_RELEASE", "")
+_stamped_version = os.environ.get("CWA_INSTALLED_VERSION") or _get_version("")
 
 # Whether the build actually stamped a version, as opposed to us falling back
 # to the sentinel. The version string alone cannot answer this: UNKNOWN_VERSION

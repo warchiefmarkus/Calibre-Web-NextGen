@@ -20,6 +20,8 @@ def test_serialize_book_list_item_full():
         "tags": [],
         "date_added": None,
         "last_modified": None,
+        "external_rating": None,
+        "reading_progress": None,
         "read": False,
         "archived": False,
         "hidden": False,

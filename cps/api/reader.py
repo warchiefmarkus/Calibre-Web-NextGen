@@ -14,8 +14,9 @@ from sqlalchemy import and_
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import api_v1
-from .. import calibre_db, deployment_profile, ub
+from .. import calibre_db, deployment_profile, logger, ub
 from ..cw_login import current_user
+from ..services import reading_position
 from ..services.calibremcp_client import (
     CalibreMCPClientError,
     get_reader_position,
@@ -23,6 +24,10 @@ from ..services.calibremcp_client import (
 )
 from ..usermanagement import login_required_if_no_ano
 from ..reader_settings import merged_reader_settings, resolved_reader_settings
+from ..services.reading_progress import reading_progress_summary_map
+
+
+log = logger.create()
 
 
 def _err(code, message, status):
@@ -75,15 +80,55 @@ def get_bookmark(book_id):
         return visible
     fmt = (request.args.get("format") or "epub").lower()
     if deployment_profile.use_calibre_native_reader_data():
+        native = None
+        native_error = None
         try:
             native = _latest_native_position(
                 get_reader_position(_cwng_user_name(), book_id, fmt)
             )
         except CalibreMCPClientError as exc:
-            return _err("reader_backend_error", str(exc), exc.status_code)
+            native_error = exc
+
+        summary = reading_progress_summary_map(
+            ub.session, int(current_user.id), [book_id],
+            user_name=_cwng_user_name(),
+        ).get(book_id)
+        native_device = str((native or {}).get("device") or "")
+        moon_origin = native_device.startswith("moonreader-webdav:")
+        if moon_origin or (summary and summary.get("source") == "moonreader"):
+            anchor = None
+            try:
+                from ..services.moonreader_webdav import moon_position_anchor
+                anchor = moon_position_anchor(int(current_user.id), book_id, fmt)
+            except Exception:
+                log.warning(
+                    "Could not resolve Moon+ restore anchor for book %s",
+                    book_id, exc_info=True,
+                )
+            native_fraction = float((native or {}).get("pos_frac") or 0)
+            summary_fraction = (
+                float(summary.get("percentage") or 0) / 100.0 if summary else 0.0
+            )
+            fraction = native_fraction if native_fraction > 0 else summary_fraction
+            return jsonify({
+                "bookmark": native.get("cfi") if native and fmt == "pdf" else None,
+                "position_fraction": fraction,
+                "position_source": "moonreader",
+                "position_anchor": anchor.get("text") if anchor else None,
+                "position_chapter": anchor.get("chapter") if anchor else None,
+                "position_section": anchor.get("foliate_section") if anchor else None,
+                "position_percentage": (
+                    anchor.get("percentage") if anchor else
+                    float(summary.get("percentage") or 0) if summary else
+                    fraction * 100.0
+                ),
+            })
+        if native_error is not None:
+            return _err("reader_backend_error", str(native_error), native_error.status_code)
         return jsonify({
             "bookmark": native.get("cfi") if native else None,
             "position_fraction": float(native.get("pos_frac") or 0) if native else 0,
+            "position_source": "calibre_web" if native else None,
         })
     row = ub.session.query(ub.Bookmark).filter(_bookmark_filter(book_id, fmt)).first()
     return jsonify({"bookmark": row.bookmark_key if row else None})
@@ -105,18 +150,48 @@ def save_bookmark(book_id):
     bookmark_key = data.get("bookmark") or ""
     if deployment_profile.use_calibre_native_reader_data():
         try:
+            raw_fraction = data.get("position_fraction")
+            if raw_fraction is None:
+                percentage = reading_position.coerce_percentage(data.get("percentage"))
+                raw_fraction = (percentage / 100.0) if percentage is not None else 0
+            renderer_fraction = max(0.0, min(1.0, float(raw_fraction or 0)))
+            canonical_fraction = renderer_fraction
+            anchor_text = data.get("position_anchor")
+            try:
+                from ..services.moonreader_webdav import canonical_fraction_from_anchor
+                canonical_fraction = canonical_fraction_from_anchor(
+                    int(current_user.id), book_id, fmt, renderer_fraction, anchor_text,
+                )
+            except Exception:
+                # Exact CFI persistence must still work when text canonicalization
+                # is unavailable. The raw renderer fraction is only a fallback.
+                log.exception("Could not canonicalize reader progress for book %s", book_id)
             set_reader_position(
                 _cwng_user_name(),
                 book_id,
                 fmt,
                 cfi=bookmark_key or None,
-                position_fraction=float(data.get("position_fraction") or 0),
+                position_fraction=canonical_fraction,
                 device=str(data.get("device") or "cwng-web"),
             )
         except (CalibreMCPClientError, TypeError, ValueError) as exc:
             status = exc.status_code if isinstance(exc, CalibreMCPClientError) else 400
             return _err("reader_backend_error", str(exc), status)
-        return "", 204
+        try:
+            from ..tasks.moonreader_sync import queue_moonreader_book_sync
+            queue_moonreader_book_sync(
+                int(current_user.id), book_id, fmt,
+                anchor_text=anchor_text,
+                username=_cwng_user_name() or "System",
+            )
+        except Exception:
+            # Reader position persistence is authoritative and must not fail just
+            # because the optional WebDAV bridge is temporarily unavailable.
+            log.exception("Could not queue Moon+ writeback for book %s", book_id)
+        return jsonify({
+            "position_fraction": canonical_fraction,
+            "renderer_fraction": renderer_fraction,
+        })
 
     # Replace-on-write: one bookmark per (user, book, format), like the legacy route.
     ub.session.query(ub.Bookmark).filter(_bookmark_filter(book_id, fmt)).delete()
@@ -127,7 +202,27 @@ def save_bookmark(book_id):
             format=fmt,
             bookmark_key=bookmark_key,
         ))
-    ub.session_commit("Bookmark for user {} in book {} via api".format(current_user.id, book_id))
+        # #1318: settle the required write before the optional one, so a bookmark
+        # failure is not reported in the vocabulary of a progress-sharing failure
+        # (and so the savepoint below cannot roll the bookmark back with it).
+        if not ub.session_flush():
+            return "", 500
+
+        # #324: share the portable half of the position (the percentage) with the
+        # user's other devices. Mirrors the legacy route so both readers behave
+        # the same. Only on a save — an empty bookmark is a clear.
+        percentage = reading_position.coerce_percentage(data.get("percentage"))
+        if percentage is not None:
+            try:
+                reading_position.record_web_reader_progress(current_user, book_id, percentage)
+            except Exception as e:
+                # Position sharing must never cost the user their bookmark.
+                log.warning("Could not share web reader progress for book %s: %s", book_id, e)
+
+    # The SPA debounces one of these every 800ms; answering 204 on a rolled-back
+    # write drops the position silently and tells the client not to retry.
+    if not ub.session_commit("Bookmark for user {} in book {} via api".format(current_user.id, book_id)):
+        return "", 500
     return "", 204
 
 

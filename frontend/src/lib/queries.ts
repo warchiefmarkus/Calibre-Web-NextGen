@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import {
-  apiGet, apiPost, apiDelete, apiUpload, apiPostForm, ApiError,
+  apiGet, apiPost, apiPatch, apiDelete, apiUpload, apiPostForm, ApiError,
   navigateToLogout, noteSessionIdentity,
   getMetadataProviders, setMetadataProviderActive,
 } from './api';
@@ -11,6 +13,8 @@ import type {
   SearchOptions, AdvancedSearchParams, AdvSearchResult, Account, ProfileUpdate,
   BookMetadata, MetadataUpdate, UploadResult, AdminUser, AboutInfo, TaskItem, AuthConfig,
   RagOcrConfig, RagSearchRequest, RagSearchResponse, RagStatus, BookOcrResponse,
+  ExternalBookRatingsResponse, MoonReaderDiscoveryResult, MoonReaderSettings, MoonReaderSettingsUpdate,
+  NoticeInbox,
 } from './api';
 
 /** Entity kinds the catalog can be filtered by. Singular here; the browse-list
@@ -86,6 +90,18 @@ export function useUpdateSidebar() {
   });
 }
 
+/** Queries whose response body depends on *who* is asking, and so must not
+ *  survive an identity change that happens without a page load. Today that is
+ *  /about, which withholds component versions from non-admins (#1287).
+ *
+ *  Cancel first, then remove: an in-flight request issued under the previous
+ *  identity would otherwise land after the switch and repopulate the cache with
+ *  the wrong identity's answer. */
+async function dropIdentityScopedQueries(queryClient: QueryClient) {
+  await queryClient.cancelQueries({ queryKey: ['about'] });
+  queryClient.removeQueries({ queryKey: ['about'] });
+}
+
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -101,6 +117,18 @@ export function useLogin() {
       noteSessionIdentity(!!data.role?.anonymous);
       queryClient.setQueryData(['me'], data);
       void queryClient.invalidateQueries({ queryKey: ['me'] });
+      // Signing in here does not reload the page, so anything cached under the
+      // previous identity survives. /about is one of those now — the server
+      // withholds versions from non-admins (#1287), so a guest's empty map
+      // would otherwise stick for staleTime and hide the section from the admin
+      // who just signed in. Logging out is a full navigation, so that direction
+      // clears itself.
+      //
+      // Cancel before dropping, rather than invalidating: invalidation only
+      // refetches *active* queries, so a guest request still in flight when
+      // login lands would resolve afterwards, write its empty map and clear the
+      // stale flag — leaving the admin with a fresh-looking wrong answer.
+      void dropIdentityScopedQueries(queryClient);
     },
   });
 }
@@ -140,6 +168,8 @@ export function useMagicLinkPoll() {
         noteSessionIdentity(!!data.user.role?.anonymous);
         queryClient.setQueryData(['me'], data.user);
         void queryClient.invalidateQueries({ queryKey: ['me'] });
+        // Same in-place identity switch as useLogin — drop the guest's /about.
+        void dropIdentityScopedQueries(queryClient);
       }
     },
   });
@@ -236,16 +266,52 @@ export function useEntityList(plural: string) {
   });
 }
 
+/** The tag a rename collided with, carried on the 409 so the caller can offer
+ *  to merge into it rather than showing a dead end (#973). */
+export interface TagConflict { id: number; name: string; count: number }
+
+export interface TagWriteResult {
+  id: number;
+  name: string;
+  /** Present when the rename was resolved by folding this tag into another. */
+  merged?: boolean;
+  deleted?: boolean;
+  /** How many books moved (merge) or lost the tag (delete). */
+  books?: number;
+}
+
+/** Read the conflicting tag off a failed rename, or null if this wasn't one. */
+export function tagConflictOf(error: unknown): TagConflict | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const conflict = error.detail?.conflict as TagConflict | undefined;
+  return conflict && typeof conflict.id === 'number' ? conflict : null;
+}
+
+function invalidateTagViews(qc: ReturnType<typeof useQueryClient>) {
+  // 'entities' un-suffixed: a merge or delete REMOVES a row from the all-tags
+  // browse list, so that list must refetch too — not just the tag's own page.
+  void qc.invalidateQueries({ queryKey: ['entities'] });
+  void qc.invalidateQueries({ queryKey: ['books'] });
+  void qc.invalidateQueries({ queryKey: ['book'] });
+  void qc.invalidateQueries({ queryKey: ['metadata'] });
+}
+
 export function useRenameTag(id: string | number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => apiPost<{ id: number; name: string }>(`/api/v1/tags/${id}`, { name }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['entities', 'tags'] });
-      void qc.invalidateQueries({ queryKey: ['books'] });
-      void qc.invalidateQueries({ queryKey: ['book'] });
-      void qc.invalidateQueries({ queryKey: ['metadata'] });
-    },
+    // `merge` is only sent when explicitly true — the server refuses anything
+    // else, and a merge cannot be undone.
+    mutationFn: ({ name, merge }: { name: string; merge?: boolean }) =>
+      apiPost<TagWriteResult>(`/api/v1/tags/${id}`, merge === true ? { name, merge: true } : { name }),
+    onSuccess: () => invalidateTagViews(qc),
+  });
+}
+
+export function useDeleteTag(id: string | number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiDelete<TagWriteResult>(`/api/v1/tags/${id}`),
+    onSuccess: () => invalidateTagViews(qc),
   });
 }
 
@@ -259,6 +325,60 @@ export function useBook(id: string | number) {
     retry: (failureCount, error) =>
       !(error instanceof ApiError && (error.status === 401 || error.status === 404))
       && failureCount < 3,
+  });
+}
+
+export function useExternalBookRatings(id: string | number) {
+  const queryClient = useQueryClient();
+  const bookId = String(id);
+  const queryKey = ['external-book-ratings', bookId] as const;
+
+  // Opening the detail page asks the backend to fill a missing rating in the
+  // background. Existing ratings are left untouched; failed/not-found lookups
+  // are retried at most once per day and active work is deduplicated.
+  useEffect(() => {
+    let cancelled = false;
+    void apiPost<ExternalBookRatingsResponse>(
+      `/api/v1/books/${bookId}/external-ratings/refresh-async`,
+    ).then((data) => {
+      if (!cancelled) queryClient.setQueryData(['external-book-ratings', bookId], data);
+    }).catch(() => {
+      // The normal cached GET below remains authoritative and exposes any
+      // provider error without making the book detail page fail to render.
+    });
+    return () => { cancelled = true; };
+  }, [bookId, queryClient]);
+
+  return useQuery<ExternalBookRatingsResponse>({
+    queryKey,
+    queryFn: () => apiGet<ExternalBookRatingsResponse>(
+      `/api/v1/books/${bookId}/external-ratings`,
+    ),
+    staleTime: 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    refetchInterval: (query) => query.state.data?.refreshing ? 1_500 : false,
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && (error.status === 401 || error.status === 404))
+      && failureCount < 2,
+  });
+}
+
+export function useRefreshExternalBookRatings(id: string | number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<ExternalBookRatingsResponse>(
+      `/api/v1/books/${id}/external-ratings/refresh`,
+    ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['external-book-ratings', String(id)], data);
+      // Every preview surface receives its badge through a book-list payload.
+      // Invalidate them together so Back navigation cannot restore an old score.
+      void queryClient.invalidateQueries({ queryKey: ['books'] });
+      void queryClient.invalidateQueries({ queryKey: ['adv-search'] });
+      void queryClient.invalidateQueries({ queryKey: ['discover-strip'] });
+      void queryClient.invalidateQueries({ queryKey: ['shelf'] });
+      void queryClient.invalidateQueries({ queryKey: ['magicshelf'] });
+    },
   });
 }
 
@@ -523,6 +643,7 @@ export interface SecurityConfig {
   ldap: SecurityLdap;
   oauth: {
     redirect_host: string; disable_standard_login: boolean;
+    enable_oauth_auto_forward: boolean;
     enable_group_admin_management: boolean; generic: SecurityOauthGeneric;
     providers: { name: string; client_id: string; has_secret: boolean; active: boolean }[];
   };
@@ -537,7 +658,8 @@ export interface SecurityUpdate {
   remote_login?: boolean;
   ldap?: Partial<Omit<SecurityLdap, 'has_password'>> & { serv_password?: string };
   oauth?: {
-    redirect_host?: string; disable_standard_login?: boolean; enable_group_admin_management?: boolean;
+    redirect_host?: string; disable_standard_login?: boolean; enable_oauth_auto_forward?: boolean;
+    enable_group_admin_management?: boolean;
     generic?: Partial<Omit<SecurityOauthGeneric, 'has_secret' | 'active'>> & { client_secret?: string };
     providers?: { name: string; client_id?: string; client_secret?: string }[];
   };
@@ -808,10 +930,15 @@ export function useConvertFormat(id: string | number) {
   });
 }
 
-/** Search online metadata providers (reuses the legacy /metadata/search). */
+/** Search online metadata providers (reuses the legacy /metadata/search).
+ *  `providers` restricts the run to specific provider ids — used by the
+ *  editions drill-down, whose query is one provider's own identifier syntax
+ *  and means nothing to the rest (#303). Omit it for a normal search. */
 export function useMetadataSearch() {
   return useMutation({
-    mutationFn: (query: string) => apiPostForm<MetaSearchResponse>('/metadata/search', { query }),
+    mutationFn: ({ query, providers }: { query: string; providers?: string[] }) =>
+      apiPostForm<MetaSearchResponse>('/metadata/search',
+        providers?.length ? { query, providers: providers.join(',') } : { query }),
   });
 }
 
@@ -867,6 +994,8 @@ export function useSetCover(id: string | number) {
 
 // ── Reader (bookmark / progress) ─────────────────────────────────────────────
 
+export type ReaderTranslationMode = 'structured' | 'simple';
+
 export interface ReaderSettings {
   theme: 'lightTheme' | 'sepiaTheme' | 'darkTheme' | 'blackTheme';
   font: 'default' | 'Yahei' | 'SimSun' | 'KaiTi' | 'Arial';
@@ -880,6 +1009,85 @@ export interface ReaderSettings {
   maxInlineSize: number;
   animated: boolean;
   tapToTurn: boolean;
+  justifyText: boolean;
+  translationEnabled: boolean;
+  translationCacheEnabled: boolean;
+  translationPreloadNextPage: boolean;
+  translationView: 'original' | 'translated';
+  translationMode: ReaderTranslationMode;
+  translationSourceLanguage: string;
+  translationTargetLanguage: string;
+  translationProfileId: string;
+  translationPrompt: string;
+}
+
+export interface ReaderTranslationProfile {
+  id: string;
+  name: string;
+  base_url: string;
+  endpoint_path: string;
+  model: string;
+  temperature: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+  json_mode: boolean;
+  extra_headers: Record<string, string>;
+  has_api_key: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ReaderTranslationProfileInput {
+  name: string;
+  base_url: string;
+  endpoint_path: string;
+  api_key?: string;
+  clear_api_key?: boolean;
+  model: string;
+  temperature: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+  json_mode: boolean;
+  extra_headers: Record<string, string>;
+}
+
+export type ReaderTranslationRunMark = 'strong' | 'em' | 'code' | 'sup' | 'sub' | 'link';
+
+export interface ReaderTranslationRun {
+  id: string;
+  text: string;
+  marks?: ReaderTranslationRunMark[];
+  break_before?: number;
+}
+
+export interface ReaderTranslationBlock {
+  id: string;
+  tag: string;
+  text: string;
+  runs?: ReaderTranslationRun[];
+}
+
+export interface ReaderTranslationResponse {
+  blocks: ReaderTranslationBlock[];
+  cached: boolean;
+  skipped?: boolean;
+  profile_id: string;
+  model: string;
+}
+
+export interface ReaderTranslationModelInfo {
+  id: string;
+  owner?: string;
+  context_length?: number;
+  description?: string;
+}
+
+export interface ReaderTranslationModelCheck {
+  ok: boolean;
+  model: string;
+  latency_ms: number;
+  preview?: string;
+  error?: { code: string; message: string };
 }
 
 export interface ReaderBookmark {
@@ -901,6 +1109,16 @@ export interface ReaderBookmark {
 const retryUnlessUnauthorized = (failureCount: number, error: unknown) =>
   !(error instanceof ApiError && error.status === 401) && failureCount < 3;
 
+/** Is re-sending this request capable of changing the answer? (#1318)
+ *
+ *  A 5xx from a write route means the server tried and the transaction did not
+ *  land — typically SQLite contention — so the same request a moment later
+ *  usually succeeds. A 4xx is a verdict on the request itself (unauthenticated,
+ *  CSRF, malformed) and re-sending it unchanged just repeats the answer. A
+ *  network-level failure carries no status at all and is worth another try. */
+export const isWorthResending = (error: unknown) =>
+  !(error instanceof ApiError) || error.status >= 500;
+
 export function useReaderSettings() {
   return useQuery<{ reader: ReaderSettings }>({
     queryKey: ['reader-settings'],
@@ -917,10 +1135,120 @@ export function useSaveReaderSettings() {
   });
 }
 
+const readerTranslationProfilesKey = ['reader-translation-profiles'] as const;
+
+export function useReaderTranslationProfiles() {
+  return useQuery<{ profiles: ReaderTranslationProfile[]; private_endpoints_allowed: boolean }>({
+    queryKey: readerTranslationProfilesKey,
+    queryFn: () => apiGet('/api/v1/reader/translation/profiles'),
+    staleTime: 30_000,
+    retry: retryUnlessUnauthorized,
+  });
+}
+
+export function useCreateReaderTranslationProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ReaderTranslationProfileInput) =>
+      apiPost<{ profile: ReaderTranslationProfile }>('/api/v1/reader/translation/profiles', payload),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey }),
+  });
+}
+
+export function useUpdateReaderTranslationProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Partial<ReaderTranslationProfileInput> }) =>
+      apiPatch<{ profile: ReaderTranslationProfile }>(
+        `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}`, payload,
+      ),
+    onSuccess: (data) => {
+      qc.setQueryData<{
+        profiles: ReaderTranslationProfile[];
+        private_endpoints_allowed: boolean;
+      }>(readerTranslationProfilesKey, (current) => current ? {
+        ...current,
+        profiles: current.profiles.map((profile) => (
+          profile.id === data.profile.id ? data.profile : profile
+        )),
+      } : current);
+      void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey });
+    },
+  });
+}
+
+export function useDeleteReaderTranslationProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiDelete(`/api/v1/reader/translation/profiles/${encodeURIComponent(id)}`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey }),
+  });
+}
+
+export function useTestReaderTranslationProfile() {
+  return useMutation({
+    mutationFn: (id: string) => apiPost<{ ok: boolean; model: string; preview: string }>(
+      `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}/test`, {},
+    ),
+  });
+}
+
+export function useReaderTranslationModels() {
+  return useMutation({
+    mutationFn: (id: string) => apiGet<{
+      models: string[];
+      details: ReaderTranslationModelInfo[];
+    }>(`/api/v1/reader/translation/profiles/${encodeURIComponent(id)}/models`),
+  });
+}
+
+export function useCheckReaderTranslationModel() {
+  return useMutation({
+    mutationFn: ({ id, model, endpointPath }: {
+      id: string;
+      model: string;
+      endpointPath: string;
+    }) => apiPost<ReaderTranslationModelCheck>(
+      `/api/v1/reader/translation/profiles/${encodeURIComponent(id)}/models/check`,
+      { model, endpoint_path: endpointPath },
+    ),
+  });
+}
+
+export function translateReaderPage(
+  bookId: string | number,
+  payload: {
+    profile_id: string;
+    format: string;
+    source_language: string;
+    target_language: string;
+    mode: ReaderTranslationMode;
+    prompt: string;
+    cache_enabled: boolean;
+    blocks: ReaderTranslationBlock[];
+  },
+  signal?: AbortSignal,
+) {
+  return apiPost<ReaderTranslationResponse>(
+    `/api/v1/books/${bookId}/translation`, payload, { signal },
+  );
+}
+
+export type ReaderPosition = {
+  bookmark: string | null;
+  position_fraction?: number;
+  position_source?: 'moonreader' | 'calibre_web' | null;
+  position_anchor?: string | null;
+  position_chapter?: number | null;
+  position_section?: number | null;
+  position_percentage?: number | null;
+};
+
 export function useBookmark(bookId: string | number, format = 'epub') {
-  return useQuery<{ bookmark: string | null; position_fraction?: number }>({
+  return useQuery<ReaderPosition>({
     queryKey: ['bookmark', String(bookId), format],
-    queryFn: () => apiGet<{ bookmark: string | null; position_fraction?: number }>(
+    queryFn: () => apiGet<ReaderPosition>(
       `/api/v1/books/${bookId}/bookmark?format=${encodeURIComponent(format)}`),
     staleTime: 0,
     retry: retryUnlessUnauthorized,
@@ -929,8 +1257,18 @@ export function useBookmark(bookId: string | number, format = 'epub') {
 
 export function useSaveBookmark(bookId: string | number) {
   return useMutation({
-    mutationFn: (vars: { format: string; bookmark: string; position_fraction?: number; device?: string }) =>
+    mutationFn: (vars: {
+      format: string; bookmark: string; percentage?: number;
+      position_fraction?: number; device?: string; position_anchor?: string;
+    }) =>
       apiPost(`/api/v1/books/${bookId}/bookmark`, vars),
+    // #1318: deliberately NO react-query `retry` here. The route now answers
+    // 5xx when the write did not land, which is worth re-sending — but a
+    // built-in retry re-sends the SAME variables, and the reader fires a save
+    // every 800ms while paging. A retry of the position from three pages ago
+    // can therefore land after the current one and move the user backwards.
+    // The caller retries instead, re-reading the latest position each time
+    // (see Reader.tsx), so what goes out is never stale.
   });
 }
 
@@ -994,6 +1332,77 @@ export function useUpdateProfile() {
     },
   });
 }
+
+export function useMoonReaderSettings() {
+  return useQuery<MoonReaderSettings>({
+    queryKey: ['moonreader-settings'],
+    queryFn: () => apiGet<MoonReaderSettings>('/api/v1/account/moonreader'),
+    refetchInterval: (query) => {
+      const status = query.state.data?.sync_status;
+      return status === 'queued' || status === 'running' ? 1_500 : false;
+    },
+  });
+}
+
+export function useSaveMoonReaderSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MoonReaderSettingsUpdate) =>
+      apiPost<MoonReaderSettings>('/api/v1/account/moonreader', vars),
+    onSuccess: (data) => qc.setQueryData(['moonreader-settings'], data),
+  });
+}
+
+export function useTestMoonReaderConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MoonReaderSettingsUpdate) =>
+      apiPost<MoonReaderSettings>('/api/v1/account/moonreader/test', vars),
+    onSuccess: (data) => qc.setQueryData(['moonreader-settings'], data),
+  });
+}
+
+export function useDiscoverMoonReaderCaches() {
+  return useMutation({
+    mutationFn: (vars: MoonReaderSettingsUpdate) =>
+      apiPost<MoonReaderDiscoveryResult>('/api/v1/account/moonreader/discover', vars),
+  });
+}
+
+export function useStartMoonReaderSync() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<MoonReaderSettings>('/api/v1/account/moonreader/sync'),
+    onSuccess: (data) => qc.setQueryData(['moonreader-settings'], data),
+  });
+}
+
+export function useStartBookMoonReaderSync(bookId: string | number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const result = await apiPost<{ book_id: number; queued: boolean; pending: boolean }>(
+        `/api/v1/books/${bookId}/moonreader/sync`,
+      );
+      if (!result.queued && !result.pending) return result;
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        const status = await apiGet<{ book_id: number; pending: boolean }>(
+          `/api/v1/books/${bookId}/moonreader/sync`,
+        );
+        if (!status.pending) return { ...result, pending: false };
+      }
+      return result;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['book', String(bookId)] });
+      void qc.invalidateQueries({ queryKey: ['bookmark', String(bookId)] });
+      void qc.invalidateQueries({ queryKey: ['moonreader-settings'] });
+    },
+  });
+}
+
 
 export function useChangePassword() {
   return useMutation({
@@ -1289,6 +1698,36 @@ export function useDismissDuplicate() {
     mutationFn: (groupHash: string) =>
       apiPost(`/duplicates/dismiss/${encodeURIComponent(groupHash)}`),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['duplicates'] }),
+  });
+}
+
+// ── Generic user notices ───────────────────────────────────────────────────
+
+export function useNotices(bookId?: string | number) {
+  const suffix = bookId == null ? '' : `?book_id=${encodeURIComponent(String(bookId))}`;
+  return useQuery<NoticeInbox>({
+    queryKey: ['notices', bookId == null ? 'all' : String(bookId)],
+    queryFn: () => apiGet<NoticeInbox>(`/api/v1/notices${suffix}`),
+  });
+}
+
+export function useDismissNotice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (noticeId: number) =>
+      apiPost<{ dismissed: number; remaining: number }>(`/api/v1/notices/${noticeId}/dismiss`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['notices'] }),
+  });
+}
+
+export function useDismissNotices() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (noticeIds: number[]) =>
+      apiPost<{ dismissed: number; remaining: number }>('/api/v1/notices/dismiss', {
+        notice_ids: noticeIds,
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['notices'] }),
   });
 }
 

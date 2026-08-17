@@ -62,6 +62,7 @@ PER_USER_BOOK_MODELS = (
     "UserHiddenBook",
     "FavoriteBook",
     "BookCoverPreview",
+    "MoonReaderProgress",
 )
 
 
@@ -181,6 +182,36 @@ def migrate_user_book_data(from_book_id, to_book_id, session=None):
                 row.book_id = to_book_id
     session.flush()
 
+    # Moon+ WebDAV positions are keyed by remote path. Different files may
+    # legitimately map to the same conceptual book, so re-point every row and
+    # retain both histories.
+    session.query(ub.MoonReaderProgress).filter(
+        ub.MoonReaderProgress.book_id == from_book_id).update(
+        {ub.MoonReaderProgress.book_id: to_book_id}, synchronize_session=False)
+    session.flush()
+
+    # External rating aggregates are shared book metadata (not per-user). On a
+    # merge, keep the freshest row for each source and discard the duplicate.
+    rating_fields = (
+        "lookup_hash", "status", "source_id", "source_url", "matched_title",
+        "matched_authors", "matched_by", "match_confidence", "rating",
+        "ratings_count", "reviews_count", "popularity_count",
+        "ratings_distribution", "error", "fetched_at",
+    )
+    for row in session.query(ub.ExternalBookRatingCache).filter(
+            ub.ExternalBookRatingCache.book_id == from_book_id).all():
+        clash = session.query(ub.ExternalBookRatingCache).filter(
+            ub.ExternalBookRatingCache.book_id == to_book_id,
+            ub.ExternalBookRatingCache.source == row.source).first()
+        if clash is None:
+            row.book_id = to_book_id
+            continue
+        if _newer(row.fetched_at, clash.fetched_at):
+            for field in rating_fields:
+                setattr(clash, field, getattr(row, field))
+        session.delete(row)
+    session.flush()
+
     # Annotation backup snapshots index: re-point so retention keeps
     # managing them; the gzip files referenced by file_path stay valid.
     session.query(ub.KoboAnnotationBackup).filter(
@@ -220,14 +251,59 @@ def purge_user_book_data(book_id=None, user_id=None, session=None,
             query = query.filter(model.user_id == user_id)
         return query
 
-    # Annotations: delete sync-target children first (bulk deletes bypass
-    # ORM cascade, and SQLite FK enforcement can't be relied on).
+    # Annotations: delete all children first (bulk deletes bypass ORM cascade,
+    # and SQLite FK enforcement can't be relied on). Raw materializations can
+    # contain verbatim annotation text and must leave before ids can recycle.
     ann_ids = _scoped(session.query(ub.Annotation.id), ub.Annotation)
+    session.query(ub.KoboAnnotationMaterialization).filter(
+        ub.KoboAnnotationMaterialization.annotation_id.in_(
+            ann_ids.scalar_subquery())).delete(synchronize_session=False)
     session.query(ub.AnnotationSyncTarget).filter(
         ub.AnnotationSyncTarget.annotation_id.in_(
             ann_ids.scalar_subquery())).delete(synchronize_session=False)
     _scoped(session.query(ub.Annotation), ub.Annotation).delete(
         synchronize_session=False)
+
+    # Stage 0 book authority and immutable seed/page evidence all belong to
+    # the same user/book scope. Children go first because their compressed
+    # payloads may contain annotation data and FK cascades are not active.
+    book_state_ids = _scoped(
+        session.query(ub.KoboAnnotationBookState.id),
+        ub.KoboAnnotationBookState,
+    )
+    capture_ids = session.query(ub.KoboAnnotationSeedCapture.id).filter(
+        ub.KoboAnnotationSeedCapture.book_state_id.in_(
+            book_state_ids.scalar_subquery())
+    )
+    session.query(ub.KoboAnnotationSeedCapturePage).filter(
+        ub.KoboAnnotationSeedCapturePage.seed_capture_id.in_(
+            capture_ids.scalar_subquery())
+    ).delete(synchronize_session=False)
+    snapshot_ids = session.query(ub.KoboAnnotationPageSnapshot.snapshot_id).filter(
+        ub.KoboAnnotationPageSnapshot.book_state_id.in_(
+            book_state_ids.scalar_subquery())
+    )
+    session.query(ub.KoboAnnotationPageCursor).filter(
+        ub.KoboAnnotationPageCursor.snapshot_id.in_(
+            snapshot_ids.scalar_subquery())
+    ).delete(synchronize_session=False)
+    for child in (
+        ub.KoboDeviceBookAnnotationState,
+        ub.KoboAnnotationSeedCapture,
+        ub.KoboAnnotationPageSnapshot,
+    ):
+        session.query(child).filter(
+            child.book_state_id.in_(book_state_ids.scalar_subquery())
+        ).delete(synchronize_session=False)
+    _scoped(
+        session.query(ub.KoboAnnotationBookState), ub.KoboAnnotationBookState,
+    ).delete(synchronize_session=False)
+    # This durable guard is intentionally removed only by a complete privacy
+    # or book purge; deleting mutable authority state alone retains it.
+    _scoped(
+        session.query(ub.KoboOpaqueContentPresentGuard),
+        ub.KoboOpaqueContentPresentGuard,
+    ).delete(synchronize_session=False)
 
     # Kobo reading state + children.
     krs_ids = _scoped(session.query(ub.KoboReadingState.id), ub.KoboReadingState)
@@ -240,17 +316,29 @@ def purge_user_book_data(book_id=None, user_id=None, session=None,
 
     for model in (ub.Bookmark, ub.ReadBook, ub.ArchivedBook, ub.Downloads,
                   ub.KoboSyncedBooks, ub.UserHiddenBook, ub.FavoriteBook,
-                  ub.BookCoverPreview):
+                  ub.BookCoverPreview, ub.MoonReaderProgress):
         _scoped(session.query(model), model).delete(synchronize_session=False)
 
-    # BookShelf has no user_id — shelf membership is shelf-scoped, and the
-    # user-delete path removes the user's shelves (with their links)
-    # separately. Only book-scoped (and full) purges touch it.
+    # BookShelf and external rating aggregates have no user_id. Shelf
+    # membership is shelf-scoped; ratings are shared book metadata. Only
+    # book-scoped (and full database-swap) purges touch either table.
     if user_id is None:
         query = session.query(ub.BookShelf)
         if book_id is not None:
             query = query.filter(ub.BookShelf.book_id == book_id)
         query.delete(synchronize_session=False)
+
+        ratings = session.query(ub.ExternalBookRatingCache)
+        if book_id is not None:
+            ratings = ratings.filter(ub.ExternalBookRatingCache.book_id == book_id)
+        ratings.delete(synchronize_session=False)
+
+    # Connection credentials are user-scoped rather than book-scoped. Delete
+    # them only with the owning user, never during a library database swap.
+    if user_id is not None:
+        session.query(ub.MoonReaderWebdavSettings).filter(
+            ub.MoonReaderWebdavSettings.user_id == user_id).delete(
+                synchronize_session=False)
 
     if remove_backup_files:
         backups = _scoped(session.query(ub.KoboAnnotationBackup),

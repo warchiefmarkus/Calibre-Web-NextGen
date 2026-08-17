@@ -8,6 +8,8 @@
 import os
 import re
 import glob
+import tempfile
+import zipfile
 from shutil import copyfile, copyfileobj
 from markupsafe import escape
 from time import time
@@ -19,11 +21,13 @@ from flask_babel import lazy_gettext as N_
 from cps.services.worker import CalibreTask
 from cps import db
 from cps import logger, config
-from cps.subproc_wrapper import process_open
+from cps.subproc_wrapper import process_open, stream_process_output
 from flask_babel import gettext as _
-from cps.kobo_sync_status import remove_synced_book
-from cps.ub import init_db_thread
 from cps.file_helper import get_temp_dir
+from cps.services.kepub_package_normalizer import (
+    count_fragment_anchored_toc_targets,
+    normalize_kepub_package,
+)
 
 from cps.tasks.mail import TaskEmail
 from cps import gdriveutils, helper
@@ -31,6 +35,28 @@ from cps.constants import SUPPORTED_CALIBRE_BINARIES
 from cps.string_helper import strip_whitespaces
 
 log = logger.create()
+
+
+def _log_fragment_anchored_toc(book, path):
+    count = count_fragment_anchored_toc_targets(path)
+    if count:
+        log.warning(
+            "KEPUB for book '%s' (id %d) has %d fragment-anchored TOC targets; "
+            "Kobo highlights in this book may not appear on the device",
+            book.title, book.id, count,
+        )
+    return count
+
+
+def _valid_archive(path, book_format):
+    """Return whether an EPUB-family conversion target is a readable archive."""
+    if book_format.upper() not in ("EPUB", "EPUB3", "KEPUB"):
+        return True
+    try:
+        with zipfile.ZipFile(path) as archive:
+            return bool(archive.infolist()) and archive.testzip() is None
+    except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile):
+        return False
 
 current_milli_time = lambda: int(round(time() * 1000))
 
@@ -122,8 +148,16 @@ class TaskConvert(CalibreTask):
         # check to see if destination format already exists - or if book is in database
         # if it does - mark the conversion task as complete and return a success
         # this will allow to send to E-Reader workflow to continue to work
-        if os.path.isfile(file_path + format_new_ext) or\
-                local_db.get_book_format(self.book_id, self.settings['new_book_format']):
+        target_path = file_path + format_new_ext
+        target_on_disk = os.path.isfile(target_path)
+        target_is_valid = target_on_disk and _valid_archive(
+            target_path, self.settings['new_book_format'])
+        if target_on_disk and not target_is_valid:
+            log.warning("Book id %d has an invalid %s on disk; conversion will replace it",
+                        book_id, format_new_ext)
+
+        if target_is_valid or local_db.get_book_format(
+                self.book_id, self.settings['new_book_format']):
             log.info("Book id %d already converted to %s", book_id, format_new_ext)
             cur_book = local_db.get_book(book_id)
             self.title = cur_book.title
@@ -148,7 +182,7 @@ class TaskConvert(CalibreTask):
                 local_db.session.close()
                 return os.path.basename(file_path + format_new_ext)
         else:
-            log.info("Book id %d - target format of %s does not exist. Moving forward with convert.",
+            log.info("Book id %d has no %s yet; starting conversion.",
                      book_id,
                      format_new_ext)
 
@@ -167,6 +201,8 @@ class TaskConvert(CalibreTask):
         if check == 0:
             cur_book = local_db.get_book(book_id)
             if os.path.isfile(file_path + format_new_ext):
+                if self.settings['new_book_format'].upper() == 'KEPUB':
+                    _log_fragment_anchored_toc(cur_book, file_path + format_new_ext)
                 new_format = local_db.session.query(db.Data).filter(db.Data.book == book_id) \
                     .filter(db.Data.format == self.settings['new_book_format'].upper()).one_or_none()
                 if not new_format:
@@ -175,11 +211,9 @@ class TaskConvert(CalibreTask):
                                          book=book_id, uncompressed_size=os.path.getsize(file_path + format_new_ext))
                     try:
                         local_db.session.merge(new_format)
-                        local_db.session.commit()
                         if self.settings['new_book_format'].upper() in ['KEPUB', 'EPUB', 'EPUB3']:
-                            ub_session = init_db_thread()
-                            remove_synced_book(book_id, True, ub_session)
-                            ub_session.close()
+                            helper.mark_book_modified(cur_book, set_dirty=False)
+                        local_db.session.commit()
                     except SQLAlchemyError as e:
                         local_db.session.rollback()
                         log.error("Database error: %s", e)
@@ -224,23 +258,58 @@ class TaskConvert(CalibreTask):
         except OSError as e:
             return 1, N_("Kepubify-converter failed: %(error)s", error=e)
         self.progress = 0.01
-        while True:
-            nextline = p.stdout.readlines()
-            nextline = [x.strip('\n') for x in nextline if x != '\n']
-            for line in nextline:
+
+        def _log_kepubify_line(line):
+            if isinstance(line, bytes):
+                line = line.decode('utf-8', errors="ignore")
+            line = line.strip('\r\n')
+            if line:
                 log.debug(line)
-            if p.poll() is not None:
-                break
+
+        # Same pipe-pair hazard as the ebook-convert path (#1110): this used to
+        # read stdout to EOF and never drain stderr at all, so a chatty kepubify
+        # could wedge the task. Draining stderr also gives us an error to report.
+        kepubify_traceback = stream_process_output(p, _log_kepubify_line)
 
         # process returncode
         check = p.returncode
+        if check != 0:
+            for ele in kepubify_traceback:
+                if isinstance(ele, bytes):
+                    ele = ele.decode('utf-8', errors="ignore")
+                log.debug(ele.strip('\r\n'))
 
         # move file
         if check == 0:
             converted_file = glob.glob(glob.escape(os.path.splitext(filename)[0]) + "*.kepub.epub")
             if len(converted_file) == 1:
-                copyfile(converted_file[0], (file_path + format_new_ext))
-                os.unlink(converted_file[0])
+                destination = file_path + format_new_ext
+                temp_fd, temp_destination = tempfile.mkstemp(
+                    dir=os.path.dirname(destination),
+                    prefix="." + os.path.basename(destination) + ".",
+                    suffix=".tmp")
+                os.close(temp_fd)
+                try:
+                    copyfile(converted_file[0], temp_destination)
+                    # None means the normalizer could not process this package.
+                    # Continue with the un-normalized KEPUB rather than failing the
+                    # conversion: an un-normalized KEPUB is exactly what we ship
+                    # today, whereas withholding it drops the user back to EPUB
+                    # delivery, where a Kobo cannot save highlights at all
+                    # (upstream calibre-web #1484). The normalizer already logs a
+                    # warning, leaves the archive untouched, and _valid_archive
+                    # below still rejects a genuinely corrupt one.
+                    normalize_kepub_package(temp_destination)
+                    if not _valid_archive(temp_destination, format_new_ext[1:]):
+                        return 1, N_("Kepubify produced an invalid KEPUB archive")
+                    os.replace(temp_destination, destination)
+                finally:
+                    if os.path.exists(temp_destination):
+                        os.unlink(temp_destination)
+                    try:
+                        os.unlink(converted_file[0])
+                    except OSError:
+                        pass
             else:
                 if config.config_embed_metadata and config.config_binariesdir and os.path.isfile(filename):
                     try:
@@ -276,18 +345,22 @@ class TaskConvert(CalibreTask):
                                '--with-library', library_path]
                 p = process_open(opf_command, quotes, my_env, newlines=False)
                 lines = list()
-                while p.poll() is None:
-                    lines.append(p.stdout.readline())
+                calibre_traceback = stream_process_output(p, lines.append)
                 check = p.returncode
-                calibre_traceback = p.stderr.readlines()
                 if check == 0:
                     path_tmp_opf = os.path.join(tmp_dir, "metadata_" + str(uuid4()) + ".opf")
                     with open(path_tmp_opf, 'wb') as fd:
                         fd.write(b''.join(lines))
                 else:
+                    # The probe runs with newlines=False, so these are bytes.
+                    # Comparing them against str silently raised TypeError here
+                    # and buried the real reason the metadata export failed.
                     error_message = ""
                     for ele in calibre_traceback:
-                        if not ele.startswith('Traceback') and not ele.startswith('  File'):
+                        if isinstance(ele, bytes):
+                            ele = ele.decode('utf-8', errors="ignore")
+                        ele = ele.strip('\r\n')
+                        if ele and not ele.startswith('Traceback') and not ele.startswith('  File'):
                             error_message = N_("Calibre failed with error: %(error)s", error=ele)
                     return check, error_message
             quotes = [1, 2]
@@ -329,8 +402,7 @@ class TaskConvert(CalibreTask):
         except OSError as e:
             return 1, N_("Ebook-converter failed: %(error)s", error=e)
 
-        while p.poll() is None:
-            nextline = p.stdout.readline()
+        def _handle_stdout_line(nextline):
             if isinstance(nextline, bytes):
                 nextline = nextline.decode('utf-8', errors="ignore").strip('\r\n')
             if nextline:
@@ -342,9 +414,12 @@ class TaskConvert(CalibreTask):
                 if config.config_use_google_drive:
                     self.progress *= 0.9
 
+        # Drain both pipes together. Reading stderr only after the child
+        # exits deadlocks on chatty converters, notably PDF input (#1110).
+        calibre_traceback = stream_process_output(p, _handle_stdout_line)
+
         # process returncode
         check = p.returncode
-        calibre_traceback = p.stderr.readlines()
         error_message = ""
         for ele in calibre_traceback:
             ele = ele.decode('utf-8', errors="ignore").strip('\n')

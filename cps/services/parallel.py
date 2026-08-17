@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import dataclasses
+import threading
 import time
 from typing import Any, Callable, Iterable, Iterator, Optional, Tuple
 
@@ -57,6 +58,41 @@ try:  # pragma: no cover - exercised implicitly by whichever branch runs
 except ImportError:  # pragma: no cover - tornado fallback / bare test runners
     _GeventThreadPool = None  # type: ignore[assignment]
     _HAVE_GEVENT_POOL = False
+
+try:  # pragma: no cover - exercised implicitly by whichever branch runs
+    from gevent import sleep as _gevent_sleep
+    _HAVE_GEVENT_SLEEP = True
+except ImportError:  # pragma: no cover - tornado fallback / bare test runners
+    _gevent_sleep = None  # type: ignore[assignment]
+    _HAVE_GEVENT_SLEEP = False
+
+
+def cooperative_sleep(seconds: float) -> None:
+    """Sleep without freezing the hub — the wait-and-retry counterpart to
+    ``fan_out``/``run_blocking``.
+
+    Those two cover blocking *work*. This covers blocking *waiting*, which
+    reaches the app through a different door: a poll loop that retries some
+    contended resource. ``time.sleep`` parks the one OS thread every greenlet
+    shares, and a retry loop has no other yield point, so the hub does not run
+    again until the whole wait is over — the stall is the full wait, not one
+    poll interval.
+
+    That is not theoretical. ``services/calibre_db_lock.py`` polls for the
+    metadata.db write lock for up to 120s while the ingest processor holds it
+    across a ``calibredb add``, so on the pre-fix code any metadata write that
+    landed during an ingest froze every other request for the whole wait.
+
+    Under gevent the same pause is a scheduling point, so other requests keep
+    being served while this greenlet waits. Outside gevent (pytest, the tornado
+    fallback in ``server.py``, the ingest subprocess, which imports this module
+    lazily and is not a greenlet at all) there is no hub to protect and the
+    stdlib sleep behaves identically.
+    """
+    if _HAVE_GEVENT_SLEEP:
+        _gevent_sleep(seconds)
+    else:  # pragma: no cover - only on installs without gevent
+        time.sleep(seconds)
 
 
 @dataclasses.dataclass
@@ -114,6 +150,9 @@ def fan_out(
         yield from _fan_out_stdlib(jobs, workers, fanout_started)
 
 
+_FAN_OUT_WORKER = threading.local()
+
+
 def run_blocking(fn: Callable[[], Any]) -> Any:
     """Run ONE blocking callable without stalling the gevent hub.
 
@@ -149,6 +188,14 @@ def run_blocking(fn: Callable[[], Any]) -> Any:
         # the thread hop would only add latency.
         return fn()
 
+    if getattr(_FAN_OUT_WORKER, "active", False):
+        # fan_out already put us on a real OS worker thread. Re-entering a
+        # gevent ThreadPool from one of its workers raises InvalidThreadUseError
+        # (and, on the first call after process start, could accidentally create
+        # the shared pool on the wrong hub). Blocking directly here is correct:
+        # this thread is not the request hub.
+        return fn()
+
     pool = _offload_pool()
     if pool is None:
         # Already off the hub's thread — e.g. a provider reached through
@@ -178,7 +225,6 @@ def _offload_pool():
     which is correct there: off the hub's thread nothing is being frozen.
     """
     global _OFFLOAD_POOL, _OFFLOAD_POOL_THREAD
-    import threading
 
     if _OFFLOAD_POOL is None:
         _OFFLOAD_POOL = _GeventThreadPool(_MAX_OFFLOAD_WORKERS)
@@ -191,6 +237,8 @@ def _timed(fn, fanout_started):
     the job returns — see FanOutResult.elapsed_ms for why the consumer's
     clock is not good enough."""
     def _run():
+        previous = getattr(_FAN_OUT_WORKER, "active", False)
+        _FAN_OUT_WORKER.active = True
         try:
             return fn(), _elapsed_ms(fanout_started)
         except BaseException as exc:
@@ -198,6 +246,8 @@ def _timed(fn, fanout_started):
             # duration for failed providers too.
             exc._fan_out_elapsed_ms = _elapsed_ms(fanout_started)
             raise
+        finally:
+            _FAN_OUT_WORKER.active = previous
     return _run
 
 

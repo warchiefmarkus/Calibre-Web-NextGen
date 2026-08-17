@@ -26,13 +26,17 @@ version table would link to ``/releases/tag/v0.0.0`` — a tag that was never
 published. That is the regression these tests pin.
 
 Separately, ``CALIBRE_RELEASE`` moved from ``/`` to ``/app`` to sit alongside
-``CWA_RELEASE`` and ``KEPUBIFY_RELEASE``. It is written by the Dockerfile and
-read back from three places; the cross-file test pins all four so a future
-move can't update the writer and leave a reader behind.
+``CWA_RELEASE`` and ``KEPUBIFY_RELEASE`` — and was then **retired outright** in
+#1274, because a build-time stamp cannot describe a binary that was replaced
+afterwards. The cross-file tests at the bottom moved with it: they used to pin
+that the writer and all three readers agreed on one path, and now pin that
+nothing writes or reads the stamp at all, that the build ARG which selects the
+download survives, and that both UIs share one runtime source.
 """
 
 import importlib.util
 import re
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -42,9 +46,6 @@ import pytest
 pytestmark = pytest.mark.unit
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-
-_CALIBRE_RELEASE_PATH = "/app/CALIBRE_RELEASE"
-
 
 def _load(module_name: str, relative_path: str):
     """Load a leaf ``cps`` module without paying for ``cps/__init__.py``.
@@ -105,11 +106,17 @@ _BASE = "https://github.com/" + _updater._REPOSITORY_SLUG
 
 # --- behavioural: the unknown-version sentinel must not become a dead link ---
 
-def test_unknown_sentinel_returns_no_link():
+def test_unknown_sentinel_returns_no_link(monkeypatch):
     """The whole point of #1231's regression: v0.0.0 parses as a tag."""
-    # The suite runs unstamped (no /app/CWA_RELEASE, no env override), which
-    # is exactly the state this guards.
-    assert _constants.VERSION_IS_STAMPED is False
+    # Force the unstamped state rather than reading it off the ambient
+    # environment. It used to be ambient — the suite ran with no
+    # /app/CWA_RELEASE and no env override, so nothing had stamped a version.
+    # Once the test job installs the package (`pip install -e '.[dev]'`),
+    # importlib.metadata resolves a version from the checked-in VERSION file
+    # and the suite is stamped, so asserting the ambient state was really
+    # asserting "the package is not installed" — a property of the runner,
+    # not of the code under test.
+    monkeypatch.setattr(_updater.constants, "VERSION_IS_STAMPED", False)
     assert release_url_for_version(_constants.UNKNOWN_VERSION) is None
 
 
@@ -138,7 +145,16 @@ def test_stamped_flag_is_false_exactly_when_nothing_was_stamped(monkeypatch):
     assert reloaded.VERSION_IS_STAMPED is True
     assert reloaded.INSTALLED_VERSION == "v0.0.0"
 
+    # Nothing stamped at all: no env, and no installed package to fall back to.
+    # The metadata leg has to be suppressed explicitly — a source checkout that
+    # has ever been `pip install -e`'d keeps a .egg-info/.dist-info on sys.path,
+    # so importlib.metadata resolves a version there too.
+    from importlib import metadata as _metadata
     monkeypatch.delenv("CWA_INSTALLED_VERSION", raising=False)
+    monkeypatch.setattr(
+        _metadata, "version",
+        lambda _name: (_ for _ in ()).throw(_metadata.PackageNotFoundError()),
+    )
     reloaded = _load("cps.constants", "cps/constants.py")
     assert reloaded.VERSION_IS_STAMPED is False
     assert reloaded.INSTALLED_VERSION == reloaded.UNKNOWN_VERSION
@@ -150,8 +166,12 @@ def test_unknown_sentinel_is_the_literal_we_think_it_is():
     assert _constants.UNKNOWN_VERSION == "v0.0.0"
 
 
-def test_unknown_sentinel_with_whitespace_returns_no_link():
+def test_unknown_sentinel_with_whitespace_returns_no_link(monkeypatch):
     # INSTALLED_VERSION is stripped, but a caller may hand us a raw file read.
+    # Force the unstamped state rather than inheriting it from the runner —
+    # see test_unknown_sentinel_returns_no_link for why that is no longer
+    # ambient once the test job installs the package.
+    monkeypatch.setattr(_updater.constants, "VERSION_IS_STAMPED", False)
     assert release_url_for_version("  v0.0.0\n") is None
 
 
@@ -187,66 +207,162 @@ def test_admin_reports_the_installed_version_constant():
     )
 
 
-def test_only_constants_reads_the_release_file():
-    """Exactly one module in cps/ may open /app/CWA_RELEASE."""
+def test_nothing_reads_the_release_file_any_more():
+    """/app/CWA_RELEASE is gone; nothing in cps/ may reach for it.
+
+    #1231 collapsed three hand-rolled readers down to one (constants.py).
+    The file itself has since been retired: the build stamps
+    CWA_INSTALLED_VERSION as an env var instead, and constants.py falls back
+    to installed-package metadata. A new reader would be reading a path that
+    no longer exists in the image and silently getting the unknown sentinel.
+    """
     readers = [
         path.relative_to(_REPO_ROOT).as_posix()
         for path in (_REPO_ROOT / "cps").rglob("*.py")
         if "/app/CWA_RELEASE" in path.read_text(encoding="utf-8", errors="ignore")
     ]
-    assert readers == ["cps/constants.py"], readers
+    assert readers == [], readers
 
 
-# --- cross-file: every CALIBRE_RELEASE reference agrees on one path ----------
+def test_the_installed_version_has_exactly_one_definition():
+    """constants.INSTALLED_VERSION stays the single runtime definition.
 
-def test_dockerfile_writes_calibre_release_under_app():
-    dockerfile = (_REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert f'echo "$CALIBRE_RELEASE" > {_CALIBRE_RELEASE_PATH}' in dockerfile
-
-
-def test_every_calibre_release_consumer_uses_the_same_path():
-    """The writer and all three readers must agree.
-
-    This is the failure this move invites: update the Dockerfile, forget the
-    s6 script, and the container logs 'unknown' forever without erroring.
+    Scoped to *our own* distribution on purpose: cps/web.py, cps/about.py and
+    cps/debug_info.py all legitimately call importlib.metadata.version() to
+    report third-party package versions. What must not spread is a second
+    place resolving the version of calibre-web-automated itself.
     """
-    consumers = {
-        "cps/admin.py": r'open\("(/[^"]*CALIBRE_RELEASE)"',
-        "root/etc/s6-overlay/s6-rc.d/calibre-binaries-setup/run": r"cat (/\S*CALIBRE_RELEASE)",
-        "root/etc/s6-overlay/s6-rc.d/cwa-init/run": r'"(/\S*CALIBRE_RELEASE)"',
-    }
-    for relative_path, pattern in consumers.items():
-        text = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
-        found = re.findall(pattern, text)
-        assert found, f"{relative_path}: no CALIBRE_RELEASE reference matched"
-        assert set(found) == {_CALIBRE_RELEASE_PATH}, f"{relative_path}: {found}"
+    resolvers = [
+        path.relative_to(_REPO_ROOT).as_posix()
+        for path in (_REPO_ROOT / "cps").rglob("*.py")
+        if 'metadata.version("calibre-web-automated")'
+        in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert resolvers == ["cps/constants.py"], resolvers
 
 
-def test_no_root_level_calibre_release_references_remain():
-    """Nothing may still point at the old ``/CALIBRE_RELEASE`` location."""
-    stale = []
-    for relative_path in (
-        "Dockerfile",
-        "cps/admin.py",
-        "root/etc/s6-overlay/s6-rc.d/calibre-binaries-setup/run",
-        "root/etc/s6-overlay/s6-rc.d/cwa-init/run",
-    ):
-        text = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
-        # A bare /CALIBRE_RELEASE not preceded by "app"
-        if re.search(r"(?<!app)/CALIBRE_RELEASE", text):
-            stale.append(relative_path)
-    assert stale == [], stale
+# --- cross-file: the CALIBRE_RELEASE stamp file is gone entirely -------------
+#
+# #1274 (@chloeroform) retired the file. The old invariant was "the writer and
+# all three readers agree on one path"; the new one is "nobody writes or reads
+# it at all, and the version comes from the binary that is actually installed".
+# The pair below replaces that pin — dropping it outright would let the file
+# creep back in one file at a time.
+
+
+def test_no_calibre_release_stamp_file_is_written_or_read_anywhere():
+    """No build step writes the stamp file and no code reads it.
+
+    Sweeps **every tracked runtime and build file** rather than a hand-listed
+    few: the way this regresses is a consumer appearing somewhere nobody
+    thought to list — a helper under ``scripts/``, a workflow, an entrypoint,
+    a packaging file.
+
+    Two categories are deliberately exempt because naming the retired path is
+    their job: ``tests/`` (this module has to name it to assert on it) and
+    Markdown (``CHANGELOG.md`` and ``CHANGES-vs-upstream.md`` are the historical
+    record of the removal). Neither is executed, so neither can resurrect the
+    dependency.
+
+    Matches the *path* form only. ``ARG CALIBRE_RELEASE`` and ``$CALIBRE_RELEASE``
+    in the Dockerfile are the build arg that pins which calibre gets downloaded —
+    that is still the SSOT for the build and must survive.
+    """
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=_REPO_ROOT, capture_output=True, check=True,
+    ).stdout.decode("utf-8", errors="ignore").split("\0")
+
+    offenders = []
+    for relative_path in tracked:
+        if not relative_path:
+            continue
+        if relative_path.startswith("tests/") or relative_path.endswith(".md"):
+            continue
+        path = _REPO_ROOT / relative_path
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except (OSError, UnicodeDecodeError):
+            continue  # binary asset or a symlink to nowhere
+        if re.search(r"/CALIBRE_RELEASE\b", text):
+            offenders.append(relative_path)
+
+    assert offenders == [], (
+        "the /app/CALIBRE_RELEASE stamp file was retired in #1274; these files "
+        f"reference it again: {offenders}"
+    )
+
+
+def test_the_stamp_file_sweep_actually_searches_the_repository():
+    """A sweep that silently matched nothing would pass forever.
+
+    ``git ls-files`` returning an empty list (wrong cwd, no git) would make the
+    test above vacuous, so pin that it really is walking the tree.
+    """
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=_REPO_ROOT, capture_output=True, check=True,
+    ).stdout.decode("utf-8", errors="ignore").split("\0")
+    tracked = [p for p in tracked if p]
+
+    assert len(tracked) > 500, len(tracked)
+    for expected in ("Dockerfile", "cps/admin.py", "cps/converter.py"):
+        assert expected in tracked, expected
+
+
+def test_dockerfile_still_pins_the_calibre_build_arg():
+    """Retiring the stamp file must not disturb the build arg it came from."""
+    dockerfile = (_REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert re.search(r"^ARG CALIBRE_RELEASE=\d", dockerfile, re.MULTILINE), (
+        "ARG CALIBRE_RELEASE is the SSOT for which calibre the image downloads"
+    )
+
+
+def test_classic_admin_and_spa_share_one_calibre_version_source():
+    """Both UIs must read the running binary, not a build-time stamp.
+
+    That is the point of #1274: the stamp recorded what the *build* pinned, so
+    an image whose calibre was replaced (or a custom converter path) reported a
+    version it was not running.
+    """
+    # Matched through the AST, not as a substring. #1284 factored the two admin
+    # labels onto one renderer, so admin.py now hands the probe over as a
+    # callable (``_version_label(converter.get_calibre_version, ...)``) rather
+    # than invoking it inline — the call parens stopped being part of the
+    # invariant. Grepping for the bare name instead would let a comment, a
+    # docstring or a dead annotation hold this green while the label went back
+    # to reading a stamp file, which is the exact regression it exists to stop.
+    import ast
+
+    for name in ("admin", "about"):
+        tree = ast.parse((_REPO_ROOT / "cps" / f"{name}.py").read_text(encoding="utf-8"))
+        references = any(
+            isinstance(node, ast.Attribute)
+            and node.attr == "get_calibre_version"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "converter"
+            for node in ast.walk(tree)
+        )
+        assert references, (
+            f"cps/{name}.py must source the calibre version from the shared "
+            "helper (a real converter.get_calibre_version reference, not a mention)"
+        )
 
 
 # --- packaging: the SSOT the pyproject dynamic version points at -------------
 
-def test_pyproject_still_resolves_version_from_the_constant():
-    """#1231 proposed reading the file directly from pyproject instead.
+def test_pyproject_resolves_version_from_a_relative_file():
+    """#1231 rejected ``file =`` pointing at ``/app/CWA_RELEASE``.
 
     ``file =`` takes a path relative to the project root and rejects one that
     escapes it, so an absolute ``/app/CWA_RELEASE`` cannot build from a source
-    checkout at all. The attr form keeps constants.py the one definition.
+    checkout at all. That objection was to the *absolute path*, not to the
+    file form: a repo-relative VERSION builds fine everywhere, and it is now
+    the only definition setuptools reads. The attr form is no longer usable —
+    constants.py reads the version back out of package metadata, so deriving
+    the package version from constants.py would be circular.
     """
     pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'attr = "calibreweb.cps.constants.INSTALLED_VERSION"' in pyproject
+    assert 'version = {file = ["VERSION"]}' in pyproject
     assert "/app/CWA_RELEASE" not in pyproject
+    assert (_REPO_ROOT / "VERSION").is_file()

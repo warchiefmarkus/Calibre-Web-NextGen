@@ -56,6 +56,537 @@ export interface WhatsNewRelease {
 /** Newest release first. The `whats-new-populate` skill prepends here. */
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
+    version: 'v4.1.37',
+    date: '2026-08-17',
+    items: [
+      {
+        title: 'Older Kobo books are repaired, and you are told which ones',
+        body: 'Books converted before the recent KEPUB packaging fix could still be unable to hold highlights. The library now repairs those existing files itself and shows a notice naming every affected book, including the honest warning that highlights already made against the broken structure cannot be recovered.',
+        category: 'Library',
+      },
+      {
+        title: 'Clear books left behind by older deletions',
+        body: 'Books deleted before Kobo archival tracking existed could remain on a reader through every sync and full resync. An administrator can now upload that device\'s KoboReader.sqlite file, review only the library-absent books CWNG can identify, and choose each one to archive on the next sync; samples are excluded and nothing starts selected.',
+        category: 'Sync',
+      },
+      {
+        title: 'Kobo highlights stay put when the device syncs',
+        body: 'The v4.1.36 safeguard still let a Kobo begin a download that replaced its local highlights and notes with an empty answer. Books served by NextGen are now kept out of the earlier changed-books response, so that destructive download never starts while new annotations continue to upload normally.',
+        category: 'Sync',
+      },
+      {
+        title: 'Upload Readium licence files directly',
+        body: 'A Readium .lcpl licence used to be rejected as a forbidden file type or left stranded in the ingest folder. Servers that already accept Adobe .acsm tickets now accept LCPL once as well without disturbing a deliberately restricted allowlist; with Auto-Convert off, ACSM tickets are kept with failed ingests instead of being imported as books.',
+        category: 'Library',
+        link: { to: '/upload', label: 'Upload a book' },
+      },
+      {
+        title: 'The book you are reading stops downloading again and again',
+        body: 'The most recently changed book on a Kobo could be marked as new on every sync, making the device discard and fetch it repeatedly. Sync cursors now compare Calibre timestamps consistently, so stored timezone and fractional-second formats cannot trap or skip a book.',
+        category: 'Sync',
+      },
+      {
+        title: 'Basic Configuration saves instead of opening a 405 error',
+        body: 'Pressing Enter in a setting or choosing Convert missing KEPUBs now could discard the page and lead to a Method Not Allowed error. Both actions now use the normal save path, keep you on Settings, and show the usual confirmation.',
+        category: 'Admin',
+        link: { to: '/admin', label: 'Open administration' },
+      },
+      {
+        title: 'The log identifies books whose Kobo highlights will be invisible',
+        body: 'Some tables of contents point into the middle of a chapter, so a Kobo stores each highlight but never draws it and gives no error. After conversion, the log now names the affected book and counts its problematic navigation targets so you can see the issue; this diagnoses the file but does not rewrite existing highlight locations.',
+        category: 'Sync',
+      },
+      {
+        title: 'The delete warning now matches what your Kobo will do',
+        body: 'The dialog still said a deleted book would stay on a paired Kobo and had to be archived first, even after automatic archival was added. It now explains that the reader is told on its next sync and that a failure to record the instruction can still leave the copy behind.',
+        category: 'Library',
+      },
+      {
+        title: 'Each Kobo gets covers shaped for its own screen',
+        body: 'A household with different Kobo models previously had one cover-padding shape for every device, so at least one reader received covers sized for somebody else\'s screen. Each authenticated request now uses the model that made it, while an unrecognised model keeps the administrator\'s configured fallback.',
+        category: 'Sync',
+      },
+      {
+        title: 'Full-library sync counts books once',
+        body: 'Libraries that keep both EPUB and KEPUB formats reported roughly twice as many changed entries and sent only about half a page of books per request. Sync now counts distinct books, which restores accurate logs and avoids the extra round trips without changing what is delivered.',
+        category: 'Sync',
+      },
+      {
+        title: 'Large Kobo libraries finish their first full sync',
+        body: 'With more than about 100 books pending, a Kobo could receive the first page repeatedly until thousands of duplicate entitlements made the server fail. Each completed page now advances the saved cursor, so the remaining library drains normally.',
+        category: 'Sync',
+      },
+      {
+        title: 'A newly paired Kobo gets the converted books it needs',
+        body: 'Background KEPUB conversion could remain marked complete after pairing added a new device\'s books, leaving most of them as plain EPUBs that could not reliably hold highlights. The progress marker now grows with the work set, so those new books are converted while the device waits.',
+        category: 'Sync',
+        link: { to: '/tasks', label: 'Open Tasks' },
+      },
+      {
+        title: 'Removing a series removes it from the Kobo copy too',
+        body: 'Clearing a book\'s series updated its EPUB but left the old series visible in the KEPUB on a Kobo. The KEPUB metadata is now cleared safely without recutting the internal position markers that hold the reader\'s saved place.',
+        category: 'Library',
+      },
+      {
+        title: 'Highlight edits survive a malformed device timestamp',
+        body: 'When a Kobo sent an unreadable clock value, an edit to an existing highlight could silently lose its changed text, note, colour and location. An unreadable timestamp is now handled separately from a missing one, so the edit is applied.',
+        category: 'Sync',
+      },
+      {
+        title: 'KOReader clients can distinguish an unknown book from an empty one',
+        body: 'The sync API returned the same empty list for a book the server did not know and for a known book with no highlights, leaving other clients unable to tell whether empty was authoritative. Those states now have distinct responses; the bundled plugin was already safe.',
+        category: 'Sync',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.36',
+    date: '2026-08-15',
+    items: [
+      {
+        title: 'Your Kobo keeps the highlights you make on it',
+        body: 'Highlights and notes made on a Kobo could disappear after a sync. Each time you opened a book the device asked us what annotations it should have, and we passed the question to Kobo\u2019s own cloud, which has never heard of a book from your own library \u2014 so it said "none" and the device deleted what it had. We no longer forward that question for books we serve, so the device keeps what it holds.',
+        category: 'Sync',
+      },
+      {
+        title: 'Highlights from a Kobo are never thrown away',
+        body: 'Since v4.1.34 a highlight arriving from a Kobo was discarded outright whenever the chapter location attached to it looked unfamiliar, which on some libraries meant every single one. The highlighted text is now always kept; only the location pointer is set aside if it cannot be read, and it can be worked out again later.',
+        category: 'Sync',
+      },
+      {
+        title: 'The one book that would not keep a highlight',
+        body: 'Some books quietly refused to hold highlights on a Kobo while every other book behaved, because of how the file points at its own table of contents \u2014 the device ended up filing your highlight under one name for a chapter and looking for it under another. Converting a book for Kobo now tidies that up, leaving the text and page positions exactly as they were.',
+        category: 'Sync',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.35',
+    date: '2026-08-15',
+    items: [
+      {
+        title: 'A stuck conversion no longer holds up everything behind it',
+        body: 'Converting a book, a PDF most often, could start and then sit there forever, with every job queued behind it waiting too. The converter writes to two output streams and we kept reading only one of them while it ran, so as soon as the other filled up it stopped and waited for us while we waited for it. Conversions now run to the end, and a KEPUB conversion that fails finally shows the error text it had been swallowing.',
+        category: 'Library',
+        link: { to: '/tasks', label: 'Open Tasks' },
+      },
+      {
+        title: 'Books you just imported are at the top of Newest',
+        body: 'Drop several books into the ingest folder at once and most of them landed somewhere in the middle of your library, filed under the publication date stored inside the file rather than the day they arrived. Only the last book of each batch was being stamped with the time it was imported; all of them are now. Books already in your library keep the dates they have.',
+        category: 'Library',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Newest opens on your newest book, and lists stay put',
+        body: 'Books added in the same batch share a date, and with nothing to break the tie the library handed them back in whatever order the database happened to walk — so a group could come out backwards, and paging through could repeat or skip a book. Every sort now has a definite order all the way down, in the new interface, the classic one, the OPDS feeds your e-reader pulls, shelves and the duplicate finder. Sorting by publication date, last modified, series position and downloads was fixed the same way.',
+        category: 'Library',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Reading on a Kobo now moves KOReader too',
+        body: 'Read a few chapters on a Kobo and KOReader stayed wherever that device last was, even though the book page showed the Kobo\'s progress — so it looked like the sync had worked while nothing ever reached the other device. The Kobo\'s position is now written to the place KOReader reads from. The two sides share a percentage rather than an exact spot, so it lands near where you stopped; it needs the NextGen Progress Sync plugin on the device.',
+        category: 'Sync',
+        link: { to: '/account/devices', label: 'Manage sync & app passwords' },
+      },
+      {
+        title: 'Typing a tag that already exists offers that tag first',
+        body: 'Typing "Romance" pre-selected "Paranormal Romance" and pressing Enter applied it, because suggestions arrived in no particular order and the menu always highlighted its first row. Suggestions are now ordered exact match first, then values starting with what you typed, and nothing is highlighted until you arrow into the list — so Enter adds your text, and ArrowDown then Enter takes a suggestion. This also makes it possible again to add a value that sits inside a longer one, and it applies to tags, authors, series and publishers in both editors.',
+        category: 'Library',
+      },
+      {
+        title: 'Metadata enforcement picks itself back up after a killed run',
+        body: 'The enforcer takes a lock so two copies cannot run over each other, and released it only on a clean exit — so an out-of-memory kill, or a `docker stop` that ran out of patience, left the lock behind and every later run cancelled itself. Edits you made in the web interface kept appearing on screen but stopped being written into the book files, and nothing on screen said so. A run now checks whether the process that left the lock is still alive and takes over if it is not.',
+        category: 'Admin',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+      {
+        title: 'A failed first start no longer locks you out',
+        body: 'If creating the settings database failed on the very first run, startup went on to create an empty one anyway. On the next boot that empty file looked like an existing install, so the step that creates your admin account was skipped — leaving no way in, and no way to retry, because the file now existed. The failure is reported now and the empty file is never created.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Start it the ordinary Python way',
+        body: 'If you install Calibre-Web NextGen as a Python package — packaging it for a distribution, running it under systemd, or just off a checkout — you can now start it with `python -m cps`. Starting it by the path to `cps.py` works exactly as before, so nothing you already have set up needs touching.',
+        category: 'Under the hood',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.34',
+    date: '2026-08-13',
+    items: [
+      {
+        title: 'Search inside the book you are reading',
+        body: 'Open a book, click the search button in the reader toolbar and type. Results show the sentence around each match with your term marked, grouped by chapter, and clicking one takes you there without moving the place you were reading — so you can look something up and still come back. Neither reader could do this before.',
+        category: 'Reading',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Your highlights and notes now live inside the reader',
+        body: 'Seeing what you had marked meant leaving the book for the Highlights page and losing your place. The reader now has a highlighter button in the top bar with a count, opening a list of every highlight in the book with its note; picking one takes you to that passage. Highlights made on a Kobo or in KOReader are listed too, and now say which device they came from.',
+        category: 'Reading',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Write a note on a highlight, in the browser',
+        body: 'Highlighting text in the new reader only ever saved the colour, with nowhere to record why you highlighted it — even though notes made on a Kobo or in KOReader always showed up on the Highlights page. Select a passage and the popup now offers Add note alongside the colours, and tapping a highlight lets you add, edit or remove its note. Highlights carrying a note are drawn with a dashed outline.',
+        category: 'Reading',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Write a note about a book without highlighting anything',
+        body: 'Notes could only ever be attached to a passage, so a thought about the book as a whole had to be pinned to a sentence that was not really the point. Write a note at the top of the reader\'s Highlights and notes panel opens a blank note, and it appears alongside your highlights on the book\'s Highlights page.',
+        category: 'Reading',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'PDFs open past page one on an iPad',
+        body: 'In the new interface a PDF showed its first page and nothing else on iPadOS, in Safari and Firefox, while the same book was fine on a Mac and on Android. PDFs now open in the same viewer the classic interface has always used, which draws every page on every browser — and brings PDF text search, thumbnails and annotations to the new reader with it.',
+        category: 'Reading',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Opening a highlight no longer loses your place, or marks the book read',
+        body: 'Tapping a highlight jumped the book to that passage and then saved that as your reading position, so closing the book reopened at the highlight instead of where you had actually read to. The same save reports how far through you are, and the server treats 99% as finished — so glancing at a highlight near the end could mark the whole book read and pass that on to a connected Kobo or Hardcover account. Jumping to a highlight is now treated as looking, not reading.',
+        category: 'Reading',
+      },
+      {
+        title: 'The reader can go full screen, in black, in one column or two',
+        body: 'Three things the classic reader had and the new one did not. There is now a full-screen control in the top bar, hidden on devices that cannot do it rather than shown as a button that does nothing. Black is its own page theme again with a true black page, which is what an OLED screen wants at night — anyone who had chosen it was quietly given the warm dark theme instead. And a single-column preference is honoured rather than saved and ignored.',
+        category: 'Reading',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Reload metadata from disk asks before it overwrites your edits',
+        body: 'It sits in the same row as the download buttons on a book\'s page, so reaching for a download and landing one button over rewrote the title, author and series from whatever the file said — with no undo and no warning. It now asks first and names the book. Revoking an app password asks too: those buttons render as a column of identical trash icons, and a misclick cut off whichever device was using it.',
+        category: 'Library',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Kindle books get their high-resolution cover',
+        body: 'The high-resolution Amazon cover lookup was keyed only on a book\'s ISBN, and a Kindle edition usually has no ISBN — it has an ASIN. So the books most likely to need a better cover were the ones the lookup could never reach. A stored Amazon identifier now works as a key too, which also covers 979-prefixed ISBNs that were previously a dead end.',
+        category: 'Library',
+      },
+      {
+        title: 'The cover picker says where a picture actually came from',
+        body: 'Covers offered by Hardcover, Google and the rest get swapped for a higher-resolution copy when one exists, and that copy often comes from Amazon or Apple Books — but the card kept the name of the source that supplied the metadata. A card reading "Hardcover" could be showing you an Amazon image with nothing saying so. Cards now name the image\'s real source when it differs.',
+        category: 'Library',
+      },
+      {
+        title: 'A metadata source that is throttling you now says so',
+        body: 'Searching Get Metadata for the same book twice could find it on the first click and not on the second, with nothing changed in between. Goodreads and bol.com answer a real no-match with an ordinary empty page, so a refusal was being read as "this book does not exist" and reported as "No results for this query". A refusal now says what it is and to try again in a minute.',
+        category: 'Library',
+      },
+      {
+        title: 'Two new cover fill styles that fill the frame instead of adding a border',
+        body: 'Every existing style pads the cover out to your device\'s shape, leaving a mirrored, blurred or coloured band down the sides. Stretch to fill scales the cover to the frame and accepts a little distortion; Crop to fill keeps the proportions honest and trims a strip off the two long edges. The six original styles are untouched and Edge mirror is still the default.',
+        category: 'Sync',
+        link: { to: '/account/devices', label: 'Check your e-reader address' },
+      },
+      {
+        title: 'Send everyone to your single sign-on without giving up the password form',
+        body: 'If you run exactly one OAuth provider, the login page can take people to it immediately — but that jump used to be welded to "Disable Standard Login", so switching it on switched off password login for everyone, including you if the provider went down. They are now separate settings: turn on Start the only OAuth provider automatically under Admin → Security, and the password form stays reachable at /login?local=1 as a way back in. Off by default.',
+        category: 'Admin',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+      {
+        title: 'Reporting a problem fills the report in for you',
+        body: 'Reporting a bug meant landing on a blank form asking for your version, your browser and which page you were on — and if the app had just crashed, the error was gone from the screen by the time you got there. Report Issue on GitHub now opens a report with all of that already filled in. Nothing is sent by your library: the report is written in your browser and handed to you as a link, and your address, library name, file paths and book titles are never included.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Errors explain themselves instead of turning into a blank 500',
+        body: 'Some failures replaced their own explanation with a crash and took down the page handling them. Uploading a book with an unwritable ingest folder was the clearest case: the app had the right sentence ready — check your /cwa-book-ingest volume permissions — but crashed while writing the log line, so nobody ever saw it. The same fault sat on the reload-metadata and ingest-folder-creation paths.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Dutch, Russian and German all read further',
+        body: 'Russian went from 2,618 to 2,719 translated phrases, German from 1,891 to 2,071, and eight more settings now read in Dutch. Many of these were entries gettext had guessed from a similar English sentence and marked provisional — a provisional entry is dropped when the catalogue is compiled, so they had been showing in English while a translation sat unused. One had guessed "Import" as "Wichtig:" ("Important:").',
+        category: 'Under the hood',
+        link: { to: '/account', label: 'Open account settings' },
+      },
+      {
+        title: 'Smaller controls are easier to hit, and the notice bar follows your theme',
+        body: 'The ☰ menu button on phones, Delete format, Revoke on an app password and the Kobo/OPDS shelf checkboxes all keep their appearance but respond over a larger area — the shelf rows respond in full rather than just the small square. The notice bar was one fixed dark-teal band whichever theme you picked, sitting on Light and Sepia as a near-black slab; it now comes in a version made for each theme. In the reader, the five toolbar buttons went from 34 to 44 pixels, and typing in a reader panel no longer loses the cursor.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Two smaller corrections',
+        body: 'The Highlights page called everything a highlight — a book with three highlights and two notes reported "5 highlights" — and now reads Highlights and notes throughout, with counts that say what they are counting. In an OPDS reading app, Discover was labelled "Random Books" and stayed in English on a translated server; it now reads Discover, translated, in all 28 languages.',
+        category: 'Under the hood',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.33',
+    date: '2026-08-08',
+    items: [
+      {
+        title: 'Tag names are readable again',
+        body: 'The Tags page was showing columns of "…" where the names should be: the grid had been sized before the rename and delete buttons existed, so once those arrived they took their space out of the name itself. Rows with those buttons now get a wider column and a long name wraps to a second line before it gets cut. On a 152-tag library, names cut off went from 87% to 9% on desktop and 32% to 8% on a phone. Authors, Series and Publishers keep their layout and gain the same second line.',
+        category: 'Library',
+        link: { to: '/tags', label: 'Browse tags' },
+      },
+      {
+        title: 'Signing in with your provider skips the extra click',
+        body: 'If your server has standard login switched off and exactly one sign-in provider configured, the login page existed only to be clicked through — it now starts that provider straight away. Adding ?local=1 to the login URL brings the plain page back, which is how an admin gets in if the provider itself is down. Cancelling at the provider used to bounce you straight back to it in a loop; that is fixed too.',
+        category: 'Account',
+      },
+      {
+        title: 'Spanish is complete, and Traditional Chinese is much further along',
+        body: 'Spanish now covers all 2,645 phrases in the interface, up from 1,378 — the most complete translation the project ships. Traditional Chinese went from 619 to 919. Both catalogues also had entries that gettext had guessed from a similar English sentence and marked provisional; a provisional entry is dropped when the catalogue is compiled, so those had been rendering in English while a translation sat in the file unused. In Spanish, 196 of them were confirmed or corrected, and a few had reversed the meaning of the original.',
+        category: 'Under the hood',
+        link: { to: '/account', label: 'Open account settings' },
+      },
+      {
+        title: 'A sync client is told when a position is being held back',
+        body: 'Reading positions that exist only as a percentage — the ones the web reader and a Kobo produce — are deliberately withheld from KOReader clients that have not said they can use them, because older plugins would try to jump to a position they cannot resolve and lose your place. From the client\'s side that looked identical to never having synced at all. The server now says what it is holding and how to ask for it, and the sync protocol documentation covers both position formats. Nothing changes for the bundled plugin.',
+        category: 'Sync',
+      },
+      {
+        title: 'Your library folder stops collecting a stray metadata.db',
+        body: 'Something during startup checked for a database at the top of your library folder, and the act of checking created an empty one there. That stray file is what made versions 4.1.20 to 4.1.31 refuse to start for some people. It is no longer created at all, and two things that had been reading it instead of your real library now find the right one: the KOReader checksum job, which had been failing with "no such table: books" on every restart, and your reading statistics, which had been reporting nothing.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'The "help translate this" notice stops coming back',
+        body: 'The app remembered it had shown you that notice by writing a small file into its own program folder — which gets replaced every time you update, so the reminder returned with each new version. It is now kept alongside your settings, where it survives updates.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Installing from source keeps your database where the app reads it',
+        body: 'If you run NextGen from a checkout or a distro package rather than the Docker image, setup used to write app.db, dirs.json and your CWA settings into a /config folder it created at the top of the filesystem, while the app read from the folder you installed into — so you got a first-run screen and an empty library. All of them now resolve the same way. An install upgrading from one of those builds is told which database it found instead of being handed an empty one, first run no longer prints a chown error that was not an error, and the version no longer reports one release behind. Docker installs are unaffected.',
+        category: 'Under the hood',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.32',
+    date: '2026-08-07',
+    items: [
+      {
+        title: 'Where you stopped in the browser carries over to KOReader',
+        body: 'Read a few chapters in the web reader, then open the same book on a KOReader device and it moves to roughly where you stopped, instead of resuming wherever the device itself last was. It lands near the spot rather than exactly on it — the browser records a position KOReader\'s engine cannot resolve, so the two share a percentage — and it applies when you open the book, not during a bulk library sync. This needs the updated NextGen Progress Sync plugin on the device; until you update it, nothing about its behaviour changes.',
+        category: 'Sync',
+      },
+      {
+        title: 'A stray metadata.db no longer stops the container from starting',
+        body: 'Every release since v4.1.20 could refuse to come up if an empty or leftover metadata.db was sitting at the top of your library folder: the log filled with "no such table: custom_columns" over and over, and rolling back was the only way out. NextGen finds your library by looking for that filename, and it had started trusting the first file with that name — hiding the real library in the folder below. It now checks that a file is genuinely a Calibre database before mounting it, says in the log which one it skipped and why, and keeps looking.',
+        category: 'Under the hood',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.31',
+    date: '2026-08-06',
+    items: [
+      {
+        title: 'Your Kobo gets books in its own format, automatically',
+        body: 'Kobo devices read two kinds of EPUB, and the "kepub" one is what the device is actually built for — faster page turns, working chapter progress, and highlights that stay put. That file used to be made only the first time a device asked for a particular book, so most of a library sat in the plain format. A new switch in Settings → Kobo, on by default, prepares it ahead of time for everything you have already sent to a Kobo; your EPUB stays as the source and nothing is replaced, so those books take roughly twice the disk they did before.',
+        category: 'Sync',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+      {
+        title: 'Re-apply covers and metadata across the whole library',
+        body: 'Edits are written into the book files themselves, but only for the book you just edited — so anything changed before a fix, or imported with bad metadata, kept the old values inside the file even though the web page looked right. Sweeping the whole library used to mean a docker exec command that is not in the docs. There is now a Cover & Metadata Enforcement page in Admin with a Start button, live progress and log, Cancel, and an archive of past runs.',
+        category: 'Admin',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+      {
+        title: 'Turn off the Read now and edit buttons on covers',
+        body: 'If you read on an ereader, the "Read now" link on every cover is just noise, and on a touchscreen it and the edit pencil stayed visible all the time instead of appearing on hover. A new Show Read now and edit buttons switch in the library View settings takes them off every cover everywhere — library, shelves, search, Discover and More by this author. Both actions are still on the book\'s own page, which is what the cover has always linked to.',
+        category: 'Library',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'The library stays usable while a book is being imported',
+        body: 'Saving a metadata edit, renaming or merging a tag, or uploading during an import could stop the server answering anyone at all — not just you — until the import finished, with nothing in the log to explain it. The edit still queues behind the import, which is correct, but everyone else\'s pages now keep loading while it waits. On a test instance an unrelated page load during that wait went from 6.5 seconds to 36 milliseconds.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Kobo activity no longer freezes the site for everyone else',
+        body: 'Several parts of a Kobo sync did their work in a way that held up every other page for every user: padding covers to the device screen shape, converting a book on first download, rebuilding a large book to embed metadata, and waiting on the Kobo store when store proxying is on. All of that now happens out of the way. On a 24 MB book an unrelated page load went from 754 ms back to 21 ms.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Kobo syncs are much faster on big libraries',
+        body: 'Every sync re-opened and re-parsed each book from disk to check one rarely-used property, and recorded each delivered book in its own separate database write. The answer to that check never changes unless the file does, so it is now remembered, and the writes are batched into one. On a 215-book library the per-100-book cost dropped from 400 ms to 11 ms; the memory holds 4,096 books, so a full sync of a larger library sees less of the benefit.',
+        category: 'Sync',
+      },
+      {
+        title: 'Preparing books for Kobo can no longer damage your library',
+        body: 'A converted book was written straight into place, so stopping the container mid-write left a half-written file that the next run accepted as finished — after which the device was handed a book it could not open, permanently. Converted books are now written aside and swapped in only once complete and verified as a readable archive. A single unreadable book also no longer halts the whole run, and downloads during that background work go through immediately instead of timing out.',
+        category: 'Sync',
+      },
+      {
+        title: 'The container starts when you run it as a non-root user',
+        body: 'Starting NextGen with --user, or under rootless Podman with --userns=keep-id, left every service dying the moment it tried to switch to its own app user. The supervisor restarted them forever, so the container showed as Up while nothing was listening on the port. It now checks whether it can switch users before trying and stays as whoever you started it as when it cannot; running normally is unchanged.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'Metadata working files survive an upgrade',
+        body: 'The change logs and scratch space the cover and metadata enforcer uses lived inside the application folder, which is replaced wholesale every time you pull a new image. They now sit on your /config volume with the rest of your per-install state, so an edit saved moments before an upgrade still gets applied to the book file after it. Anything left in the old location moves across on first start.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'The Tags page speaks Russian again',
+        body: 'The tag merge and delete tools added in v4.1.30 arrived without Russian text, so the page switched to English at exactly the point it asked you to confirm something destructive. Two upload and reading-position messages had the same gap. All thirteen phrases are translated and Russian is complete again at 2,622 of 2,622.',
+        category: 'Account',
+        link: { to: '/tags', label: 'Browse tags' },
+      },
+    ],
+  },
+  {
+    version: 'v4.1.30',
+    date: '2026-08-04',
+    items: [
+      {
+        title: 'Merge and delete tags from the Tags page',
+        body: 'Near-duplicate tags like "Sci-Fi" and "SciFi" could not be consolidated — renaming one onto the other was refused because the name was already taken — and there was no way to delete a tag at all. Renaming onto an existing tag now tells you which one it clashed with and how many books that one holds, then offers to merge into it; delete removes a tag from every book that carries it and keeps the books themselves. Both sit on the Tags list so you can spot near-duplicates side by side, and both ask before they change anything.',
+        category: 'Library',
+        link: { to: '/tags', label: 'Browse tags' },
+      },
+      {
+        title: 'Series and other metadata edits now reach your Kobo',
+        body: 'Setting a series name and number saved fine in the library and showed up in the web interface, but the book on the device still had no series — books converted for Kobo are stored as .kepub files, and those were the one format the metadata writer skipped. Series, tags and covers are now written to .kepub too, so edits turn up on the device after the next sync. Existing books pick this up the next time you edit them, or in one pass if you run the cover and metadata enforcement over the whole library from Admin; clearing a field is not covered yet.',
+        category: 'Sync',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+      {
+        title: 'Books waiting in the ingest folder at startup are imported',
+        body: 'If a book was sitting in the ingest folder the moment the server started — you copied files in while it was stopped, or it rebooted mid-copy — it was never picked up, with no error and nothing in the log, and the only way out was to touch or re-copy every file. The folder is now swept once at startup, so anything waiting there gets imported. Books left in the retry queue by a previous run are picked back up as well.',
+        category: 'Library',
+      },
+      {
+        title: 'Requests that change your library are refused when they come from another website',
+        body: 'Every change the new interface makes already had to carry a one-time token that a page on another site cannot read, but if one were ever obtained the server would have carried out the write without noticing the request came from somewhere else entirely. It now checks the whole API surface at once, rather than route by route, and refuses anything that says it came from a site other than yours. Ordinary use is unaffected — but if you reach your library through a reverse proxy it has to forward both the address and whether the connection is https, or you can name the address you actually use in the new optional CWNG_TRUSTED_ORIGINS setting.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'The Statistics page no longer shows your server version to everyone',
+        body: 'It listed the exact release, the host kernel build, the Python build and the version of every library the server uses — around 70 entries — to any visitor who could open the page, including people not signed in at all where guest browsing is turned on. That is enough detail to look up known vulnerabilities for the exact software you are running. Those details now go to admins only, and the server withholds them rather than just hiding them on the page; book, author, series and category counts are unchanged for everyone.',
+        category: 'Under the hood',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.29',
+    date: '2026-08-03',
+    items: [
+      {
+        title: 'Reading in your browser now counts everywhere else',
+        body: 'Until now the web reader kept its position to itself: it could show you how far your Kobo or KOReader had got, but reading a few chapters in the browser left no trace, so your device still thought you were where you left it. The place you reach in the browser now travels the other way too — your Kobo picks it up on its next sync, the progress on the book updates, and finishing a book in the browser marks it read. Flipping back to an earlier chapter never costs you anything: your own place follows you, but the furthest point your device knows about stays put. One thing to know if your server has several users and an admin has set a custom column for read status: that column belongs to the book rather than to each reader, so one person finishing a book in the browser shows it as read for everyone. Ordinary libraries keep read status per person and are unaffected.',
+        category: 'Sync',
+        link: { to: '/', label: 'Open your library' },
+      },
+      {
+        title: 'Japanese and Chinese ebooks turn the page the right way',
+        body: 'Books that read right to left were paged as if they read left to right, so the button to go forward sat on the right of the screen and tapping the side you actually read towards took you backwards instead of onwards. The arrow keys were reversed in the same way. Forward now sits where it belongs for these books, and the buttons announce what they really do for anyone using a screen reader. This covers epub — comics and manga read as CBZ or CBR still page left to right, since they carry no equivalent marker for reading direction.',
+        category: 'Reading',
+      },
+      {
+        title: 'Your place in a book survives a busy database',
+        body: 'Both readers save your position constantly, and if a save failed because something else was writing to the database at that moment, the browser was told it had worked. It had not: the position was thrown away, and because the browser believed it was saved, nothing ever went back for it, so you would come back to the book pages behind with nothing in the log to explain it. A save that fails now reports the failure instead of a success, and both readers act on it — this reader retries a few times, and the classic reader keeps your place locally and sends it the next time you open the book. Two limits remain: there is still no on-screen warning when a save fails for good, and closing the tab within a few seconds of turning a page can still lose that last turn.',
+        category: 'Reading',
+      },
+      {
+        title: 'Three more actions that reported success without doing anything',
+        body: 'The same "said it worked when it did not" answer turned up in three other places, all now fixed. Changing an admin password from the command line could print that it had changed when it had in fact been rolled back; revoking a Kobo sync token could report success while the token stayed valid; and editing an allowed-registration domain could show the new value in the table without saving it.',
+        category: 'Admin',
+      },
+      {
+        title: 'The Epub Fixer stops reporting fixes it never made',
+        body: 'Running it over the same library kept announcing conversions like "Converted page_styles.css from ascii to utf-8" on every run, for books it had already been through — a stylesheet that is plain ASCII is already valid UTF-8, so nothing was being changed. Every book was also rewritten and copied to the backup folder whether or not anything changed, which pushed your whole library back through Kobo, KOReader and any file sync you have, and grew the backup folder each time. Books that genuinely need fixing are still fixed; the rest are left alone, and books you deleted are no longer processed.',
+        category: 'Admin',
+      },
+      {
+        title: 'The "update available" banner stops re-appearing every restart',
+        body: 'The banner is meant to show at most once a day, and it remembered the date in a file kept in a part of the container that gets wiped whenever the container is recreated — which is exactly what happens when you pull a new image. It now lives in your config folder alongside the logs, so the once-a-day promise holds across restarts and upgrades. You may see it one extra time on the first start after updating, then it settles.',
+        category: 'Admin',
+      },
+    ],
+  },
+  {
+    version: 'v4.1.28',
+    date: '2026-08-02',
+    items: [
+      {
+        title: 'Upload stays with you as you browse',
+        body: 'In the new interface the Upload button only appeared on the plain Library page, so opening an author, a series, a tag, Discover or a book left you with no way to add one. It now stays in place wherever you are, and it also sits in the account menu next to Admin so you can reach it on a phone.',
+        category: 'Library',
+        link: { to: '/upload', label: 'Go to Upload' },
+      },
+      {
+        title: 'The button at the bottom of a page is clickable again',
+        body: 'The "new interface is ready" notice runs along the bottom of the window and was sitting on top of the last thing on the page, so clicking the middle of a button there did nothing and only a sliver along its top edge responded — and scrolling to the end did not help. Phones had it worse, because the notice wraps onto two lines and hid the last button outright. Pages now keep enough room clear at the bottom at every screen size.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'The emergency database restore actually restores',
+        body: 'On Admin, "Restore Calibre Database (Last Resort)" did nothing at all when clicked — no message, no error — because it was quietly re-saving the database settings instead. Anyone reaching for it during a real library corruption got a button that looked like it worked. It now rebuilds your Calibre database from the OPF files in your library, as the page describes.',
+        category: 'Admin',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+      {
+        title: 'Turning off "Enable Uploads" now turns off uploads',
+        body: 'Switching it off in Admin hid the button in the classic view and stopped there — the new interface still offered Upload, and the upload itself went through either way. The setting is now enforced on the server and the button is hidden in both views. Uploading stays on by default, so nothing changes unless you deliberately turned it off.',
+        category: 'Admin',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+      {
+        title: 'An address typed with a slash on the end no longer gives you "404 Not Found"',
+        body: 'Reaching /kosync/ failed while /kosync worked, and 156 other pages behaved the same way — admin settings, your profile, statistics, search, shelf and author pages. Links inside the app were always fine, so this only bit you if you typed an address, used a bookmark, or followed one from a forum post. Both spellings now work, including behind a reverse proxy on a subpath.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'The last English word on the admin settings page is translated',
+        body: 'With the interface in another language, the "Default book language" dropdown still opened on "Show All" while every other label around it was translated. It now reads in your own language. The same dropdown in your account settings was already right; both pages now build it from one place, so they cannot drift apart again.',
+        category: 'Admin',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+    ],
+  },
+  {
+    version: 'v4.1.27',
+    date: '2026-08-02',
+    items: [
+      {
+        title: 'The duplicates popup no longer names books you already deleted',
+        body: 'If you removed duplicate copies in Calibre itself rather than in the web app, the popup carried on listing them, while the Duplicates page and a fresh scan both correctly said there was nothing left. It now re-checks your library before it appears, so a group whose books are gone drops out and a group that merely lost a copy shows the real remaining count. The sidebar duplicate badge counts the same way, so it was wrong in the same way and is fixed too.',
+        category: 'Library',
+        link: { to: '/duplicates', label: 'Review duplicates' },
+      },
+      {
+        title: 'A duplicate you dismissed stays dismissed',
+        body: 'Dismissals were matched against a label built from the title and author of whichever copy happened to sort first, so editing a book\'s metadata — or importing another copy — quietly changed the label and the duplicate came back on its own. Dismissals now hold on to an identity that metadata edits do not move.',
+        category: 'Library',
+        link: { to: '/duplicates', label: 'Review duplicates' },
+      },
+      {
+        title: 'Marking a book unread now clears the dates and the device position too',
+        body: 'The percentage reset, but "Started reading" and "Last synced" stayed on the page — and "Last synced" jumped forward to the moment you pressed the button, so a book you had just marked unread looked like it had synced seconds ago. The reading position your e-reader holds was left behind as well, which let a Kobo quietly restore the exact spot you had just cleared on its next sync. Books already left in that state by an earlier version display correctly again, with no migration.',
+        category: 'Reading',
+      },
+      {
+        title: 'Editing a book no longer freezes the site for everyone else',
+        body: 'Saving from the edit-metadata screen, or switching on a metadata source, stopped the server answering anyone — not just the tab doing the work — for as long as the cover download or the lookup took, which on a slow host is up to 30 seconds. Both now do their network work off the request handler, so the rest of the site keeps responding. Measured during a 1.5 second cover download, other page loads went from 1 served with a 1.25 second worst case to 201 served with an 18 millisecond worst case.',
+        category: 'Under the hood',
+      },
+      {
+        title: 'The admin version table reports the Calibre and Kepubify you are actually running',
+        body: 'Both rows showed a value stamped into the image when it was built, so if the binaries had been replaced or the converter path pointed somewhere else, the numbers on the page were not the ones in use — and the Statistics page, which read the real binaries, could disagree with no way to tell which was right. Both rows now read the binary itself. One that cannot be found, or cannot be run, now says which of the two it is instead of "Unknown".',
+        category: 'Admin',
+        link: { to: '/admin', label: 'Open Admin' },
+      },
+      {
+        title: 'Russian is complete again on the edit-metadata screen',
+        body: 'Three phrases in the custom-columns section were still in English on an otherwise fully Russian page: the "Custom columns" heading, the "Not set" placeholder shown for an empty column, and the hint telling you a field takes comma-separated values. Russian is back to every string translated.',
+        category: 'Account',
+        link: { to: '/account', label: 'Open account settings' },
+      },
+    ],
+  },
+  {
     version: 'v4.1.26',
     date: '2026-07-31',
     items: [

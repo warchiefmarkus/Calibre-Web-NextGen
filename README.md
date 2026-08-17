@@ -53,6 +53,7 @@ Library, settings, users, OAuth tokens, and KOReader sync state are preserved. S
   - [Reverse proxy / Cloudflare Tunnel](#reverse-proxy--cloudflare-tunnel)
   - [Hardcover metadata provider](#hardcover-metadata-provider)
   - [KOReader sync](#koreader-sync)
+  - [Moon+ Reader WebDAV progress](#moon-reader-webdav-progress)
   - [Kobo sync](#kobo-sync)
 - [Troubleshooting](#troubleshooting)
 - [Differences from upstream](#differences-from-upstream)
@@ -412,7 +413,7 @@ Plugins that need keys or an account (DeDRM wants your device keys, ACSM Input w
 To add another plugin **after** the first batch is registered, drop the zip in the same folder and run:
 
 ```
-docker exec -e HOME=/config calibre-web /app/calibre/calibre-customize -a "/config/.config/calibre/plugins/<plugin file>.zip"
+docker exec -e HOME=/config calibre-web /opt/calibre/calibre-customize -a "/config/.config/calibre/plugins/<plugin file>.zip"
 ```
 
 The feature is off by default because it runs third-party plugin code inside your container — only install plugins you trust, from their official release pages. Which plugins are appropriate to use is your call.
@@ -502,6 +503,39 @@ Enable the server-wide integration once under Admin → Edit Basic Configuration
 
 Accepted true values are `true`, `1`, `yes`, and `on`; false values are `false`, `0`, `no`, and `off` (case-insensitive). When the variable is set, the UI shows the effective state but leaves changes to the deployment configuration.
 
+### External book ratings
+
+Book detail pages can load cached aggregate ratings and popularity counters from
+Goodreads, Hardcover, Google Books, and Open Library. Sources are displayed
+separately; the application does not average ratings from different communities.
+
+Matching order is: provider-specific ID, exact ISBN, original/canonical title
+and author, then the localized Calibre title and author. Goodreads structured
+book data can resolve a translated edition to the original work and enrich the
+queries sent to the other providers. You can also store explicit Calibre
+identifiers named `original-title` and `original-author`; these are always tried
+before the localized metadata.
+
+Hardcover uses the token configured above. Open Library needs no key. Goodreads
+uses the same public structured-data endpoint as its web client, with an HTML
+fallback; either surface may temporarily reject automated requests. Google Books
+supports anonymous requests, but deployments
+that encounter quota or rate-limit responses should set an API key either in
+Admin → Edit Basic Configuration or through the environment:
+
+```yaml
+- GOOGLE_BOOKS_API_KEY=your-google-books-api-key
+```
+
+Successful results are cached for seven days. New uploads and watch-folder
+imports queue a non-blocking background lookup after metadata enrichment, so
+catalog cards normally have a rating before their detail page is first opened.
+The library, search, shelf, and smart-shelf APIs attach cached rating summaries
+with one batch query; cover previews render the selected source as a compact
+responsive star badge. A refresh button on the book page forces a new lookup,
+and provider failures do not prevent results from the other sources from being
+shown.
+
 ### KOReader sync
 
 CWA has built-in KOReader progress sync; no separate kosync server is needed.
@@ -516,6 +550,57 @@ If your update manager is still pointed at this repository, switch it. That setu
 
 **Matching filenames across devices (OPDS downloads).** If you download books to KOReader over OPDS and sync progress by filename across several e-readers, turn on **Use server filenames** in KOReader's OPDS catalog settings (the checkbox when you add or edit the catalog). By default KOReader names a downloaded file `Author - Title.epub` from the catalog entry, which differs from the on-disk library name `Title - Author.epub` and forces a manual rename. CWA already sends the library name in the download's `Content-Disposition` header; with **Use server filenames** on, KOReader uses that name, so the file matches your library and your other devices without renaming.
 
+### Moon+ Reader WebDAV progress
+
+Moon+ Reader can store per-book position files on WebDAV. Open **Account →
+Moon+ Reader sync** to configure a WebDAV URL, username, password, and optional
+cache path. The password is encrypted with the installation key and is never
+returned to the browser after it is saved.
+
+Synchronization is bidirectional. A manual **Sync now** performs a complete
+reconciliation, and a one-minute background poll detects changes made by Moon+
+or another Calibre reader. Foliate writes enqueue an immediate per-book WebDAV
+reconciliation after the native Calibre position is saved.
+
+Moon+ `.po` files are decoded as `deviceId*chapter@split#offset:percent%` (or
+`deviceId*page:percent%` for PDF). The device id prevents self-echoes; freshness
+comes from the WebDAV ETag/modification time and Calibre's native position epoch.
+Moon+ is the primary reader and wins timestamp ties. Updates use conditional
+WebDAV PUTs so a concurrent Moon save cannot be overwritten.
+
+For FB2 and EPUB, CWNG reproduces Moon's chapter model and its exact HTML
+splitter. Moon chooses a 150,000, 400,000, or 1,000,000-character split size from
+the Android memory class; CWNG infers that profile from an existing `.po` and
+writes a real `chapter@split#offset` locator. On import, the structural locator is
+used when it agrees with Moon's one-decimal percentage and the percentage is the
+safe fallback when a local book or split profile cannot be verified.
+
+Foliate sends visible text with each position update, allowing the WebDAV writer
+to locate the same paragraph rather than converting only from a coarse fraction.
+Older web-reader positions without a text anchor are not allowed to overwrite an
+existing Moon file; they wait for the next real Foliate relocation. Other native
+Calibre devices use a chapter-aware fallback for supported formats. PDF uses the
+stored page locator; unsupported reflowable formats are deferred instead of
+writing a false zero locator.
+
+The cache path may be left empty while configuring the connection, but a folder
+must be selected before synchronization. Use **Find Moon sync files** to perform
+a bounded WebDAV scan for every `.Moon+/Cache` collection. The page lists each
+location with its `.po` file count and newest modification time; selecting one
+fills the cache-path field. The scan prioritizes likely `Moon`, `Books`, and
+`Apps` paths, is limited to five levels and 400 collections, and explicitly
+reports when that safety limit makes the result potentially incomplete.
+
+Books are matched using the exact Calibre filename, a unique normalized filename
+stem, and finally a SHA-256 comparison when Moon+ reads a renamed copy stored at
+the WebDAV root. Ambiguous matches are skipped and shown in the synchronization
+summary rather than being assigned to the wrong book.
+
+The WebDAV connection is always made through HTTP/WebDAV, even when it points
+back to the same host. Redirects are rejected so Basic Auth credentials cannot
+be forwarded to another origin. Directory listings, position files, and
+checksum downloads have explicit size and timeout limits.
+
 ### Kobo sync
 
 Read your CWA library on a Kobo e-reader, with reading progress syncing both ways. Sync runs against your own server, so your library never leaves your network.
@@ -524,6 +609,41 @@ Read your CWA library on a Kobo e-reader, with reading progress syncing both way
 2. Open your user page (Admin → Users → your user, or your own profile) and click **Create/View** next to **Kobo Sync Token**. The dialog shows the exact `api_endpoint=` line for your account.
 3. Plug the Kobo into a computer over USB and open `.kobo/Kobo/Kobo eReader.conf` in a text editor. Add or replace the `api_endpoint=` line with the one from the dialog, save, and eject the device cleanly.
 4. On the Kobo, sync. Books on your Kobo Sync shelves appear on the device, and progress flows back to CWA.
+
+> ### ℹ️ Where your highlights travel, and how to check
+>
+> `api_endpoint` routes **library sync**. Your **highlights and notes** travel over a separate
+> reading-services channel governed by a different key, `reading_services_host`.
+>
+> **You should not normally need to touch that key.** CWA advertises the right value during sync
+> initialization, and a device that performs a full initialization against your server adopts it on
+> its own. That is the supported path.
+>
+> 🚨 **Do not hand-edit `reading_services_host` in the conf file.** Doing so has been measured to
+> break syncing outright on at least one device — a Kobo Clara BW on firmware 4.42.23291 began
+> failing every sync with `FailedSync / WebRequestErr`, and recovered only when the key was set back
+> to `readingservices.kobo.com`. A Kobo Libra Colour on 4.45.23697 is unaffected and routes
+> annotations through CWA happily, so this is **not** universal — but we cannot yet predict which
+> devices tolerate it, and the failure leaves you with a reader that will not sync and no obvious
+> cause.
+>
+> **If your sync has already broken after editing that key:** set `reading_services_host` back to
+> `readingservices.kobo.com`, save, eject cleanly, and sync again.
+>
+> **To see whether annotations are reaching CWA**, make a highlight on the device, sync, and watch:
+>
+> ```bash
+> docker logs -f calibre-web 2>&1 | grep -iE "annotations|reading services"
+> ```
+>
+> Silence means your highlights are going to Kobo's servers rather than yours. The safe way to
+> change that is to get the device to perform a **full initialization** against CWA — re-generate
+> the Kobo Sync Token and re-pair — rather than editing the key by hand.
+>
+> This matters because CWA's protection against a Kobo deleting its own highlights after a sync
+> (upstream [calibre-web#2610](https://github.com/janeczku/calibre-web/issues/2610)) works by
+> answering that channel, and it cannot protect a request it never receives. Until the device is
+> routing annotations through CWA, treat highlights made on it as device-only and back them up.
 
 To confirm the device is reaching your server, watch the logs while you sync — you should see requests to `/kobo/<token>/v1/...`:
 
@@ -608,7 +728,7 @@ The defaults are `admin` / `admin123` (lowercase). If you've already changed the
 
 Check the [issue tracker](https://github.com/new-usemame/Calibre-Web-NextGen/issues) or [open a new issue](https://github.com/new-usemame/Calibre-Web-NextGen/issues/new). Useful information:
 
-- The version: `docker exec calibre-web cat /app/CWA_RELEASE`
+- The version: `docker exec calibre-web printenv CWA_INSTALLED_VERSION`
 - Recent logs: `docker logs calibre-web 2>&1 | tail -50`
 - What you did and what you expected to happen
 
@@ -647,34 +767,34 @@ The interface ships with the locales below. Completion is auto-refreshed on ever
 | Language | Completion | Strings | Fuzzy |
 |---|---|---:|---:|
 | English (source) | 100% | source | — |
-| Polish (`pl`) | `████████████████████` 100% | 2609/2609 | 0 |
-| Russian (`ru`) | `████████████████████` 100% | 2609/2609 | 0 |
-| French (`fr`) | `█████████████████░░░` 84% | 2187/2609 | 129 |
-| German (`de`) | `██████████████░░░░░░` 72% | 1891/2609 | 124 |
-| Dutch (`nl`) | `█████████████░░░░░░░` 66% | 1723/2609 | 292 |
-| Hungarian (`hu`) | `█████████████░░░░░░░` 63% | 1646/2609 | 123 |
-| Portuguese (Brazil) (`pt_BR`) | `███████████░░░░░░░░░` 54% | 1409/2609 | 312 |
-| Spanish (`es`) | `███████████░░░░░░░░░` 53% | 1378/2609 | 196 |
-| Japanese (`ja`) | `██████████░░░░░░░░░░` 51% | 1320/2609 | 249 |
-| Slovenian (`sl`) | `█████████░░░░░░░░░░░` 46% | 1214/2609 | 320 |
-| Chinese (Simplified, China) (`zh_Hans_CN`) | `█████████░░░░░░░░░░░` 45% | 1175/2609 | 350 |
-| Italian (`it`) | `███████░░░░░░░░░░░░░` 37% | 958/2609 | 269 |
-| Korean (`ko`) | `███████░░░░░░░░░░░░░` 36% | 949/2609 | 269 |
-| Arabic (`ar`) | `██████░░░░░░░░░░░░░░` 30% | 791/2609 | 286 |
-| Slovak (`sk`) | `██████░░░░░░░░░░░░░░` 29% | 750/2609 | 315 |
-| Portuguese (`pt`) | `█████░░░░░░░░░░░░░░░` 27% | 702/2609 | 362 |
-| Galician (`gl`) | `█████░░░░░░░░░░░░░░░` 26% | 678/2609 | 363 |
-| Indonesian (`id`) | `█████░░░░░░░░░░░░░░░` 26% | 679/2609 | 364 |
-| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `█████░░░░░░░░░░░░░░░` 24% | 619/2609 | 381 |
-| Swedish (`sv`) | `████░░░░░░░░░░░░░░░░` 22% | 585/2609 | 391 |
-| Greek (`el`) | `████░░░░░░░░░░░░░░░░` 19% | 507/2609 | 400 |
-| Czech (`cs`) | `████░░░░░░░░░░░░░░░░` 18% | 478/2609 | 409 |
-| Ukrainian (`uk`) | `███░░░░░░░░░░░░░░░░░` 17% | 443/2609 | 373 |
-| Norwegian (`no`) | `███░░░░░░░░░░░░░░░░░` 16% | 431/2609 | 438 |
-| Vietnamese (`vi`) | `███░░░░░░░░░░░░░░░░░` 16% | 422/2609 | 360 |
-| Finnish (`fi`) | `███░░░░░░░░░░░░░░░░░` 14% | 355/2609 | 389 |
-| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 11% | 290/2609 | 386 |
-| Khmer (`km`) | `██░░░░░░░░░░░░░░░░░░` 8% | 207/2609 | 345 |
+| Russian (`ru`) | `███████████████████░` 97% | 2717/2802 | 0 |
+| Spanish (`es`) | `███████████████████░` 94% | 2639/2802 | 0 |
+| Polish (`pl`) | `███████████████████░` 93% | 2603/2802 | 0 |
+| French (`fr`) | `████████████████░░░░` 82% | 2310/2802 | 127 |
+| German (`de`) | `███████████████░░░░░` 74% | 2069/2802 | 62 |
+| Dutch (`nl`) | `█████████████░░░░░░░` 66% | 1854/2802 | 292 |
+| Hungarian (`hu`) | `████████████░░░░░░░░` 59% | 1644/2802 | 121 |
+| Portuguese (Brazil) (`pt_BR`) | `██████████░░░░░░░░░░` 50% | 1406/2802 | 310 |
+| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `██████████░░░░░░░░░░` 49% | 1381/2802 | 182 |
+| Japanese (`ja`) | `█████████░░░░░░░░░░░` 47% | 1318/2802 | 247 |
+| Slovenian (`sl`) | `█████████░░░░░░░░░░░` 43% | 1212/2802 | 318 |
+| Chinese (Simplified, China) (`zh_Hans_CN`) | `████████░░░░░░░░░░░░` 42% | 1174/2802 | 348 |
+| Italian (`it`) | `███████░░░░░░░░░░░░░` 34% | 955/2802 | 269 |
+| Korean (`ko`) | `███████░░░░░░░░░░░░░` 34% | 946/2802 | 269 |
+| Arabic (`ar`) | `██████░░░░░░░░░░░░░░` 28% | 788/2802 | 286 |
+| Slovak (`sk`) | `█████░░░░░░░░░░░░░░░` 27% | 747/2802 | 313 |
+| Portuguese (`pt`) | `█████░░░░░░░░░░░░░░░` 25% | 699/2802 | 360 |
+| Galician (`gl`) | `█████░░░░░░░░░░░░░░░` 24% | 675/2802 | 361 |
+| Indonesian (`id`) | `█████░░░░░░░░░░░░░░░` 24% | 676/2802 | 362 |
+| Swedish (`sv`) | `████░░░░░░░░░░░░░░░░` 21% | 582/2802 | 388 |
+| Greek (`el`) | `████░░░░░░░░░░░░░░░░` 18% | 504/2802 | 399 |
+| Czech (`cs`) | `███░░░░░░░░░░░░░░░░░` 17% | 475/2802 | 408 |
+| Ukrainian (`uk`) | `███░░░░░░░░░░░░░░░░░` 16% | 442/2802 | 372 |
+| Norwegian (`no`) | `███░░░░░░░░░░░░░░░░░` 15% | 431/2802 | 435 |
+| Vietnamese (`vi`) | `███░░░░░░░░░░░░░░░░░` 15% | 421/2802 | 357 |
+| Finnish (`fi`) | `███░░░░░░░░░░░░░░░░░` 13% | 354/2802 | 388 |
+| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 10% | 289/2802 | 385 |
+| Khmer (`km`) | `█░░░░░░░░░░░░░░░░░░░` 7% | 207/2802 | 343 |
 <!-- TRANSLATION_STATUS_END -->
 
 ---

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Auth endpoints for /api/v1 — reuse the existing cw_login session + CSRF."""
 import json
+import os
 from datetime import datetime
 
 from flask import jsonify, request, url_for
@@ -11,6 +12,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from . import api_v1
 from .serializers import serialize_user
 from .. import ub, config, constants, deployment_profile, limiter
+from ..config_sql import uploads_enabled
 from ..cw_login import current_user, login_user
 from ..logout import cleanup_local_logout
 from ..ui_themes import config_theme_code
@@ -130,6 +132,12 @@ def _server_features():
         "kobo_sync_magic_shelves": deployment_profile.enable_kobo()
         and bool(getattr(config, "config_kobo_sync_magic_shelves", False)),
         "rag_search": deployment_profile.enable_rag_ui(),
+        # The admin's "Enable Uploads" switch. Classic gates its navbar upload
+        # button on this (layout.html: role_upload() and g.allow_upload); the
+        # SPA had no way to see it and offered Upload regardless (#1288).
+        # Reports exactly what the enforcement gate will do — same predicate,
+        # so the UI can never advertise an upload the endpoints would refuse.
+        "uploading": uploads_enabled(config),
     }
 
 
@@ -138,7 +146,7 @@ def _server_features():
 # the whole map via /profile_pictures/user_profiles.json and looks the name up
 # client-side; the SPA gets only the current user's picture on /me instead, so
 # it never downloads every user's avatar. Path is kept in sync with that writer.
-_USER_PROFILES_JSON = "/config/user_profiles.json"
+_USER_PROFILES_JSON = os.path.join(constants.CONFIG_DIR, "user_profiles.json")
 
 
 def _user_avatar(name):

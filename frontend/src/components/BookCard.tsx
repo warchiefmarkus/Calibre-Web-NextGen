@@ -24,6 +24,16 @@ interface BookCardProps {
    *  so it only appears where it's wanted (catalog + search) and only for users
    *  who can edit. Suppressed in selection mode. */
   quickEdit?: boolean;
+  /** Drop the whole bottom action row — "Read now" and the edit pencil — for
+   *  users who asked to declutter the grid (fork #1054: "many users are reading
+   *  on their ereaders, so Read Now is redundant"). Persisted per browser and
+   *  toggled from the catalog's View settings.
+   *
+   *  This removes the row rather than hiding it: an `opacity: 0` control (what
+   *  the hover-reveal uses) is still focusable, so a user who has switched these
+   *  off would keep tabbing through two invisible controls per card. Both
+   *  actions remain on the book's own page, which the cover already links to. */
+  hideActions?: boolean;
 }
 
 /** Format a Calibre series_index (a float, e.g. 1.0, 2.5) for display: whole
@@ -39,6 +49,7 @@ export function BookCard({
   selectable = false, selected = false, onToggleSelect,
   showSeriesIndex = false,
   quickEdit = false,
+  hideActions = false,
 }: BookCardProps) {
   const t = useT();
   const authorStr = formatAuthors(book.authors);
@@ -62,8 +73,9 @@ export function BookCard({
   // Cover + overlay badges. All non-interactive (pointer-events: none via CSS) so
   // the single wrapping control (link or toggle button) is the only tab stop.
   const cover = (
-    <div className={styles.coverWrap}>
-      <BookCover coverUrl={book.cover_url} title={book.title} authors={book.authors} />
+    <div className={selectable ? `${styles.coverWrap} ${styles.coverWrapSelectable}` : styles.coverWrap}>
+      <BookCover coverUrl={book.cover_url} title={book.title} authors={book.authors}
+        externalRating={book.external_rating} readingProgress={book.reading_progress} />
       {/* One bottom-left row rather than three independently-positioned badges.
           `hiddenBadge` and `seriesBadge` were BOTH pinned to bottom-left, so a
           hidden book in a series view stacked them on top of each other; and
@@ -107,12 +119,18 @@ export function BookCard({
     </div>
   );
 
+  // dir="auto" per field, not once on the card (#1073, reported by @raphaelbahat).
+  // The browser picks direction from the first strong directional character in
+  // THAT string, so a Hebrew title above an English author renders each the right
+  // way round. A single card-level or book-level flag has to be wrong about one
+  // of them, and keying off the book's language metadata would miss the many
+  // libraries that leave language unset — which is the case in the report.
   const info = (
     <div className={styles.info}>
-      <p className={styles.title}>{book.title}</p>
-      <p className={styles.author}>{authorStr}</p>
+      <p className={styles.title} dir="auto">{book.title}</p>
+      <p className={styles.author} dir="auto">{authorStr}</p>
       {seriesLine && (
-        <p className={styles.series} data-testid="book-card-series">{seriesLine}</p>
+        <p className={styles.series} dir="auto" data-testid="book-card-series">{seriesLine}</p>
       )}
     </div>
   );
@@ -156,7 +174,7 @@ export function BookCard({
   // width, density or locale — the same "impossible by construction" move the
   // badge row above makes. `.removeBtn` stays absolute: it belongs to the cover,
   // not to this row.
-  const hasActionRow = Boolean(readTarget) || quickEdit;
+  const hasActionRow = !hideActions && (Boolean(readTarget) || quickEdit);
 
   return (
     <div className={styles.wrap} style={style}>
@@ -167,7 +185,7 @@ export function BookCard({
       {onRemove && (
         <button
           type="button"
-          className={styles.removeBtn}
+          className={book.reading_progress ? `${styles.removeBtn} ${styles.removeBtnWithProgress}` : styles.removeBtn}
           aria-label={t(removeLabel)}
           onClick={() => onRemove(book)}
         >
