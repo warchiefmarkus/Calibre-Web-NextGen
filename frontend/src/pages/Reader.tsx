@@ -679,11 +679,21 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       const renderer = viewRef.current?.renderer;
       const extraction = extractVisiblePage(renderer);
       if (!extraction) {
-        if (!translationTransitionRef.current) {
-          setTranslationBlocks([]);
-          setTranslationSegments([]);
-          setTranslationLayout(null);
-        }
+        // A translated-page boundary can land on an image/blank page. That
+        // still completes the page turn: never leave the translation transition
+        // armed, otherwise stale translated blocks make navigateTranslation()
+        // consume every later page-turn without moving Foliate.
+        cancelTranslationPreload();
+        translationAbortRef.current?.abort();
+        translationAbortRef.current = null;
+        translationInFlightKeyRef.current = null;
+        translationCurrentKeyRef.current = null;
+        translationTransitionRef.current = false;
+        translationLandingRef.current = null;
+        setTranslationBlocks([]);
+        setTranslationSegments([]);
+        setTranslationLayout(null);
+        showTranslationPage(0);
         setTranslationLoading(false);
         setTranslationSkipped(false);
         setTranslationError(t('No visible text was found on this page.'));

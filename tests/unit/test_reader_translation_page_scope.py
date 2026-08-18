@@ -79,6 +79,16 @@ def test_translation_boundary_turns_the_original_page_and_lands_on_cached_edge()
     assert "landing === 'last'" in READER
 
 
+def test_no_visible_text_finishes_translation_transition_so_reader_can_keep_paging():
+    branch = READER.split("if (!extraction) {", 1)[1].split("const { styles: sourceStyles", 1)[0]
+    assert "translationTransitionRef.current = false" in branch
+    assert "translationLandingRef.current = null" in branch
+    assert "setTranslationBlocks([])" in branch
+    assert "setTranslationSegments([])" in branch
+    assert "setTranslationLayout(null)" in branch
+    assert "No visible text was found on this page." in branch
+
+
 def test_translation_activity_uses_the_toolbar_icon_ring():
     assert "translationOverlayBadge" not in READER
     assert ".translationOverlayBadge" not in CSS
