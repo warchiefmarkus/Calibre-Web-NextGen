@@ -96,3 +96,31 @@ def test_global_managed_guard_does_not_blanket_block_cover_picker():
     source = Path("cps/__init__.py").read_text(encoding="utf-8")
     blocked = source.split("blocked_blueprints =", 1)[1].split("if request.blueprint", 1)[0]
     assert '"cover_picker"' not in blocked
+
+@pytest.mark.unit
+def test_managed_picker_reuses_cached_candidate_bytes(tmp_path):
+    from cps import cover_picker
+
+    staged = tmp_path / "cached-cover.jpg"
+    staged.write_bytes(b"jpeg")
+    book = SimpleNamespace(id=527)
+    url = "https://cdn.example.test/cover.jpg"
+    app = flask.Flask(__name__)
+    with app.test_request_context(
+        "/book/527/cover/apply", method="POST", json={"kind": "url", "url": url}
+    ):
+        with patch.object(cover_picker, "current_user", SimpleNamespace(name="Lion")), \
+             patch.object(cover_picker, "_fetch_cache_get", return_value=b"cached-image") as cache_get, \
+             patch.object(cover_picker, "stage_cover_bytes", return_value=staged) as stage_bytes, \
+             patch.object(cover_picker, "stage_cover") as stage_remote, \
+             patch.object(cover_picker, "mcp_update_book_cover"), \
+             patch.object(cover_picker.calibre_db, "session", MagicMock()), \
+             patch.object(cover_picker.kobo_sync_status, "remove_synced_book"), \
+             patch.object(cover_picker.helper, "replace_cover_thumbnail_cache"), \
+             patch.object(cover_picker, "url_for", return_value="/cover/527/og"):
+            response = cover_picker._apply_managed_cover(book)
+
+    assert json.loads(response.get_data(as_text=True))["ok"] is True
+    cache_get.assert_called_once_with(url)
+    stage_bytes.assert_called_once_with(b"cached-image")
+    stage_remote.assert_not_called()

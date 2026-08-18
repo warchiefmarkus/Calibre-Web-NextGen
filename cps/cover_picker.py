@@ -562,7 +562,11 @@ def _apply_managed_cover(book):
                 url = (body.get("url") or "").strip()
                 if not url:
                     return _json_error("empty_url", _(u"Provide a cover URL."), 400)
-                staged = stage_cover(url=url)
+                # E-reader preview may already have fetched this exact candidate.
+                # Reuse those validated bytes instead of making a second CDN
+                # request that can land on a different/failed edge.
+                cached = _fetch_cache_get(url)
+                staged = stage_cover_bytes(cached) if cached is not None else stage_cover(url=url)
             elif kind == "embedded":
                 extracted = cover_extract.extract_embedded_cover(book)
                 if extracted is None:

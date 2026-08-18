@@ -149,6 +149,13 @@ def stage_remote_cover(url: str) -> Path:
             raise
         except requests.RequestException as exc:
             last_transport_error = exc
+            # Keep enough detail server-side to diagnose provider/CDN failures;
+            # the UI still receives a short safe error string.
+            import logging
+            logging.getLogger(__name__).warning(
+                "managed cover download attempt %d/3 failed for %s: %r",
+                attempt + 1, url, exc,
+            )
             if attempt == 2:
                 break
             time.sleep(0.25 * (attempt + 1))
