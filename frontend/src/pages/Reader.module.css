@@ -246,8 +246,8 @@
 .translationToggleIconBusy::after {
   content: '';
   position: absolute;
-  inset: -3px;
-  border: 2px solid currentColor;
+  inset: -4px;
+  border: 3px solid currentColor;
   border-inline-end-color: transparent;
   border-radius: 999px;
   pointer-events: none;
@@ -256,14 +256,16 @@
 
 .translationToggle button[data-translation-activity='translation']
 .translationToggleIconBusy::after {
-  border-color: #22c55e;
+  border-color: #fff;
   border-inline-end-color: transparent;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 24%), 0 0 5px rgb(255 255 255 / 62%);
 }
 
 .translationToggle button[data-translation-activity='preload']
 .translationToggleIconBusy::after {
-  border-color: #f59e0b;
+  border-color: #ffd166;
   border-inline-end-color: transparent;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 22%), 0 0 4px rgb(255 209 102 / 50%);
 }
 
 @keyframes translation-ring-spin {
