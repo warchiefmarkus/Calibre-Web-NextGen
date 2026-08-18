@@ -240,6 +240,81 @@ def _reader_bookmark_dict(row):
     }
 
 
+def _reader_book_state_format(value):
+    return str(value or "epub").strip().lower()[:16] or "epub"
+
+
+def _reader_book_state_query(book_id, fmt):
+    return ub.session.query(ub.ReaderBookState).filter(
+        ub.ReaderBookState.user_id == int(current_user.id),
+        ub.ReaderBookState.book_id == book_id,
+        ub.ReaderBookState.format == fmt,
+    )
+
+
+def _reader_book_state_dict(row, book_id, fmt):
+    return {
+        "book_id": book_id,
+        "format": fmt,
+        "translationEnabled": bool(row.translation_enabled) if row else False,
+        "translationView": str(row.translation_view or "original") if row else "original",
+    }
+
+
+@api_v1.route("/books/<int:book_id>/reader-state")
+@login_required_if_no_ano
+def get_reader_book_state(book_id):
+    guard = _require_real_user()
+    if guard:
+        return guard
+    visible = _require_visible_book(book_id)
+    if visible:
+        return visible
+    fmt = _reader_book_state_format(request.args.get("format"))
+    row = _reader_book_state_query(book_id, fmt).first()
+    return jsonify(_reader_book_state_dict(row, book_id, fmt))
+
+
+@api_v1.route("/books/<int:book_id>/reader-state", methods=["POST"])
+@login_required_if_no_ano
+def save_reader_book_state(book_id):
+    guard = _require_real_user()
+    if guard:
+        return guard
+    visible = _require_visible_book(book_id)
+    if visible:
+        return visible
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _err("invalid_reader_state", "Reader book state must be an object", 400)
+    if "translationEnabled" in data and not isinstance(data["translationEnabled"], bool):
+        return _err("invalid_reader_state", "translationEnabled must be a boolean", 400)
+    if "translationView" in data and data["translationView"] not in {"original", "translated"}:
+        return _err("invalid_reader_state", "Invalid translationView", 400)
+    fmt = _reader_book_state_format(data.get("format"))
+    row = _reader_book_state_query(book_id, fmt).first()
+    if row is None:
+        row = ub.ReaderBookState(
+            user_id=int(current_user.id), book_id=book_id, format=fmt,
+            translation_enabled=False, translation_view="original",
+        )
+        ub.session.add(row)
+
+    if "translationEnabled" in data:
+        row.translation_enabled = data["translationEnabled"]
+        if not row.translation_enabled and "translationView" not in data:
+            row.translation_view = "original"
+    if "translationView" in data:
+        row.translation_view = data["translationView"]
+
+    try:
+        ub.session.commit()
+    except Exception:
+        ub.session.rollback()
+        return _err("save_failed", "Could not save reader book state", 500)
+    return jsonify(_reader_book_state_dict(row, book_id, fmt))
+
+
 def _reader_bookmark_query(book_id):
     return ub.session.query(ub.ReaderBookmark).filter(
         ub.ReaderBookmark.user_id == int(current_user.id),
@@ -337,7 +412,12 @@ def get_reader_settings():
     if guard:
         return guard
     current = (getattr(current_user, "view_settings", None) or {}).get("reader", {})
-    return jsonify({"reader": resolved_reader_settings(current)})
+    resolved = resolved_reader_settings(current)
+    # These two values are per-book. Force safe legacy defaults here so even a
+    # stale cached frontend cannot inherit auto-translation from another book.
+    resolved["translationEnabled"] = False
+    resolved["translationView"] = "original"
+    return jsonify({"reader": resolved})
 
 
 @api_v1.route("/reader/settings", methods=["POST"])
@@ -350,8 +430,17 @@ def save_reader_settings():
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return _err("invalid_settings", "Reader settings must be an object", 400)
+    # Auto-translation is book-scoped. Ignore these legacy global fields so an
+    # old cached frontend cannot make a choice in one book leak into another.
+    payload = {
+        key: value for key, value in payload.items()
+        if key not in {"translationEnabled", "translationView"}
+    }
     view_settings = dict(getattr(current_user, "view_settings", None) or {})
-    merged = merged_reader_settings(view_settings.get("reader", {}), payload)
+    current_reader = dict(view_settings.get("reader", {}) or {})
+    current_reader.pop("translationEnabled", None)
+    current_reader.pop("translationView", None)
+    merged = merged_reader_settings(current_reader, payload)
     view_settings["reader"] = merged
     current_user.view_settings = view_settings
     flag_modified(current_user, "view_settings")

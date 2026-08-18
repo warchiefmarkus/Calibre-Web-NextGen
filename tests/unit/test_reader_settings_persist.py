@@ -175,9 +175,9 @@ def test_translation_activity_spinner_colors_are_distinct():
     root = Path(__file__).resolve().parents[2]
     css = (root / "frontend/src/pages/Reader.module.css").read_text()
     assert "button[data-translation-activity='translation']" in css
-    assert "border-color: #22c55e;" in css
+    assert "border-color: #fff;" in css
     assert "button[data-translation-activity='preload']" in css
-    assert "border-color: #f59e0b;" in css
+    assert "border-color: #ffd166;" in css
 
 
 def test_translation_settings_reject_invalid_values_and_bound_prompt_length():

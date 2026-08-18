@@ -163,7 +163,10 @@ def test_save_empty_bookmark_clears_without_merge():
 def test_get_reader_settings_returns_complete_defaults_plus_saved_values():
     from cps.api import reader as mod
     user = _auth_user()
-    user.view_settings = {"reader": {"font": "Arial", "margin": 32}}
+    user.view_settings = {"reader": {
+        "font": "Arial", "margin": 32,
+        "translationEnabled": True, "translationView": "translated",
+    }}
     with _ctx("/api/v1/reader/settings"):
         with patch.object(mod, "current_user", user):
             resp = inspect.unwrap(mod.get_reader_settings)()
@@ -172,6 +175,8 @@ def test_get_reader_settings_returns_complete_defaults_plus_saved_values():
     assert body["margin"] == 32
     assert body["lineHeight"] == 150
     assert body["theme"] == "lightTheme"
+    assert body["translationEnabled"] is False
+    assert body["translationView"] == "original"
 
 
 @pytest.mark.unit
@@ -202,6 +207,85 @@ def test_save_reader_settings_rejects_non_object_payload():
         with patch.object(mod, "current_user", user):
             resp = inspect.unwrap(mod.save_reader_settings)()
     assert resp[1] == 400
+
+@pytest.mark.unit
+def test_get_reader_book_state_defaults_translation_off_for_unseen_book():
+    from cps.api import reader as mod
+    mock_ub = MagicMock()
+    mock_ub.session.query.return_value.filter.return_value.first.return_value = None
+    with _ctx('/api/v1/books/5/reader-state?format=EPUB'):
+        with patch.object(mod, 'current_user', _auth_user()), patch.object(mod, 'ub', mock_ub), _visible_book(mod):
+            resp = inspect.unwrap(mod.get_reader_book_state)(5)
+    assert json.loads(resp.get_data()) == {
+        'book_id': 5, 'format': 'epub',
+        'translationEnabled': False, 'translationView': 'original',
+    }
+
+
+@pytest.mark.unit
+def test_save_reader_book_state_persists_translation_only_for_book_format():
+    from cps.api import reader as mod
+    row = SimpleNamespace(translation_enabled=False, translation_view='original')
+    mock_ub = MagicMock()
+    mock_ub.ReaderBookState.return_value = row
+    mock_ub.session.query.return_value.filter.return_value.first.return_value = None
+    with _ctx('/api/v1/books/5/reader-state', method='POST', body={
+        'format': 'EPUB', 'translationEnabled': True, 'translationView': 'translated',
+    }):
+        with patch.object(mod, 'current_user', _auth_user()), patch.object(mod, 'ub', mock_ub), _visible_book(mod):
+            resp = inspect.unwrap(mod.save_reader_book_state)(5)
+    assert json.loads(resp.get_data())['translationEnabled'] is True
+    assert json.loads(resp.get_data())['translationView'] == 'translated'
+    kwargs = mock_ub.ReaderBookState.call_args.kwargs
+    assert kwargs['user_id'] == 1 and kwargs['book_id'] == 5 and kwargs['format'] == 'epub'
+    mock_ub.session.add.assert_called_once_with(row)
+    mock_ub.session.commit.assert_called_once()
+
+
+@pytest.mark.unit
+def test_save_reader_book_state_rejects_invalid_state_before_creating_row():
+    from cps.api import reader as mod
+    mock_ub = MagicMock()
+    with _ctx('/api/v1/books/5/reader-state', method='POST', body={
+        'format': 'epub', 'translationView': 'everywhere',
+    }):
+        with patch.object(mod, 'current_user', _auth_user()), patch.object(mod, 'ub', mock_ub), _visible_book(mod):
+            resp = inspect.unwrap(mod.save_reader_book_state)(5)
+    assert resp[1] == 400
+    assert not mock_ub.session.query.called
+    assert not mock_ub.session.add.called
+
+
+@pytest.mark.unit
+def test_global_reader_settings_ignore_book_scoped_translation_fields():
+    from cps.api import reader as mod
+    user = _auth_user()
+    user.view_settings = {'reader': {'font': 'Arial'}}
+    mock_ub = MagicMock()
+    with _ctx('/api/v1/reader/settings', method='POST', body={
+        'lineHeight': 180, 'translationEnabled': True, 'translationView': 'translated',
+    }):
+        with patch.object(mod, 'current_user', user), patch.object(mod, 'ub', mock_ub), patch.object(mod, 'flag_modified'):
+            resp = inspect.unwrap(mod.save_reader_settings)()
+    assert resp.status_code == 200
+    assert user.view_settings['reader']['lineHeight'] == 180
+    assert 'translationEnabled' not in user.view_settings['reader']
+    assert 'translationView' not in user.view_settings['reader']
+
+
+@pytest.mark.unit
+def test_reader_book_state_schema_is_scoped_by_user_book_and_format():
+    from cps import ub
+    table = ub.ReaderBookState.__table__
+    unique_columns = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in table.constraints
+        if constraint.__class__.__name__ == 'UniqueConstraint'
+    }
+    assert ('user_id', 'book_id', 'format') in unique_columns
+    assert table.c.translation_enabled.default.arg is False
+    assert table.c.translation_view.default.arg == 'original'
+
 
 @pytest.mark.unit
 def test_reader_bookmarks_require_visible_book():

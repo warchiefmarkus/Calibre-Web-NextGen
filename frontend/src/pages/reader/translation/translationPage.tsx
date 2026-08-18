@@ -82,6 +82,7 @@ export type TranslationSentenceCarry = {
 
 export type TranslationPreloadTask = {
   key: string;
+  exactKey: string;
   controller: AbortController;
   promise: Promise<ReaderTranslationResponse>;
 };

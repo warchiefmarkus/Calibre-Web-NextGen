@@ -702,6 +702,32 @@ class ReaderBookmark(Base):
     )
 
 
+class ReaderBookState(Base):
+    """Per-book reader UI state that must not leak between books.
+
+    This is CWNG user state in app.db, deliberately separate from Calibre's
+    canonical reading position and from global ReaderSettings.
+    """
+    __tablename__ = "reader_book_state"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    book_id = Column(Integer, nullable=False)
+    format = Column(String(collation="NOCASE"), nullable=False)
+    translation_enabled = Column(Boolean, nullable=False, default=False)
+    translation_view = Column(String(16), nullable=False, default="original")
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "book_id", "format",
+                         name="uq_reader_book_state_user_book_format"),
+        CheckConstraint("translation_view IN ('original', 'translated')",
+                        name="ck_reader_book_state_translation_view"),
+        Index("ix_reader_book_state_user_book", "user_id", "book_id"),
+    )
+
+
 class ReaderTranslationProfile(Base):
     """Per-user OpenAI-compatible LLM profile for reader page translation.
 

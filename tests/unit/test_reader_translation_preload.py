@@ -41,7 +41,9 @@ def test_preload_is_background_cached_deduplicated_and_silent():
         "useEffect(() => {", 1
     )[0]
     assert "cache_enabled: true" in runner
-    assert "cacheTranslatedPage(job.key, response.blocks)" in runner
+    assert "cacheTranslatedPage(job.key, alignedBlocks)" in runner
+    assert "cacheTranslatedPage(exactKey, alignedBlocks)" in runner
+    assert "translationPageKey(job.settings, job.blocks, job.profileRevision)" in runner
     assert "translationPreloadInFlightKeyRef" in runner
     assert "translationPreloadQueuedRef.current = job" in runner
     assert "setTranslationLoading" not in runner
@@ -62,14 +64,23 @@ def test_preload_runs_after_current_page_cache_hit_or_translation_success():
 
 def test_foreground_joins_the_matching_preload_promise_without_a_second_request():
     assert "type TranslationPreloadTask" in TRANSLATION
-    assert "translationPreloadTaskRef.current = { key: job.key, controller, promise }" in READER
+    assert "translationPreloadTaskRef.current = { key: job.key, exactKey, controller, promise }" in READER
     foreground = READER.split("const preloadTask = translationPreloadTaskRef.current", 1)[1].split(
         "translationAbortRef.current?.abort();", 1
     )[0]
-    assert "preloadTask?.key === pageCacheKey" in foreground
+    assert "preloadTask.key === pageCacheKey || preloadTask.exactKey === key" in foreground
     assert "await preloadTask.promise" in foreground
     assert "translateReaderPage(" not in foreground
     assert "applyTranslationResponse(response)" in foreground
+
+
+def test_ready_preloaded_next_page_does_not_start_foreground_spinner_before_navigation():
+    navigation = READER.split("const navigateTranslation", 1)[1].split(
+        "const navigateReader", 1
+    )[0]
+    assert "nextPageReady" in navigation
+    assert "translationCacheRef.current.has(nextPageCacheKey)" in navigation
+    assert "setTranslationLoading(!nextPageReady)" in navigation
 
 
 def test_toolbar_ring_reports_both_foreground_translation_and_preload_activity():
@@ -117,7 +128,9 @@ def test_failed_page_waits_for_explicit_retry_instead_of_looping():
 
 def test_different_foreground_page_cancels_stale_preload_before_request():
     section = READER.split("const preloadTask = translationPreloadTaskRef.current", 1)[1].split(
-        "if (pageCacheKey && preloadTask?.key === pageCacheKey)", 1
+        "if (preloadMatchesCurrent && preloadTask)", 1
     )[0]
-    assert "preloadTask.key !== pageCacheKey" in section
+    assert "preloadMatchesCurrent" in section
+    assert "preloadTask.exactKey === key" in section
+    assert "if (preloadTask && !preloadMatchesCurrent)" in section
     assert "cancelTranslationPreload();" in section

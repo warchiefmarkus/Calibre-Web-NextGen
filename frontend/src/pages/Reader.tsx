@@ -5,8 +5,8 @@ import { SpinnerCentered } from '../components/Spinner';
 import { apiDelete, apiGet, apiPatch, apiPost, resourceUrl } from '../lib/api';
 import {
   useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
-  useReaderBookmarks, useReaderSettings, useReaderTranslationProfiles,
-  useSaveReaderSettings, translateReaderPage, type ReaderBookmark, type ReaderSettings,
+  useReaderBookmarks, useReaderBookState, useReaderSettings, useReaderTranslationProfiles,
+  useSaveReaderBookState, useSaveReaderSettings, translateReaderPage, type ReaderBookmark, type ReaderSettings,
   type ReaderTranslationBlock, type ReaderTranslationResponse,
 } from '../lib/queries';
 import { useT } from '../lib/i18n';
@@ -76,10 +76,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
   const fmt = selectedFormat?.format.toLowerCase() ?? requested?.toLowerCase() ?? 'epub';
   const settingsQuery = useReaderSettings();
+  const bookStateQuery = useReaderBookState(id, fmt);
   const translationProfilesQuery = useReaderTranslationProfiles();
   const positionQuery = useBookmark(id, fmt);
   const bookmarksQuery = useReaderBookmarks(id, fmt);
   const saveSettings = useSaveReaderSettings();
+  const saveBookState = useSaveReaderBookState(id, fmt);
   const createBookmark = useCreateReaderBookmark(id, fmt);
   const deleteBookmark = useDeleteReaderBookmark(id, fmt);
 
@@ -244,12 +246,25 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setSettings((current) => {
       if (!current) return current;
       const next = { ...current, ...patch };
+      if (patch.translationEnabled === false && patch.translationView === undefined) {
+        next.translationView = 'original';
+      }
       settingsRef.current = next;
       applySettings(next);
-      saveSettings.mutate(patch);
+
+      const { translationEnabled, translationView, ...globalPatch } = patch;
+      if (Object.keys(globalPatch).length) saveSettings.mutate(globalPatch);
+      const bookPatch: {
+        translationEnabled?: boolean;
+        translationView?: 'original' | 'translated';
+      } = {};
+      if (translationEnabled !== undefined) bookPatch.translationEnabled = translationEnabled;
+      if (translationView !== undefined) bookPatch.translationView = translationView;
+      else if (translationEnabled === false) bookPatch.translationView = 'original';
+      if (Object.keys(bookPatch).length) saveBookState.mutate(bookPatch);
       return next;
     });
-  }, [applySettings, saveSettings]);
+  }, [applySettings, saveBookState, saveSettings]);
 
   const cacheTranslatedPage = useCallback((key: string, blocks: ReaderTranslationBlock[]) => {
     translationCacheRef.current.set(key, blocks);
@@ -299,6 +314,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       return;
     }
 
+    const exactKey = translationPageKey(job.settings, job.blocks, job.profileRevision);
+    if (translationCacheRef.current.has(exactKey)) return;
+
     const controller = new AbortController();
     translationPreloadAbortRef.current = controller;
     translationPreloadInFlightKeyRef.current = job.key;
@@ -319,10 +337,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     }, controller.signal).then((response) => (
       translationResponseForMode(job.settings.translationMode, job.blocks, response)
     ));
-    translationPreloadTaskRef.current = { key: job.key, controller, promise };
+    translationPreloadTaskRef.current = { key: job.key, exactKey, controller, promise };
     void promise.then((response) => {
       if (!controller.signal.aborted && !response.skipped) {
-        cacheTranslatedPage(job.key, response.blocks);
+        const alignedBlocks = alignTranslatedBlocks(job.blocks, response.blocks);
+        cacheTranslatedPage(job.key, alignedBlocks);
+        cacheTranslatedPage(exactKey, alignedBlocks);
       }
     }).catch(() => {
       // Preloading is opportunistic. If the user opens this page while the
@@ -544,9 +564,19 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       }
     }
 
+    let nextPageReady = false;
+    if (direction === 'next' && currentSettings.translationCacheEnabled) {
+      const renderer = viewRef.current?.renderer;
+      const nextPageId = translationSourcePageId(renderer, 1);
+      const nextPageCacheKey = translationPageCacheKey(
+        currentSettings, activeTranslationProfileRevision, nextPageId,
+      );
+      nextPageReady = !!nextPageCacheKey && translationCacheRef.current.has(nextPageCacheKey);
+    }
+
     translationLandingRef.current = direction === 'next' ? 'first' : 'last';
     translationTransitionRef.current = true;
-    setTranslationLoading(true);
+    setTranslationLoading(!nextPageReady);
     void navigate(direction).catch((cause) => {
       translationTransitionRef.current = false;
       translationLandingRef.current = null;
@@ -554,7 +584,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       setTranslationError(cause instanceof Error ? cause.message : t('Page translation failed.'));
     });
     return true;
-  }, [navigate, showTranslationPage, t]);
+  }, [activeTranslationProfileRevision, navigate, showTranslationPage, t]);
 
   const navigateReader = useCallback((action: 'prev' | 'next' | 'left' | 'right') => {
     markReadingMovement();
@@ -811,10 +841,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (translationInFlightKeyRef.current === key) return;
 
       const preloadTask = translationPreloadTaskRef.current;
-      if (preloadTask && preloadTask.key !== pageCacheKey) {
+      const preloadMatchesCurrent = !!preloadTask
+        && (preloadTask.key === pageCacheKey || preloadTask.exactKey === key);
+      if (preloadTask && !preloadMatchesCurrent) {
         cancelTranslationPreload();
       }
-      if (pageCacheKey && preloadTask?.key === pageCacheKey) {
+      if (preloadMatchesCurrent && preloadTask) {
         translationInFlightKeyRef.current = key;
         translationStartedAtRef.current = translationPreloadStartedAtRef.current ?? Date.now();
         if (!translationTransitionRef.current) {
@@ -957,7 +989,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, [settings?.flow, showTranslationPage, translationBlocks, translationLayout, translationSegments]);
 
   useEffect(() => {
-    if (!selectedFormat || !settingsQuery.data || !positionQuery.isFetched || !hostRef.current) return;
+    if (!selectedFormat || !settingsQuery.data || !bookStateQuery.data
+        || bookStateQuery.isFetching || !positionQuery.isFetched || !hostRef.current) return;
     let cancelled = false;
     let restoringInitialPosition = true;
     resetReadingMovement();
@@ -972,7 +1005,11 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setError(null);
     setBookLanguage('');
     setBookRtl(false);
-    const initialSettings = settingsQuery.data.reader;
+    const initialSettings: ReaderSettings = {
+      ...settingsQuery.data.reader,
+      translationEnabled: bookStateQuery.data.translationEnabled,
+      translationView: bookStateQuery.data.translationView,
+    };
     settingsRef.current = initialSettings;
     setSettings(initialSettings);
 
@@ -1176,7 +1213,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     positionQuery.data?.position_anchor, positionQuery.data?.position_chapter,
     positionQuery.data?.position_section,
     positionQuery.isFetched, selectedFormat,
-    settingsQuery.data, schedulePosition, dismissSelection, handleReaderWheel,
+    settingsQuery.data, bookStateQuery.data, bookStateQuery.isFetching,
+    schedulePosition, dismissSelection, handleReaderWheel,
     markReadingMovement, openEditAnnotation, resetReadingMovement, restoreInlineTranslations, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -1461,7 +1499,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const translationActivity = translationRequested && !translationError
     && (translationLoading || translationPreloading);
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
-  const loading = bookQuery.isLoading || settingsQuery.isLoading || positionQuery.isLoading;
+  const loading = bookQuery.isLoading || settingsQuery.isLoading
+    || bookStateQuery.isLoading || bookStateQuery.isFetching || positionQuery.isLoading;
 
   if (loading) return <SpinnerCentered size={44} />;
   if (bookQuery.error) return <EmptyState message={t('Could not load the book.')} />;

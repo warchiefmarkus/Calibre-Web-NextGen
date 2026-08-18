@@ -996,6 +996,13 @@ export function useSetCover(id: string | number) {
 
 export type ReaderTranslationMode = 'structured' | 'simple';
 
+export interface ReaderBookState {
+  book_id: number;
+  format: string;
+  translationEnabled: boolean;
+  translationView: 'original' | 'translated';
+}
+
 export interface ReaderSettings {
   theme: 'lightTheme' | 'sepiaTheme' | 'darkTheme' | 'blackTheme';
   font: 'default' | 'Yahei' | 'SimSun' | 'KaiTi' | 'Arial';
@@ -1132,6 +1139,26 @@ export function useSaveReaderSettings() {
   return useMutation({
     mutationFn: (patch: Partial<ReaderSettings>) =>
       apiPost<{ reader: ReaderSettings }>('/api/v1/reader/settings', patch),
+  });
+}
+
+export function useReaderBookState(bookId: string | number, format: string) {
+  return useQuery<ReaderBookState>({
+    queryKey: ['reader-book-state', String(bookId), format],
+    queryFn: () => apiGet<ReaderBookState>(
+      `/api/v1/books/${bookId}/reader-state?format=${encodeURIComponent(format)}`),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: retryUnlessUnauthorized,
+  });
+}
+
+export function useSaveReaderBookState(bookId: string | number, format: string) {
+  return useMutation({
+    mutationFn: (patch: Partial<Pick<ReaderBookState, 'translationEnabled' | 'translationView'>>) =>
+      apiPost<ReaderBookState>(`/api/v1/books/${bookId}/reader-state`, { format, ...patch }),
   });
 }
 
