@@ -84,6 +84,11 @@ def _normalize_to_jpeg(content: bytes) -> Path:
         raise
 
 
+def stage_cover_bytes(content: bytes) -> Path:
+    """Normalize in-memory cover bytes into the private MCP staging area."""
+    return _normalize_to_jpeg(_read_limited(io.BytesIO(content)))
+
+
 def stage_uploaded_cover(file_storage) -> Path:
     if file_storage is None:
         raise ManagedCoverError("No cover file was provided.")

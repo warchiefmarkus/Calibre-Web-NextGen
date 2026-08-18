@@ -38,10 +38,19 @@ from flask import Blueprint, abort, flash, jsonify, make_response, redirect, req
 from flask_babel import gettext as _
 from flask_babel import get_locale
 
-from . import calibre_db, config, helper, kobo_sync_status, logger, ub
+from . import calibre_db, config, deployment_profile, helper, kobo_sync_status, logger, ub
 from .cw_login import current_user
 from .render_template import render_title_template
 from .services import cover_extract, cover_preview, cover_picker as cover_picker_svc, cover_url_validator
+from .services.calibremcp_client import (
+    CalibreMCPClientError,
+    update_book_cover as mcp_update_book_cover,
+)
+from .services.managed_cover import (
+    ManagedCoverError,
+    stage_cover,
+    stage_cover_bytes,
+)
 from .usermanagement import user_login_required
 
 
@@ -256,6 +265,9 @@ def cover_picker_apply(book_id):
     book = _load_book(book_id)
     if _get_lock_state(book_id):
         return _json_error("locked", _(u"This book's cover is locked. Unlock it first."), 409)
+
+    if deployment_profile.is_mcp_managed_library():
+        return _apply_managed_cover(book)
 
     # Multipart upload from the picker's file panel.
     if request.files.get("file"):
@@ -528,6 +540,65 @@ def _read_current_cover_bytes(book) -> Optional[bytes]:
 
 
 # ---- helpers --------------------------------------------------------------
+
+
+def _apply_managed_cover(book):
+    """Apply a picker selection through CalibreMCP in managed deployments.
+
+    The picker historically wrote ``cover.jpg`` and Calibre metadata directly.
+    That violates the single-writer contract of ``mcp-managed-library``. Stage
+    the selected image in CWNG's confined cover directory, then let CalibreMCP
+    perform the actual library mutation.
+    """
+    staged = None
+    try:
+        upload = request.files.get("file")
+        if upload is not None:
+            staged = stage_cover(upload=upload)
+        else:
+            body = request.get_json(silent=True) or {}
+            kind = body.get("kind") or "url"
+            if kind == "url":
+                url = (body.get("url") or "").strip()
+                if not url:
+                    return _json_error("empty_url", _(u"Provide a cover URL."), 400)
+                staged = stage_cover(url=url)
+            elif kind == "embedded":
+                extracted = cover_extract.extract_embedded_cover(book)
+                if extracted is None:
+                    return _json_error(
+                        "no_embedded",
+                        _(u"This book doesn't have an embedded cover we can extract."),
+                        400,
+                    )
+                staged = stage_cover_bytes(extracted.data)
+            else:
+                return _json_error("bad_kind", _(u"Unknown cover source."), 400)
+
+        mcp_update_book_cover(current_user.name, book.id, str(staged))
+    except ManagedCoverError as exc:
+        return _json_error("invalid_cover", str(exc), 400)
+    except CalibreMCPClientError as exc:
+        return _json_error("cover_update_failed", str(exc), exc.status_code)
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
+
+    # CalibreMCP committed the authoritative DB/file mutation. Discard any
+    # SQLAlchemy identity-map state CWNG loaded before that external commit.
+    calibre_db.session.rollback()
+    calibre_db.session.expire_all()
+    try:
+        kobo_sync_status.remove_synced_book(book.id, all=True)
+        helper.replace_cover_thumbnail_cache(book.id)
+    except Exception as exc:
+        log.error("managed cover post-apply housekeeping failed for book %s: %s", book.id, exc)
+
+    return jsonify({
+        "ok": True,
+        "cover_url": url_for("web.get_cover", book_id=book.id, resolution="og")
+        + f"?ts={int(datetime.now(timezone.utc).timestamp())}",
+    })
 
 
 def _get_lock_state(book_id: int) -> bool:

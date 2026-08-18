@@ -59,3 +59,20 @@ def test_upload_limit_is_enforced_before_decode(tmp_path, monkeypatch):
     with pytest.raises(managed_cover.ManagedCoverError, match="exceeds"):
         managed_cover.stage_uploaded_cover(upload)
     assert not Path(tmp_path).joinpath("cover.jpg").exists()
+
+
+@pytest.mark.unit
+def test_in_memory_cover_is_normalized_to_private_jpeg(tmp_path, monkeypatch):
+    monkeypatch.setattr(managed_cover, "_STAGING_ROOT", tmp_path)
+    source = io.BytesIO()
+    Image.new("RGB", (24, 36), "navy").save(source, format="PNG")
+
+    staged = managed_cover.stage_cover_bytes(source.getvalue())
+    try:
+        assert staged.parent == tmp_path
+        assert staged.suffix == ".jpg"
+        with Image.open(staged) as image:
+            assert image.format == "JPEG"
+            assert image.size == (24, 36)
+    finally:
+        staged.unlink(missing_ok=True)

@@ -309,7 +309,10 @@ def create_app():
         # The SPA /api/v1 mutation surface now delegates to CalibreMCP. Keep
         # blocking only legacy/classic blueprints whose implementations still
         # write the library directly or start CWA background mutation jobs.
-        blocked_blueprints = {"editbook", "cover_picker", "library_refresh",
+        # cover_picker is intentionally not blocked: its apply route delegates
+        # managed-library cover writes to CalibreMCP; its other POST routes are
+        # read-only previews/searches or update CWNG-owned app state only.
+        blocked_blueprints = {"editbook", "library_refresh",
                               "convert_library", "epub_fixer", "cwa_internal", "duplicates"}
         if request.blueprint in blocked_blueprints:
             return jsonify({
