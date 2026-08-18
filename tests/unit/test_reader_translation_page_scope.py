@@ -24,6 +24,12 @@ def test_paginated_extractor_uses_iframe_outer_coordinates_not_full_section_widt
     assert "doc.defaultView?.innerWidth" not in TRANSLATION.split("function extractVisiblePage", 1)[1].split("function looksLikeUkrainian", 1)[0]
 
 
+def test_translation_extractor_supports_div_paragraph_epubs_without_selecting_all_divs():
+    selector = TRANSLATION.split("const TRANSLATABLE_SELECTOR = '", 1)[1].split("';", 1)[0]
+    assert "div.paragraph" in selector
+    assert ", div," not in f", {selector},"
+
+
 def test_auto_translation_skips_matching_language_and_dedupes_settling_relocates():
     assert "sourceAlreadyMatchesTarget(settings, bookLanguage" in READER
     assert "looksLikeUkrainian" in TRANSLATION

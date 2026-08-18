@@ -6,7 +6,7 @@ import type {
 import type { FoliateRenderer } from '../FoliateEngine';
 import styles from '../../Reader.module.css';
 
-const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, figcaption';
+const TRANSLATABLE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, figcaption, div.paragraph';
 const TRANSLATION_CONTENT_SELECTOR = `${TRANSLATABLE_SELECTOR}, img`;
 const MAX_VISIBLE_TRANSLATION_CHARS = 8_000;
 const MAX_VISIBLE_TRANSLATION_BLOCKS = 80;
