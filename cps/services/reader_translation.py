@@ -759,7 +759,8 @@ def _google_payload(profile: Any, *, source_language: str, target_language: str,
 
 _TRANSLATION_BATCH_MAX_BLOCKS = 8
 _TRANSLATION_BATCH_MAX_PAYLOAD_CHARS = 2400
-_TRANSLATION_FRAGMENT_MAX_CHARS = 2600
+_TRANSLATION_FRAGMENT_MAX_CHARS = 1200
+_TRANSLATION_RETRYABLE_SINGLE_BLOCK_CHARS = 1400
 _TRANSLATION_RETRY_MAX_DEPTH = 8
 _TRANSLATION_PARALLEL_BATCHES = 3
 _GPT_OSS_ATTEMPT_TIMEOUT_SECONDS = 30.0
@@ -841,10 +842,14 @@ def _request_translation_completion(
     profile: Any, *, headers: dict[str, str], payload: dict[str, Any],
     retry_timeout: bool = True,
 ) -> requests.Response:
-    del retry_timeout  # Each bounded provider batch gets one completion attempt.
     timeout = _remaining_translation_timeout(profile)
     if _is_gpt_oss_model(profile):
         timeout = min(timeout, _GPT_OSS_ATTEMPT_TIMEOUT_SECONDS)
+    elif retry_timeout:
+        # A large single block needs budget left for the resilient fallback
+        # (run-level or sentence fragments). Do not let the first socket wait
+        # consume the entire page deadline.
+        timeout = min(timeout, max(5.0, timeout * 0.5))
     return _request(
         "POST", _endpoint_url(profile), headers=headers, json=payload, timeout=timeout,
     )
@@ -877,8 +882,11 @@ def _translate_batch_once(profile: Any, *, source_language: str, target_language
             profile, source_language=source_language, target_language=target_language,
             prompt=prompt, blocks=blocks, json_mode=bool(profile.json_mode),
         )
+    retry_timeout = len(blocks) == 1 and (
+        _translation_block_payload_chars(blocks[0]) >= _TRANSLATION_RETRYABLE_SINGLE_BLOCK_CHARS
+    )
     response = _request_translation_completion(
-        profile, headers=headers, payload=payload, retry_timeout=len(blocks) == 1,
+        profile, headers=headers, payload=payload, retry_timeout=retry_timeout,
     )
     response_hint = (response.text or "").lower()[:2000] if response.status_code == 400 else ""
     if (not responses_mode and not messages_mode and not google_mode
@@ -886,7 +894,7 @@ def _translate_batch_once(profile: Any, *, source_language: str, target_language
             and any(token in response_hint for token in ("response_format", "json_object", "json mode"))):
         payload.pop("response_format", None)
         response = _request_translation_completion(
-            profile, headers=headers, payload=payload, retry_timeout=len(blocks) == 1,
+            profile, headers=headers, payload=payload, retry_timeout=retry_timeout,
         )
     if not responses_mode and not messages_mode and not google_mode and payload.get("stream"):
         content = _streaming_message_content(response)
@@ -908,6 +916,37 @@ def _translation_value_from_result(item: dict[str, Any]) -> Any:
     if isinstance(runs, list):
         return {"text": item.get("text", ""), "runs": runs}
     return item.get("text", "")
+
+
+def _translate_plain_block_fragments(profile: Any, *, source_language: str,
+                                     target_language: str, prompt: str,
+                                     block: dict[str, Any], depth: int) -> dict[str, Any] | None:
+    fragments = _split_translation_text(str(block.get("text") or ""))
+    if len(fragments) <= 1:
+        return None
+    fragment_blocks = [
+        {
+            "id": f"{block['id']}__cwpart{index + 1}",
+            "tag": block.get("tag", "p"),
+            "text": fragment,
+        }
+        for index, fragment in enumerate(fragments)
+    ]
+    translated_fragments: list[dict[str, Any]] = []
+    for fragment_batch in _partition_translation_blocks(fragment_blocks, profile=profile):
+        translated_fragments.extend(_translate_batch_resilient(
+            profile, source_language=source_language, target_language=target_language,
+            prompt=prompt, blocks=fragment_batch, depth=depth + 1,
+        ))
+    return {
+        "id": block["id"],
+        "tag": block.get("tag", "p"),
+        "text": " ".join(
+            str(item.get("text") or "").strip()
+            for item in translated_fragments
+            if str(item.get("text") or "").strip()
+        ),
+    }
 
 
 def _translate_formatted_block_runs(profile: Any, *, source_language: str,
@@ -956,6 +995,19 @@ def _translate_formatted_block_runs(profile: Any, *, source_language: str,
 def _translate_batch_resilient(profile: Any, *, source_language: str, target_language: str,
                                prompt: str, blocks: list[dict[str, Any]],
                                depth: int = 0) -> list[dict[str, Any]]:
+    if len(blocks) == 1 and depth < _TRANSLATION_RETRY_MAX_DEPTH:
+        block = blocks[0]
+        if (
+            not block.get("runs")
+            and len(str(block.get("text") or "")) > _TRANSLATION_FRAGMENT_MAX_CHARS
+        ):
+            fragmented = _translate_plain_block_fragments(
+                profile, source_language=source_language, target_language=target_language,
+                prompt=prompt, block=block, depth=depth,
+            )
+            if fragmented is not None:
+                return [fragmented]
+
     try:
         return _translate_batch_once(
             profile, source_language=source_language, target_language=target_language,
@@ -985,9 +1037,9 @@ def _translate_batch_resilient(profile: Any, *, source_language: str, target_lan
                 merged = dict(partial)
                 merged.update({item["id"]: _translation_value_from_result(item) for item in retried})
                 return [_translated_block_from_value(block, merged[block["id"]]) for block in blocks]
-        elif exc.code == "provider_timeout" and len(blocks) > 1:
-            # GPT-OSS already received this bounded page batch once. Do not
-            # start a second recursive chain after that socket timeout.
+        elif exc.code == "provider_timeout":
+            # GPT-OSS already receives a dedicated bounded attempt and should
+            # not start a second recursive chain after a socket timeout.
             if _is_gpt_oss_model(profile):
                 raise
             try:
@@ -997,7 +1049,7 @@ def _translate_batch_resilient(profile: Any, *, source_language: str, target_lan
             if remaining < 5:
                 raise
             log.warning(
-                "LLM model %s timed out translating %d blocks (%d chars); splitting the page fallback",
+                "LLM model %s timed out translating %d blocks (%d chars); using resilient fallback",
                 profile.model, len(blocks),
                 sum(len(block.get("text", "")) for block in blocks),
             )
@@ -1020,28 +1072,13 @@ def _translate_batch_resilient(profile: Any, *, source_language: str, target_lan
                 profile, source_language=source_language, target_language=target_language,
                 prompt=prompt, block=block, depth=depth,
             )]
-        fragments = _split_translation_text(block["text"])
-        if len(fragments) <= 1:
+        fragmented = _translate_plain_block_fragments(
+            profile, source_language=source_language, target_language=target_language,
+            prompt=prompt, block=block, depth=depth,
+        )
+        if fragmented is None:
             raise
-        fragment_blocks = [
-            {
-                "id": f"{block['id']}__cwpart{index + 1}",
-                "tag": block.get("tag", "p"),
-                "text": fragment,
-            }
-            for index, fragment in enumerate(fragments)
-        ]
-        translated_fragments: list[dict[str, str]] = []
-        for fragment_batch in _partition_translation_blocks(fragment_blocks):
-            translated_fragments.extend(_translate_batch_resilient(
-                profile, source_language=source_language, target_language=target_language,
-                prompt=prompt, blocks=fragment_batch, depth=depth + 1,
-            ))
-        return [{
-            "id": block["id"],
-            "tag": block.get("tag", "p"),
-            "text": " ".join(item["text"].strip() for item in translated_fragments if item["text"].strip()),
-        }]
+        return [fragmented]
 
 
 def translate_page(profile: Any, *, source_language: str, target_language: str,

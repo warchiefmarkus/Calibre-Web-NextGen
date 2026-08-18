@@ -797,6 +797,82 @@ def test_large_structured_page_is_batched_by_payload_and_reassembled(monkeypatch
     assert [item["id"] for item in result] == [f"b{index}" for index in range(34)]
 
 
+def test_large_plain_single_block_is_fragmented_before_provider_request(monkeypatch):
+    from cps.services import reader_translation as service
+
+    calls = []
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        calls.append([(block["id"], len(block["text"])) for block in blocks])
+        return [
+            {"id": block["id"], "tag": block["tag"], "text": f"T:{block['text']}"}
+            for block in blocks
+        ]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    text = ("A sentence with enough words to split cleanly. " * 70).strip()
+    result = service.translate_page(
+        _profile(model="other-model", timeout_seconds=60),
+        source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": text}],
+    )
+    assert calls
+    assert all(block_id != "a" for call in calls for block_id, _length in call)
+    assert all(length <= service._TRANSLATION_FRAGMENT_MAX_CHARS for call in calls for _block_id, length in call)
+    assert result[0]["id"] == "a"
+    assert result[0]["text"].startswith("T:")
+
+
+def test_large_single_block_attempt_leaves_deadline_budget_for_fallback(monkeypatch):
+    from cps.services import reader_translation as service
+
+    timeouts = []
+
+    class Response:
+        status_code = 200
+        text = "{}"
+
+    def fake_request(method, url, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        return Response()
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    profile = _profile(model="other-model", timeout_seconds=60)
+    service._request_translation_completion(profile, headers={}, payload={}, retry_timeout=True)
+    service._request_translation_completion(profile, headers={}, payload={}, retry_timeout=False)
+    assert timeouts == [pytest.approx(30.0), pytest.approx(60.0)]
+
+
+def test_provider_timeout_single_formatted_block_falls_back_to_runs(monkeypatch):
+    from cps.services import reader_translation as service
+
+    calls = []
+
+    def fake_once(profile, *, source_language, target_language, prompt, blocks):
+        ids = [block["id"] for block in blocks]
+        calls.append(ids)
+        if ids == ["a"]:
+            raise ReaderTranslationError("timeout", code="provider_timeout", status=504)
+        return [
+            {"id": block["id"], "tag": block["tag"], "text": f"T:{block['text']}"}
+            for block in blocks
+        ]
+
+    monkeypatch.setattr(service, "_translate_batch_once", fake_once)
+    result = service.translate_page(
+        _profile(model="other-model", timeout_seconds=60),
+        source_language="en", target_language="uk", prompt="",
+        blocks=[{
+            "id": "a", "tag": "p", "text": "Source text",
+            "runs": [{"id": "a-r1", "text": "Source text", "marks": ["em"]}],
+        }],
+    )
+    assert calls == [["a"], ["a__cwrun1"]]
+    assert result[0]["id"] == "a"
+    assert result[0]["runs"][0]["id"] == "a-r1"
+    assert result[0]["runs"][0]["text"] == "T:Source text"
+
+
 def test_provider_timeout_splits_the_page_only_as_fallback(monkeypatch):
     from cps.services import reader_translation as service
 
