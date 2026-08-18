@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import os
+import time
 from pathlib import Path
 import uuid
 
@@ -13,7 +14,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 import requests
 
 from .. import cw_advocate
-from . import cover_url_validator
+from ..cw_advocate.exceptions import UnacceptableAddressException
 
 
 class ManagedCoverError(ValueError):
@@ -97,41 +98,65 @@ def stage_uploaded_cover(file_storage) -> Path:
 
 
 def stage_remote_cover(url: str) -> Path:
-    validation = cover_url_validator.validate_cover_url(url)
-    if not validation.valid:
-        raise ManagedCoverError(
-            validation.error_message or "The cover URL is not valid."
-        )
-    response = None
-    try:
-        response = cw_advocate.get(
-            validation.url,
-            timeout=(10, 30),
-            allow_redirects=True,
-            stream=True,
-        )
-        response.raise_for_status()
-        if response.status_code != 200:
-            raise ManagedCoverError(
-                f"Cover server returned HTTP {response.status_code}."
+    """Download and stage a remote cover with a guarded GET.
+
+    Do not preflight with HEAD here. Several cover CDNs serve image GETs but
+    reject or stall HEAD requests, which made provider candidates visible in
+    the picker yet impossible to apply. ``cw_advocate`` validates every hop,
+    so the GET retains the same SSRF boundary while matching the real save.
+
+    CDN DNS answers can also rotate between edges. Retry transport failures
+    with a fresh request so one dead edge does not immediately fail the apply.
+    """
+    url = (url or "").strip()
+    if not url:
+        raise ManagedCoverError("Provide a cover URL.")
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise ManagedCoverError("Cover URL must start with http:// or https://.")
+
+    last_transport_error = None
+    for attempt in range(3):
+        response = None
+        try:
+            response = cw_advocate.get(
+                url, timeout=(5, 30), allow_redirects=True, stream=True
             )
-        content = bytearray()
-        for chunk in response.iter_content(chunk_size=8192):
-            if not chunk:
-                continue
-            content.extend(chunk)
-            if len(content) > _MAX_BYTES:
+            if response.status_code != 200:
+                raise ManagedCoverError(
+                    f"Cover server returned HTTP {response.status_code}."
+                )
+            size_hint = response.headers.get("Content-Length")
+            if size_hint and size_hint.isdigit() and int(size_hint) > _MAX_BYTES:
                 raise ManagedCoverError(
                     f"Cover image exceeds the {_MAX_BYTES // (1024 * 1024)} MB limit."
                 )
-        return _normalize_to_jpeg(bytes(content))
-    except ManagedCoverError:
-        raise
-    except requests.RequestException as exc:
-        raise ManagedCoverError("Could not download the cover image.") from exc
-    finally:
-        if response is not None:
-            response.close()
+
+            content = bytearray()
+            for chunk in response.iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                content.extend(chunk)
+                if len(content) > _MAX_BYTES:
+                    raise ManagedCoverError(
+                        f"Cover image exceeds the {_MAX_BYTES // (1024 * 1024)} MB limit."
+                    )
+            return _normalize_to_jpeg(bytes(content))
+        except UnacceptableAddressException as exc:
+            raise ManagedCoverError(
+                "That cover URL points to an internal or local address."
+            ) from exc
+        except ManagedCoverError:
+            raise
+        except requests.RequestException as exc:
+            last_transport_error = exc
+            if attempt == 2:
+                break
+            time.sleep(0.25 * (attempt + 1))
+        finally:
+            if response is not None:
+                response.close()
+
+    raise ManagedCoverError("Could not download the cover image.") from last_transport_error
 
 
 def stage_cover(*, upload=None, url: str | None = None) -> Path:
