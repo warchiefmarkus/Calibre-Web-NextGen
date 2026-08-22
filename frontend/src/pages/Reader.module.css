@@ -243,8 +243,7 @@
   border-radius: 999px;
 }
 
-.translationToggleIconBusy::after {
-  content: '';
+.translationActivityRing {
   position: absolute;
   inset: -4px;
   border: 3px solid currentColor;
@@ -254,15 +253,13 @@
   animation: translation-ring-spin 720ms linear infinite;
 }
 
-.translationToggle button[data-translation-activity='translation']
-.translationToggleIconBusy::after {
+.translationToggle button[data-translation-activity='translation'] .translationActivityRing {
   border-color: #fff;
   border-inline-end-color: transparent;
   box-shadow: 0 0 0 1px rgb(0 0 0 / 24%), 0 0 5px rgb(255 255 255 / 62%);
 }
 
-.translationToggle button[data-translation-activity='preload']
-.translationToggleIconBusy::after {
+.translationToggle button[data-translation-activity='preload'] .translationActivityRing {
   border-color: #ffd166;
   border-inline-end-color: transparent;
   box-shadow: 0 0 0 1px rgb(0 0 0 / 22%), 0 0 4px rgb(255 209 102 / 50%);
@@ -273,8 +270,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .translationToggleIconBusy::after {
-    animation-duration: 1.8s;
+  .translationActivityRing,
+  .translationModelHealthSpin {
+    animation: none;
   }
 }
 
@@ -1290,6 +1288,9 @@
 .annotationColorButton[data-color='green'], .annotationColorDot[data-color='green'] { --annotation-color: #5fbd78; }
 .annotationColorButton[data-color='blue'], .annotationColorDot[data-color='blue'] { --annotation-color: #5b9cf6; }
 .annotationColorButton[data-color='red'], .annotationColorDot[data-color='red'] { --annotation-color: #ef6a6a; }
+.annotationColorDot[data-color='pink'] { --annotation-color: #e8afcf; }
+.annotationColorDot[data-color='grey'] { --annotation-color: #a0a0a0; }
+.annotationColorDot[data-color='unknown'] { --annotation-color: #d0cbc2; }
 
 .annotationNoteField {
   display: grid;

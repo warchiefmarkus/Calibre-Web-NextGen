@@ -146,8 +146,6 @@ def _server_features():
 # the whole map via /profile_pictures/user_profiles.json and looks the name up
 # client-side; the SPA gets only the current user's picture on /me instead, so
 # it never downloads every user's avatar. Path is kept in sync with that writer.
-_USER_PROFILES_JSON = os.path.join(constants.CONFIG_DIR, "user_profiles.json")
-
 
 def _user_avatar(name):
     """Return the profile-picture data-URI set for ``name`` in the classic
@@ -156,7 +154,7 @@ def _user_avatar(name):
     back to a neutral glyph. The ``data:image/`` guard keeps a corrupted entry
     from becoming an arbitrary URL the frontend would render."""
     try:
-        with open(_USER_PROFILES_JSON, "r") as fh:
+        with open(constants.USER_PROFILES_JSON, "r") as fh:
             data = json.load(fh)
     except (OSError, ValueError):
         return None

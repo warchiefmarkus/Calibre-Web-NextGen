@@ -102,8 +102,8 @@ def test_translation_activity_uses_the_toolbar_icon_ring():
     assert "&& (translationLoading || translationPreloading)" in READER
     assert "aria-busy={props.translationActivity}" in TOOLBAR
     assert "data-translation-activity={props.translationLoading" in TOOLBAR
-    assert "styles.translationToggleIconBusy" in TOOLBAR
-    assert ".translationToggleIconBusy::after" in CSS
+    assert "styles.translationActivityRing" in TOOLBAR
+    assert ".translationActivityRing" in CSS
     assert "animation: translation-ring-spin" in CSS
     assert "translationSpinner" not in READER
     assert ".translationSpinner" not in CSS

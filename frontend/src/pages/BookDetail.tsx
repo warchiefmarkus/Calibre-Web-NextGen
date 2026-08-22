@@ -19,7 +19,7 @@ import { AUTHOR_SEPARATOR, formatAuthors } from '../lib/authors';
 import { SpinnerCentered, Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef } from '../lib/api';
-import { ApiError, resourceUrl } from '../lib/api';
+import { ApiError, resourceUrl, resourceSrcSet } from '../lib/api';
 import { useT } from '../lib/i18n';
 import { getPrimaryReadTarget } from '../lib/readerTarget';
 import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
@@ -28,6 +28,9 @@ import { formatReadingProgress } from '../lib/readerProgress';
 import styles from './BookDetail.module.css';
 import { useCardActionsHidden } from '../lib/useCardActionsHidden';
 import { BookUserNotices } from '../components/UserNotices';
+
+type LowercaseFetchPriority = { fetchpriority: 'high' | 'low' | 'auto' };
+const COVER_PRIORITY: LowercaseFetchPriority = { fetchpriority: 'high' };
 
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -441,8 +444,11 @@ export function BookDetail() {
               {book.cover_url ? (
                 <img
                   src={resourceUrl(book.cover_url)}
+                  srcSet={book.cover_srcset ? resourceSrcSet(book.cover_srcset) : undefined}
                   alt=""
                   className={styles.cover}
+                  decoding="async"
+                  {...COVER_PRIORITY}
                 />
               ) : (
                 <div className={styles.coverFallback} aria-hidden="true">
@@ -717,32 +723,6 @@ export function BookDetail() {
               </button>
             )}
 
-            {/* Delete the whole book — DB + files (fork #803). Hidden entirely for
-                users without the delete role; the server re-checks and returns 403,
-                so this is a UX gate, not the security boundary. */}
-            {me?.role?.delete_books && (
-              <button
-                type="button"
-                className={styles.actionDanger}
-                disabled={deleteBook.isPending}
-                aria-label={t('Delete book')}
-                onClick={() => {
-                  if (deleteBook.isPending) return;
-                  if (!window.confirm(
-                    t('Delete "{title}"? This permanently removes the book and all its files from your library. This cannot be undone.', { title: book.title })
-                  )) return;
-                  setDeleteError(null);
-                  deleteBook.mutate(undefined, {
-                    onSuccess: () => navigate('/'),
-                    onError: (err) =>
-                      setDeleteError(err instanceof ApiError ? err.message : t('Could not delete this book.')),
-                  });
-                }}
-              >
-                <Trash2 size={14} aria-hidden="true" focusable={false} />
-                {deleteBook.isPending ? t('Deleting…') : t('Delete')}
-              </button>
-            )}
           </div>
 
           {canRunOcr && (currentOcr || ocrMessage || ocrDeferred || ocrStatus.error) && (
@@ -807,8 +787,35 @@ export function BookDetail() {
 
           <p className={reloadMessage ? styles.actionStatus : undefined} role="status">{reloadMessage}</p>
 
-          {deleteError && (
-            <p className={styles.deleteErr} role="alert">{deleteError}</p>
+          {me?.role?.delete_books && (
+            <section className={styles.dangerZone} data-testid="book-destructive-actions"
+              aria-labelledby={`delete-book-heading-${book.id}`}>
+              <h2 id={`delete-book-heading-${book.id}`} className={styles.dangerZoneTitle}>
+                {t('Delete book')}
+              </h2>
+              <button
+                type="button"
+                className={styles.actionDanger}
+                disabled={deleteBook.isPending}
+                aria-label={t('Delete book')}
+                onClick={() => {
+                  if (deleteBook.isPending) return;
+                  if (!window.confirm(
+                    t('Delete "{title}"? This permanently removes the book and all its files from your library. This cannot be undone.', { title: book.title })
+                  )) return;
+                  setDeleteError(null);
+                  deleteBook.mutate(undefined, {
+                    onSuccess: () => navigate('/'),
+                    onError: (err) =>
+                      setDeleteError(err instanceof ApiError ? err.message : t('Could not delete this book.')),
+                  });
+                }}
+              >
+                <Trash2 size={14} aria-hidden="true" focusable={false} />
+                {deleteBook.isPending ? t('Deleting…') : t('Delete')}
+              </button>
+              {deleteError && <p className={styles.deleteErr} role="alert">{deleteError}</p>}
+            </section>
           )}
 
           {/* Send-to-e-reader panel */}

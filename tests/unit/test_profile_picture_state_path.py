@@ -30,7 +30,9 @@ def test_missing_profile_picture_store_is_empty_json_not_500(monkeypatch, tmp_pa
 
 
 @pytest.mark.unit
-def test_auth_profile_path_is_not_hardcoded_to_docker_config():
+def test_auth_profile_path_is_not_hardcoded_to_docker_config(monkeypatch, tmp_path):
     from cps.api import auth
 
-    assert auth._USER_PROFILES_JSON == os.path.join(constants.CONFIG_DIR, "user_profiles.json")
+    expected = str(tmp_path / "user_profiles.json")
+    monkeypatch.setattr(constants, "USER_PROFILES_JSON", expected)
+    assert expected in inspect.getsource(auth._user_avatar) or "constants.USER_PROFILES_JSON" in inspect.getsource(auth._user_avatar)

@@ -23,6 +23,7 @@ def test_serialize_book_list_item_full():
         "external_rating": None,
         "reading_progress": None,
         "read": False,
+        "in_progress": False,
         "archived": False,
         "hidden": False,
     }

@@ -65,8 +65,9 @@ export function ReaderToolbar(props: {
           aria-busy={props.translationActivity}
           data-translation-activity={props.translationLoading ? 'translation' : props.translationPreloading ? 'preload' : 'idle'}
           aria-label={t('Translation')} title={`${t('Translation')} (T)`}>
-          <span className={`${styles.translationToggleIcon} ${props.translationActivity ? styles.translationToggleIconBusy : ''}`}>
+          <span className={styles.translationToggleIcon}>
             <Languages size={16} aria-hidden="true" />
+            {props.translationActivity && <span className={styles.translationActivityRing} aria-hidden="true" />}
           </span>
         </button>
       </div>}

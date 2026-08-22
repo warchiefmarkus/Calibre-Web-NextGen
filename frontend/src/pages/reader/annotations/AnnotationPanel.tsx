@@ -2,7 +2,7 @@ import { Highlighter, Pencil, StickyNote, Trash2 } from 'lucide-react';
 import type { FoliateAnnotation } from '../FoliateEngine';
 import { useT } from '../../../lib/i18n';
 import styles from '../../Reader.module.css';
-import { annotationColor } from './types';
+import { annotationDisplayColor } from './types';
 
 export function AnnotationPanel({ annotations, onCreateStandalone, onOpen, onEdit, onRemove }: {
   annotations: FoliateAnnotation[];
@@ -31,7 +31,7 @@ export function AnnotationPanel({ annotations, onCreateStandalone, onOpen, onEdi
           ) : (
             <button onClick={() => onOpen(annotation)}>
               <span className={styles.annotationText}>
-                <span className={styles.annotationColorDot} data-color={annotationColor(annotation.color)} />
+                <span className={styles.annotationColorDot} data-color={annotationDisplayColor(annotation.color)} />
                 <Highlighter size={14} aria-hidden="true" />
                 {annotation.text || t('Highlight')}
               </span>

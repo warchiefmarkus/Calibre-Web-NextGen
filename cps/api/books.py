@@ -13,18 +13,13 @@ from . import api_v1
 from .serializers import serialize_book_list_item, serialize_book_detail
 from .. import calibre_db, config, db, ub, isoLanguages, logger
 from ..cw_login import current_user
-from ..helper import edit_book_read_status, book_is_in_progress, get_convert_options, \
-    get_kosync_progress_display
+from ..helper import edit_book_read_status, book_in_progress_ids, book_is_in_progress, \
+    get_convert_options, get_kosync_progress_display, \
+    SQLITE_IN_CHUNK_SIZE as _SQLITE_IN_CHUNK
 from ..sort_orders import BOOK_SORT_ORDERS
 from ..usermanagement import login_required_if_no_ano
 
 log = logger.create()
-
-# SQLite builds vary in their host-parameter ceiling. Stay below even the
-# conservative historical limit when filtering app.db-derived download ids
-# against the separate calibre metadata database.
-_SQLITE_IN_CHUNK = 900
-
 
 def _visible_ids_for_chunk(book_ids):
     query = calibre_db.generate_linked_query(config.config_read_column, db.Books)
@@ -37,7 +32,8 @@ def _visible_hot_book_ids(book_ids):
     """Return visible ids in hotness order without an unbounded SQL ``IN``."""
     visible = set()
     for start in range(0, len(book_ids), _SQLITE_IN_CHUNK):
-        visible.update(_visible_ids_for_chunk(book_ids[start:start + _SQLITE_IN_CHUNK]))
+        visible.update(_visible_ids_for_chunk(
+            book_ids[start:start + _SQLITE_IN_CHUNK]))
     return [book_id for book_id in book_ids if book_id in visible]
 
 
@@ -109,21 +105,24 @@ def _archived_book_ids():
     return {int(row[0]) for row in rows}
 
 
-def _row_to_item(e, hidden_ids=None, external_rating=None, reading_progress=None):
-    """Unwrap a SQLAlchemy Row (Books, is_archived, read_status) or plain Books object."""
-    book = getattr(e, "Books", e)
+def _row_read_status(e):
+    """Return the configured read carrier from a list-query row."""
     if config.config_read_column:
-        # Custom read column: generate_linked_query selects read_column.value as the
-        # third column (Row attr "value"), NOT ub.ReadBook.read_status — a truthy
-        # value means the book is read. Without this the badge is always false when
-        # an admin links read status to a Calibre column (fork #579).
-        read = bool(getattr(e, "value", None))
-    else:
-        read = getattr(e, "read_status", None) == ub.ReadBook.STATUS_FINISHED
+        return getattr(e, "value", None)
+    return getattr(e, "read_status", None)
+
+
+def _row_to_item(e, in_progress_ids, hidden_ids=None, external_rating=None,
+                 reading_progress=None):
+    """Unwrap a SQLAlchemy Row and attach all per-user/list enrichments."""
+    book = getattr(e, "Books", e)
+    read_status = _row_read_status(e)
+    read = bool(read_status) if config.config_read_column         else read_status == ub.ReadBook.STATUS_FINISHED
     archived = bool(getattr(e, "is_archived", False))
     return serialize_book_list_item(
         book,
         read=read,
+        in_progress=book.id in (in_progress_ids or set()),
         archived=archived,
         hidden=book.id in (hidden_ids or set()),
         external_rating=external_rating,
@@ -132,9 +131,15 @@ def _row_to_item(e, hidden_ids=None, external_rating=None, reading_progress=None
 
 
 def _rows_to_items(entries, hidden_ids=None):
-    """Serialize a page and attach rating badges without N+1 queries."""
+    """Serialize a page with Reading, external-rating and Moon progress in bulk."""
     entries = list(entries or [])
     book_ids = [int(getattr(getattr(entry, "Books", entry), "id")) for entry in entries]
+    statuses = [
+        (getattr(entry, "Books", entry).id, _row_read_status(entry))
+        for entry in entries
+    ]
+    in_progress_ids = book_in_progress_ids(
+        statuses, config.config_read_column, current_user)
     try:
         from .external_ratings import external_rating_summary_map
         summaries = external_rating_summary_map(book_ids)
@@ -151,15 +156,12 @@ def _rows_to_items(entries, hidden_ids=None):
     return [
         _row_to_item(
             entry,
+            in_progress_ids=in_progress_ids,
             hidden_ids=hidden_ids,
-            external_rating=summaries.get(
-                int(getattr(getattr(entry, "Books", entry), "id"))
-            ),
-            reading_progress=progress_summaries.get(
-                int(getattr(getattr(entry, "Books", entry), "id"))
-            ),
+            external_rating=summaries.get(book_id),
+            reading_progress=progress_summaries.get(book_id),
         )
-        for entry in entries
+        for entry, book_id in zip(entries, book_ids)
     ]
 
 

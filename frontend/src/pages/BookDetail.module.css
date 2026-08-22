@@ -596,7 +596,26 @@
   background: var(--surface);
 }
 
-/* Destructive whole-book delete (fork #803). Same shape as .downloadBtn, danger-tinted. */
+.dangerZone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-lg);
+  background: var(--danger-soft);
+}
+
+.dangerZoneTitle {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+}
+
+/* Destructive whole-book delete (fork #803). */
 .actionDanger {
   display: inline-flex;
   align-items: center;

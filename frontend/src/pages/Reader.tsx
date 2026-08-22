@@ -1179,7 +1179,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
               || (row.source && row.source !== 'webreader' ? row.source : undefined);
             return {
               value: row.cfi_range ?? `unanchored:${row.annotation_id}`,
-              color: annotationColor(row.highlight_color),
+              color: row.highlight_color ?? undefined,
               note: row.note_text, id: row.annotation_id, text: row.highlighted_text, unanchored, sourceLabel,
             };
           });
@@ -1303,7 +1303,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
 
 
-  const saveAnnotationEditor = useCallback(async (color: HighlightColor, note: string) => {
+  const saveAnnotationEditor = useCallback(async (color: HighlightColor, note: string, colorChanged = false) => {
     const editor = annotationEditor;
     if (!editor) return;
     if (editor.mode === 'create') {
@@ -1316,7 +1316,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       });
       const annotation: FoliateAnnotation = {
         value: row.cfi_range ?? editor.selection.value,
-        color: annotationColor(row.highlight_color ?? color),
+        color: row.highlight_color ?? color,
         note: row.note_text,
         id: row.annotation_id,
         text: row.highlighted_text,
@@ -1350,11 +1350,15 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (!existing.id) return;
       const row = await apiPatch<ServerAnnotation>(
         `/annotations/${id}/${encodeURIComponent(existing.id)}`,
-        { highlight_color: color, note_text: note || null, format: fmt.toUpperCase() },
+        {
+          ...(colorChanged ? { highlight_color: color } : {}),
+          note_text: note || null,
+          format: fmt.toUpperCase(),
+        },
       );
       const updated: FoliateAnnotation = {
         ...existing,
-        color: annotationColor(row.highlight_color ?? color),
+        color: row.highlight_color ?? (colorChanged ? color : existing.color),
         note: row.note_text,
       };
       await viewRef.current?.deleteAnnotation(existing);

@@ -8,7 +8,7 @@ import { HIGHLIGHT_COLORS, type AnnotationEditorState, type HighlightColor } fro
 export function AnnotationComposer({ state, onClose, onSave, onDelete }: {
   state: AnnotationEditorState;
   onClose: () => void;
-  onSave: (color: HighlightColor, note: string) => void | Promise<void>;
+  onSave: (color: HighlightColor, note: string, colorChanged: boolean) => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
 }) {
   const t = useT();
@@ -16,6 +16,7 @@ export function AnnotationComposer({ state, onClose, onSave, onDelete }: {
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const [color, setColor] = useState<HighlightColor>(state.color);
   const [note, setNote] = useState(state.note);
+  const [colorChanged, setColorChanged] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useFocusTrap(dialogRef, { onClose });
@@ -36,7 +37,7 @@ export function AnnotationComposer({ state, onClose, onSave, onDelete }: {
     setSaving(true);
     setError(null);
     try {
-      await onSave(color, note.trim());
+      await onSave(color, note.trim(), colorChanged);
     } catch {
       setError(t('Could not save annotation.'));
     } finally {
@@ -78,7 +79,7 @@ export function AnnotationComposer({ state, onClose, onSave, onDelete }: {
             {HIGHLIGHT_COLORS.map((value) => (
               <button key={value} type="button" className={styles.annotationColorButton}
                 data-color={value} aria-label={colorLabel(value)} title={colorLabel(value)}
-                aria-pressed={color === value} onClick={() => setColor(value)}>
+                aria-pressed={color === value} onClick={() => { setColor(value); setColorChanged(true); }}>
                 <span aria-hidden="true" />
               </button>
             ))}

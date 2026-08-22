@@ -254,6 +254,10 @@
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}
+
 @media (max-width: 900px) {
   .pageStatus { display: none; }
   .actionButton span:not(.badge) { display: none; }

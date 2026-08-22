@@ -184,6 +184,61 @@ def add_security_headers(resp):
     return resp
 
 
+# The SPA bundle is content-addressed: Vite emits every file under
+# /static/app/assets/ as <name>-<8-char content hash>.<ext> and wipes the
+# directory on each build (emptyOutDir), so a byte change is always a NAME
+# change and nothing that is not build output survives in there. Those files are
+# therefore immutable at their URL and can be cached for a year. The name shape
+# is the test, not proof of provenance, so a hand-placed file matching it would
+# be wrongly pinned. emptyOutDir removes such a file from the SERVER at the next
+# build; it cannot revoke a copy a browser was already told to keep for a year.
+# Gating on the Vite manifest instead of the filename shape would close that,
+# at the cost of coupling this to the build output.
+#
+# They were not cached at all. Flask's SEND_FILE_MAX_AGE_DEFAULT is None, which
+# makes send_file emit `Cache-Control: no-cache`, so a ~640 KB bundle was
+# revalidated on every single page load. The app does ship a cache-buster
+# (cache_buster.init_cache_busting) that would let us cache more broadly, but
+# it is only installed under FLASK_DEBUG and it only rewrites url_for('static')
+# links — the SPA's asset URLs are baked into the built index.html and never go
+# through url_for. So the rule below is deliberately narrow: ONLY the paths that
+# carry a content hash in the filename. Everything else under /static (js/, css/,
+# the fonts and images the classic UI references by fixed name) keeps
+# revalidating, because an upgrade changes those bytes WITHOUT changing their
+# URL and a long-lived copy would pin a user to the previous release's assets.
+_HASHED_ASSET_PREFIX = '/static/app/assets/'
+_HASHED_ASSET_RE = re.compile(r'-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$')
+IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+# Only a response that actually carries (or validates) the asset may be pinned.
+# A 404 under a hashed-looking name is the dangerous case: caches store negative
+# responses too, so giving one a year would preserve a white page long after a
+# partial deploy, a missing mount or a rollback had been fixed.
+_CACHEABLE_ASSET_STATUSES = frozenset((200, 206, 304))
+
+
+def is_immutable_static_asset(path):
+    """Whether ``path`` names a content-addressed SPA bundle file.
+
+    ``request.path`` is always mount-relative — a reverse-proxy prefix lives in
+    ``script_root``, not here — so the prefix is anchored rather than searched
+    for anywhere in the string.
+    """
+    if not path or not path.startswith(_HASHED_ASSET_PREFIX):
+        return False
+    name = path[len(_HASHED_ASSET_PREFIX):]
+    # One path segment only — never something reached through a nested path.
+    return '/' not in name and bool(_HASHED_ASSET_RE.search(name))
+
+
+@app.after_request
+def add_static_asset_cache_headers(resp):
+    if (request.endpoint == 'static'
+            and resp.status_code in _CACHEABLE_ASSET_STATUSES
+            and is_immutable_static_asset(request.path)):
+        resp.headers['Cache-Control'] = IMMUTABLE_ASSET_CACHE_CONTROL
+    return resp
+
+
 web = Blueprint('web', __name__)
 
 log = logger.create()
@@ -1551,7 +1606,7 @@ def edit_magic_shelf(shelf_id):
     opds_expose_checked = ub.is_opds_magic_shelf_exposed_for_user(current_user.id, shelf.id)
     
     # Check if user can edit this shelf (owner or admin only)
-    if shelf.user_id != current_user.id and not current_user.role_admin():
+    if not magic_shelf.can_edit_magic_shelf(shelf, current_user):
         log.warning(f"User {current_user.id} attempted to edit magic shelf {shelf_id} without permission")
         abort(403)
 
@@ -1654,7 +1709,7 @@ def duplicate_magic_shelf(shelf_id):
         return jsonify({"success": False, "message": _("Shelf not found")}), 404
     
     # Users can duplicate their own shelves or any public shelf
-    if shelf.user_id != current_user.id and not shelf.is_public:
+    if not magic_shelf.can_duplicate_magic_shelf(shelf, current_user):
         log.warning(f"User {current_user.id} attempted to duplicate private shelf {shelf_id} owned by {shelf.user_id}")
         return jsonify({"success": False, "message": _("Permission denied")}), 403
     
@@ -1704,22 +1759,14 @@ def delete_magic_shelf(shelf_id):
         log.warning(f"Magic shelf {shelf_id} not found for deletion")
         abort(404)
     
-    # Check if user can delete this shelf
-    can_delete = False
-    if shelf.user_id == current_user.id:
-        can_delete = True
-    elif shelf.is_public == 1 and current_user.role_edit_shelfs():
-        can_delete = True
-    
-    if not can_delete:
+    if not magic_shelf.has_magic_shelf_delete_authority(shelf, current_user):
         log.warning(f"User {current_user.id} attempted to delete magic shelf {shelf_id} without permission")
         abort(403)
-    
-    # Prevent deletion of system shelves
-    if shelf.is_system:
+
+    if not magic_shelf.can_delete_magic_shelf(shelf, current_user):
         log.warning(f"User {current_user.id} attempted to delete system shelf {shelf_id}")
         return jsonify({
-            "success": False, 
+            "success": False,
             "message": _("System shelves cannot be deleted. You can hide them in your user profile settings.")
         }), 400
     

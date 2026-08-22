@@ -7,6 +7,7 @@ import {
   getMetadataProviders, setMetadataProviderActive,
 } from './api';
 import { removeBookFromCache, applyBookEditToCache } from './scrollCache';
+import { createEntityListQueryOptions } from './entityListQueryOptions';
 import type { MetadataProvider, MetaSearchResponse } from './api';
 import type {
   Me, Book, BooksPage, BookDetail, EntityList, Shelf, ShelfDetail,
@@ -183,6 +184,7 @@ export function useDiscover(count: number, nonce: number) {
     queryKey: ['discover-strip', count, nonce],
     queryFn: () => apiGet<BooksPage>(`/api/v1/books?filter=discover&per_page=${count}`),
     staleTime: 0,
+    refetchOnWindowFocus: false,
     placeholderData: keepPreviousData,
   });
 }
@@ -259,11 +261,10 @@ export function useBooks(q: BooksQuery) {
 /** Fetch an entity-browse list (authors/series/tags/publishers/languages).
  *  `plural` is the endpoint segment (e.g. "authors"). */
 export function useEntityList(plural: string) {
-  return useQuery<EntityList>({
-    queryKey: ['entities', plural],
-    queryFn: () => apiGet<EntityList>(`/api/v1/${plural}`),
-    staleTime: 60000,
-  });
+  return useQuery<EntityList>(createEntityListQueryOptions(
+    plural,
+    () => apiGet<EntityList>(`/api/v1/${plural}`),
+  ));
 }
 
 /** The tag a rename collided with, carried on the 409 so the caller can offer
@@ -1656,7 +1657,19 @@ export function useToggleMagicShelfKoboSync(id: string | number) {
   });
 }
 
-export interface MagicShelfItem { id: number; name: string; icon: string; is_public: boolean; is_owner: boolean; is_system: boolean; kobo_sync?: boolean }
+export interface MagicShelfItem {
+  id: number;
+  name: string;
+  icon: string;
+  is_public: boolean;
+  is_owner: boolean;
+  is_system: boolean;
+  kobo_sync?: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+  can_duplicate: boolean;
+  can_kobo_sync: boolean;
+}
 
 export function useMagicShelves() {
   return useQuery<{ items: MagicShelfItem[] }>({
@@ -1667,8 +1680,7 @@ export function useMagicShelves() {
 }
 
 export function useMagicShelfBooks(id: string | number, page = 1) {
-  return useQuery<{ id: number; name: string; icon: string; is_owner: boolean; is_system: boolean;
-    kobo_sync?: boolean } & BooksPage>({
+  return useQuery<MagicShelfItem & BooksPage>({
     queryKey: ['magicshelf', String(id), page],
     queryFn: () => apiGet(`/api/v1/magicshelf/${id}?page=${page}`),
     enabled: String(id).length > 0,
