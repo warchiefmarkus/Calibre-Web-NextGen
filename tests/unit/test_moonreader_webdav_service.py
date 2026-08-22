@@ -864,6 +864,47 @@ def test_moon_percentage_is_fallback_when_local_locator_cannot_be_verified():
     assert mod._remote_fraction(position, MagicMock(), matcher) == pytest.approx(.123)
 
 
+def test_verified_moon_locator_wins_over_different_moon_display_percentage(tmp_path):
+    from cps.services import moonreader_webdav as mod
+
+    path = tmp_path / "book.fb2"
+    path.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
+        '<body><section><p>' + ('alpha ' * 100) + '</p></section>'
+        '<section><p>' + ('beta ' * 100) + '</p></section></body></FictionBook>',
+        encoding="utf-8",
+    )
+    chapters = mod.chapters_for_book(str(path), "FB2")
+    exact = mod.fraction_from_locator(chapters, 0, 60)
+    position = mod.parse_position(mod.serialize_moon_position(
+        device_id="1234567890123", chapter=0, split_index=0, offset=60,
+        percentage=2.2,
+    ))
+    matcher = MagicMock()
+    matcher.local_path.return_value = str(path)
+    match = mod.BookMatch(1, "FB2", path.name, "test")
+
+    assert exact * 100 != pytest.approx(2.2, abs=.051)
+    assert mod._remote_fraction(position, match, matcher) == pytest.approx(exact)
+
+
+def test_conflict_policy_compares_canonical_remote_fraction_not_moon_display_percent():
+    from cps.services import moonreader_webdav as mod
+
+    when = datetime(2026, 8, 23, 0, tzinfo=timezone.utc)
+    resource = mod.WebDavResource(
+        "Moon/.Moon+/Cache/Book.epub.po", False, modified=when,
+    )
+    position = mod.parse_position("1111111111111*4@0#5125:2.2%")
+    native = _native(.0079949, when.replace(minute=1), "moonreader-webdav:1")
+
+    assert mod._conflict_direction(
+        resource, position, native, "2222222222222",
+        remote_fraction=.0079847,
+    ) == "unchanged"
+
+
 def test_verified_moon_locator_preserves_sub_decimal_precision(tmp_path):
     from cps.services import moonreader_webdav as mod
 

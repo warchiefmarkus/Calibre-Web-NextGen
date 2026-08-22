@@ -885,11 +885,12 @@ def _remote_fraction(position: MoonPosition, match: BookMatch,
             chapters, position.chapter, position.offset,
             split_index=position.split_index, split_size=split_size,
         )
-        # T.getPercentStr2 stores one decimal. Accept the structural locator
-        # only when it rounds to the payload value; otherwise the local file or
-        # inferred device split profile differs and percentage is safer.
-        if abs((exact * 100.0) - position.percentage) <= 0.051:
-            return exact
+        # Moon's trailing percentage is a display/progress scale, not the same
+        # coordinate system as Foliate/Calibre's pos_frac.  The exact
+        # chapter@split#offset locator is authoritative whenever it can be
+        # resolved against the local book.  In particular, Moon can report
+        # ``2.2%`` for a locator whose canonical text fraction is ~0.8%.
+        return exact
     except (MoonLocatorError, OSError):
         log.warning(
             "Could not map Moon locator for book %s; using stored percentage",
@@ -1079,7 +1080,8 @@ def _is_bootstrap_zero(position: MoonPosition | None,
 
 def _conflict_direction(resource: WebDavResource | None, position: MoonPosition | None,
                         native: dict[str, Any] | None, server_device: str,
-                        tracking: Any | None = None) -> str:
+                        tracking: Any | None = None, *,
+                        remote_fraction: float | None = None) -> str:
     """Return from_moon/to_moon/unchanged; Moon wins real ties and races.
 
     A newly observed Moon+ file at exactly 0% is special. Moon creates that
@@ -1095,7 +1097,10 @@ def _conflict_direction(resource: WebDavResource | None, position: MoonPosition 
         return "to_moon" if native else "unchanged"
     if native is None:
         return "from_moon"
-    remote_fraction = max(0.0, min(1.0, position.percentage / 100.0))
+    remote_fraction = max(0.0, min(1.0,
+        float(remote_fraction) if remote_fraction is not None
+        else position.percentage / 100.0
+    ))
     native_fraction = _native_fraction(native)
     if _is_bootstrap_zero(position, native, server_device, tracking):
         return "to_moon"
@@ -1192,8 +1197,13 @@ def reconcile_book(user, client: WebDavClient, cache_path: str,
         tracking.remote_etag == resource.etag and
         native_epoch <= float(tracking.last_native_epoch or 0) + 0.01
     )
+    logical_remote_fraction = (
+        _remote_fraction(position, match, matcher) if position is not None else None
+    )
     direction = "unchanged" if own_write_unchanged else _conflict_direction(
-        resource, position, native, server_device, tracking)
+        resource, position, native, server_device, tracking,
+        remote_fraction=logical_remote_fraction,
+    )
     if direction == "unchanged":
         if resource and position:
             _record_progress(
