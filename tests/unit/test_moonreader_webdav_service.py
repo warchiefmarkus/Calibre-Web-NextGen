@@ -147,6 +147,38 @@ def test_book_matcher_uses_exact_filename_and_unique_stem():
     assert stem.book_id == 146 and stem.method == "filename_stem"
 
 
+def test_book_matcher_matches_opds_metadata_name_with_publisher_suffix():
+    from cps.services.moonreader_webdav import BookMatch, BookMatcher
+    matcher = BookMatcher.__new__(BookMatcher)
+    matcher._metadata = {
+        "EPUB": [(
+            BookMatcher._text_key("Эпоха мертвых. Начало Андрей Круз"),
+            BookMatch(175, "EPUB", "Epokha miertvykh. Nachalo - Andriei Kruz.epub", "seed"),
+        )],
+    }
+    result = matcher.match_metadata_filename(
+        "Moon/.Moon+/Cache/Эпоха мертвых. Начало - Андрей Круз«Издательство АЛЬФА-КНИГА».epub.po"
+    )
+    assert result.book_id == 175
+    assert result.format == "EPUB"
+    assert result.method == "metadata"
+
+
+def test_book_matcher_metadata_name_refuses_ambiguous_duplicate_books():
+    from cps.services.moonreader_webdav import BookMatch, BookMatcher
+    matcher = BookMatcher.__new__(BookMatcher)
+    prefix = BookMatcher._text_key("Same title Same author")
+    matcher._metadata = {
+        "EPUB": [
+            (prefix, BookMatch(10, "EPUB", "one.epub", "seed")),
+            (prefix, BookMatch(11, "EPUB", "two.epub", "seed")),
+        ],
+    }
+    assert matcher.match_metadata_filename(
+        "Moon/.Moon+/Cache/Same title - Same author«Publisher».epub.po"
+    ) is None
+
+
 def test_book_matcher_uses_calibre_export_book_id_with_same_format():
     from cps.services.moonreader_webdav import BookMatch, BookMatcher
     matcher = BookMatcher.__new__(BookMatcher)

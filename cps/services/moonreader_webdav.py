@@ -444,6 +444,7 @@ class BookMatcher:
     def __init__(self):
         self._exact: dict[str, list[BookMatch]] = {}
         self._stem: dict[str, list[BookMatch]] = {}
+        self._metadata: dict[str, list[tuple[str, BookMatch]]] = {}
         self._by_id_format: dict[tuple[int, str], BookMatch] = {}
         self._local_files: list[tuple[BookMatch, str, int | None]] = []
         originals = {
@@ -451,7 +452,7 @@ class BookMatcher:
             for row in ub.session.query(ub.BookOriginalFilename).all()
         }
         books = (calibre_db.session.query(db.Books)
-                 .options(selectinload(db.Books.data))
+                 .options(selectinload(db.Books.data), selectinload(db.Books.authors))
                  .all())
         for book in books:
             for item in book.data or []:
@@ -460,6 +461,7 @@ class BookMatcher:
                 filename = name if name.casefold().endswith(f".{fmt}") else f"{name}.{fmt}"
                 match = BookMatch(int(book.id), fmt.upper(), filename, "filename")
                 self._add(filename, match)
+                self._add_metadata(book, match)
                 self._by_id_format[(int(book.id), fmt.upper())] = match
                 path = os.path.join(config.config_calibre_dir, book.path, filename)
                 self._local_files.append((match, path, getattr(item, "uncompressed_size", None)))
@@ -468,9 +470,13 @@ class BookMatcher:
                 self._add(original, BookMatch(int(book.id), _extension(original), original, "original_filename"))
 
     @staticmethod
-    def _key(value: str) -> str:
-        value = unicodedata.normalize("NFKC", unquote(os.path.basename(value))).casefold()
+    def _text_key(value: str) -> str:
+        value = unicodedata.normalize("NFKC", unquote(str(value or ""))).casefold()
         return " ".join(re.findall(r"[\w]+", value, flags=re.UNICODE))
+
+    @staticmethod
+    def _key(value: str) -> str:
+        return BookMatcher._text_key(os.path.basename(value))
 
     @staticmethod
     def _stem_key(value: str) -> str:
@@ -483,6 +489,21 @@ class BookMatcher:
     def _add(self, filename: str, match: BookMatch):
         self._exact.setdefault(self._key(filename), []).append(match)
         self._stem.setdefault(self._stem_key(filename), []).append(match)
+
+    def _add_metadata(self, book: Any, match: BookMatch):
+        title = self._text_key(str(getattr(book, "title", "") or ""))
+        authors = list(getattr(book, "authors", None) or [])
+        if not title or not authors or not match.format:
+            return
+        # CWNG's download filename is ``Title - first author.ext``. Moon may
+        # append publisher/other embedded metadata when importing that OPDS
+        # download, so index the stable title+first-author prefix separately
+        # from the physical Calibre filename.
+        author = self._text_key(str(getattr(authors[0], "name", "") or ""))
+        if not author:
+            return
+        prefix = f"{title} {author}"
+        self._metadata.setdefault(str(match.format).upper(), []).append((prefix, match))
 
     @staticmethod
     def _unique(values: list[BookMatch] | None, method: str) -> BookMatch | None:
@@ -502,6 +523,37 @@ class BookMatcher:
         if exact:
             return exact
         return self._unique(self._stem.get(self._stem_key(filename)), "filename_stem")
+
+    def match_metadata_filename(self, position_path: str) -> BookMatch | None:
+        """Match an OPDS/Moon filename by Calibre title + first author metadata.
+
+        Moon can rename an OPDS download from ``Title - Author.ext`` to e.g.
+        ``Title - AuthorPublisher.ext`` while keeping the same book bytes. The
+        physical Calibre filename may also be transliterated, so filename-only
+        matching cannot identify that copy. Only same-format, unambiguous
+        metadata prefixes are accepted.
+        """
+        filename = os.path.basename(position_path)
+        if filename.casefold().endswith(".po"):
+            filename = filename[:-3]
+        stem, extension = os.path.splitext(filename)
+        if " - " not in stem or not extension:
+            return None
+        key = self._text_key(stem)
+        candidates = [
+            (prefix, match)
+            for prefix, match in self._metadata.get(extension[1:].upper(), [])
+            if key == prefix or key.startswith(prefix + " ")
+        ]
+        if not candidates:
+            return None
+        # Prefer the most-specific metadata prefix. If duplicate Calibre books
+        # still tie at that specificity, refuse to guess.
+        longest = max(len(prefix) for prefix, _ in candidates)
+        return self._unique(
+            [match for prefix, match in candidates if len(prefix) == longest],
+            "metadata",
+        )
 
     def match_calibre_export_id(self, position_path: str) -> BookMatch | None:
         """Match Calibre's ``Title - Author (book_id).ext`` export names.
@@ -1074,7 +1126,9 @@ def _conflict_direction(resource: WebDavResource | None, position: MoonPosition 
 
 def _match_remote(matcher: BookMatcher, resource: WebDavResource,
                   client: WebDavClient, root_files: dict[str, WebDavResource]) -> BookMatch | None:
-    match = matcher.match_filename(resource.path) or matcher.match_calibre_export_id(resource.path)
+    match = (matcher.match_filename(resource.path)
+             or matcher.match_calibre_export_id(resource.path)
+             or matcher.match_metadata_filename(resource.path))
     if match is not None:
         return match
     associated = os.path.basename(resource.path)[:-3]
