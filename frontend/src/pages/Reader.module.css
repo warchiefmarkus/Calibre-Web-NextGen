@@ -6,7 +6,9 @@
   --reader-border: rgba(35, 31, 27, .16);
   --reader-accent: #315f8c;
   position: fixed;
-  inset: 0;
+  inset: 0 0 auto;
+  width: 100%;
+  height: 100dvh;
   z-index: 1000;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -59,7 +61,10 @@
   backdrop-filter: blur(14px);
 }
 .topBar { border-bottom: 1px solid var(--reader-border); }
-.bottomBar { border-top: 1px solid var(--reader-border); }
+.bottomBar {
+  border-top: 1px solid var(--reader-border);
+  padding-bottom: calc(7px + env(safe-area-inset-bottom, 0px));
+}
 
 .bookIdentity {
   min-width: 0;
@@ -727,9 +732,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.progressMeta span:first-child { min-width: 0; flex: 1 1 auto; }
+.progressMeta span:last-child { flex: 0 0 auto; text-align: end; }
 
 .progressSlider {
   width: 100%;
+  min-height: 24px;
+  margin: 0;
   accent-color: var(--reader-accent);
 }
 
@@ -796,7 +805,9 @@
 }
 
 @media (max-width: 760px) {
-  .reader { grid-template-rows: 66px minmax(0, 1fr) 72px; }
+  .reader {
+    grid-template-rows: 66px minmax(0, 1fr) calc(76px + env(safe-area-inset-bottom, 0px));
+  }
   .bookIdentity span { display: none; }
   .toolbar {
     gap: 0;
@@ -815,7 +826,8 @@
     z-index: 1002;
     box-shadow: 10px 0 30px rgba(0, 0, 0, .28);
   }
-  .progressMeta span:first-child { max-width: 55%; }
+  .progressMeta span:first-child { max-width: 48%; }
+  .progressMeta span:last-child { max-width: 52%; }
   .selectionBar {
     top: auto;
     right: 8px;

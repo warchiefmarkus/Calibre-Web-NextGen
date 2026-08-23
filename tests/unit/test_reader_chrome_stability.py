@@ -16,7 +16,8 @@ def test_progress_bar_is_always_rendered_without_visibility_state():
 
 def test_reader_keeps_fixed_footer_space_on_desktop_and_mobile():
     assert "grid-template-rows: 66px minmax(0, 1fr) 64px" in CSS
-    assert "grid-template-rows: 66px minmax(0, 1fr) 72px" in CSS
+    assert "grid-template-rows: 66px minmax(0, 1fr) calc(76px + env(safe-area-inset-bottom, 0px))" in CSS
+    assert "height: 100dvh" in CSS
     assert ".chromeHidden" not in CSS
     assert "grid-template-rows 180ms" not in CSS
 

@@ -55,6 +55,9 @@ const FORMAT_PRIORITY = ['EPUB', 'KEPUB', 'FB2', 'MOBI', 'AZW3', 'AZW', 'CBZ'];
 const READER_WHEEL_THRESHOLD_PX = 48;
 const READER_WHEEL_COOLDOWN_MS = 320;
 const READER_WHEEL_IDLE_RESET_MS = 160;
+const READER_TOUCH_SELECTION_HOLD_MS = 450;
+const READER_TOUCH_MOVE_THRESHOLD_PX = 10;
+const READER_TOUCH_SELECTION_SUPPRESS_MS = 220;
 
 function chatGptSelectedTextUrl(text: string): string {
   return `https://chatgpt.com/?q=${encodeURIComponent(text.trim())}`;
@@ -1038,8 +1041,32 @@ export function Reader({ id, format }: { id: string; format?: string }) {
 
     const attachSelection = (doc: Document, index: number) => {
       let selectionTimer: number | null = null;
+      let suppressTouchSelectionUntil = 0;
+      let touchGesture: {
+        startedAt: number;
+        startX: number;
+        startY: number;
+        preserveSelection: boolean;
+      } | null = null;
+
+      const clearNativeSelection = () => {
+        const selection = doc.getSelection();
+        if (selection && !selection.isCollapsed) selection.removeAllRanges();
+        dismissSelection();
+      };
+      const touchSelectionSuppressed = () => {
+        const now = Date.now();
+        return now < suppressTouchSelectionUntil
+          || (!!touchGesture
+            && !touchGesture.preserveSelection
+            && now - touchGesture.startedAt < READER_TOUCH_SELECTION_HOLD_MS);
+      };
       const readSelection = (dismissCollapsed: boolean) => {
         if (cancelled) return;
+        if (touchSelectionSuppressed()) {
+          clearNativeSelection();
+          return;
+        }
         const selection = doc.getSelection();
         if (!selection || selection.isCollapsed || !selection.rangeCount) {
           if (dismissCollapsed) dismissSelection();
@@ -1065,10 +1092,54 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           readSelection(dismissCollapsed);
         }, delay);
       };
+      const handleTouchStart = (event: TouchEvent) => {
+        if (event.touches.length !== 1) {
+          touchGesture = null;
+          return;
+        }
+        const touch = event.touches[0];
+        touchGesture = {
+          startedAt: Date.now(),
+          startX: touch.clientX,
+          startY: touch.clientY,
+          preserveSelection: !!doc.getSelection()?.toString(),
+        };
+      };
+      const handleTouchMove = (event: TouchEvent) => {
+        const gesture = touchGesture;
+        if (!gesture || gesture.preserveSelection || event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        const distance = Math.hypot(touch.clientX - gesture.startX, touch.clientY - gesture.startY);
+        if (distance < READER_TOUCH_MOVE_THRESHOLD_PX) return;
+        if (Date.now() - gesture.startedAt < READER_TOUCH_SELECTION_HOLD_MS) {
+          suppressTouchSelectionUntil = Date.now() + READER_TOUCH_SELECTION_SUPPRESS_MS;
+          clearNativeSelection();
+        }
+      };
+      const handleTouchEnd = () => {
+        const gesture = touchGesture;
+        touchGesture = null;
+        if (gesture && !gesture.preserveSelection
+            && Date.now() - gesture.startedAt < READER_TOUCH_SELECTION_HOLD_MS) {
+          suppressTouchSelectionUntil = Date.now() + READER_TOUCH_SELECTION_SUPPRESS_MS;
+          clearNativeSelection();
+          window.setTimeout(clearNativeSelection, 80);
+          return;
+        }
+        scheduleSelectionRead(false, 120);
+      };
+      const handleContextMenu = () => {
+        suppressTouchSelectionUntil = 0;
+        scheduleSelectionRead(false, 120);
+      };
+
       doc.addEventListener('mouseup', () => scheduleSelectionRead(true));
       doc.addEventListener('keyup', () => scheduleSelectionRead(true));
-      doc.addEventListener('touchend', () => scheduleSelectionRead(false, 120), { passive: true });
-      doc.addEventListener('contextmenu', () => scheduleSelectionRead(false, 120));
+      doc.addEventListener('touchstart', handleTouchStart, { capture: true, passive: true });
+      doc.addEventListener('touchmove', handleTouchMove, { capture: true, passive: true });
+      doc.addEventListener('touchend', handleTouchEnd, { passive: true });
+      doc.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+      doc.addEventListener('contextmenu', handleContextMenu);
       doc.addEventListener('selectionchange', () => scheduleSelectionRead(false, 80));
       const armMovement = markReadingMovement;
       const armPointerDrag = (event: PointerEvent) => {
