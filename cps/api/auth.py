@@ -132,6 +132,9 @@ def _server_features():
         "kobo_sync_magic_shelves": deployment_profile.enable_kobo()
         and bool(getattr(config, "config_kobo_sync_magic_shelves", False)),
         "rag_search": deployment_profile.enable_rag_ui(),
+        # Stage 0 two-way annotation sync, instance-gated and default off.
+        "kobo_two_way_annotations": deployment_profile.enable_kobo()
+        and bool(getattr(config, "config_kobo_two_way_annotation_sync", False)),
         # The admin's "Enable Uploads" switch. Classic gates its navbar upload
         # button on this (layout.html: role_upload() and g.allow_upload); the
         # SPA had no way to see it and offered Upload regardless (#1288).

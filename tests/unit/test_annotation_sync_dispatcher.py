@@ -94,6 +94,15 @@ def test_dispatch_creates_annotation_and_sync_target(patched_session):
     assert targets[0].target_record_id == "r1"
 
 
+@pytest.mark.parametrize("batch", [None, {}, {"id": "not-a-list"}, "not-a-list"])
+def test_dispatch_refuses_every_non_list_batch_before_empty_shortcut(
+    patched_session, batch,
+):
+    _session, user = patched_session
+
+    assert dispatch_annotation_sync(batch, _book(), user) is False
+
+
 def test_dispatch_updates_existing_annotation(patched_session):
     s, user = patched_session
     register_handler(StubHandler())
@@ -318,12 +327,13 @@ def test_database_failure_rolls_back_only_that_member_and_later_members_continue
     monkeypatch.setattr(s, "rollback", recording_rollback)
     monkeypatch.setattr(annotation_sync, "_upsert_annotation", fail_one)
 
-    dispatch_annotation_sync([
+    result = dispatch_annotation_sync([
         _payload("uuid-before", text_="before"),
         _payload("uuid-db-failure", text_="lost only with failed write"),
         _payload("uuid-after", text_="after"),
     ], _book(), user)
 
+    assert result is False
     assert rollback_calls == [True]
     assert [row.annotation_id for row in s.query(ub.Annotation).order_by(ub.Annotation.id)] == [
         "uuid-before", "uuid-after",

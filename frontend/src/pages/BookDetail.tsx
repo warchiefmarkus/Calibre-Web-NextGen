@@ -8,8 +8,9 @@ import {
   useSendToEreader, useMe, useAccount, useUpdateMetadata, useDeleteBook, useReloadMetadata,
   useBookOcrStatus, useStartBookOcr, useExternalBookRatings,
   useRefreshExternalBookRatings, useStartBookMoonReaderSync,
-  useBookShelves, useShelves,
+  useBookShelves, useShelves, useKoboTwoWayAnnotations, selectKoboTwoWayBook,
 } from '../lib/queries';
+import { authorityLabel, opaqueLabel } from '../lib/koboTwoWay';
 import { MetadataTypeahead } from '../components/MetadataTypeahead';
 import { Pill } from '../components/Pill';
 import { AddToShelf } from '../components/AddToShelf';
@@ -28,6 +29,7 @@ import { formatReadingProgress } from '../lib/readerProgress';
 import styles from './BookDetail.module.css';
 import { useCardActionsHidden } from '../lib/useCardActionsHidden';
 import { BookUserNotices } from '../components/UserNotices';
+import { backTarget } from '../lib/backLink';
 
 type LowercaseFetchPriority = { fetchpriority: 'high' | 'low' | 'auto' };
 const COVER_PRIORITY: LowercaseFetchPriority = { fetchpriority: 'high' };
@@ -342,8 +344,13 @@ export function BookDetail() {
   const deleteBook = useDeleteBook(id);
   const reloadMetadata = useReloadMetadata(id);
   const moonBookSync = useStartBookMoonReaderSync(id);
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const me = useMe().data;
+  /* Stage 0 two-way sync state chip (read-only; manage it on Account). */
+  const twoWay = useKoboTwoWayAnnotations({
+    enabled: !!me && !me.role?.anonymous && !!me.features?.kobo_two_way_annotations,
+  });
+  const bookBackTarget = backTarget(location);
   // The send-to-e-reader button only renders when mail is configured + the user
   // can download, so defer the account fetch (which carries the saved e-reader
   // address used to prefill the recipient field, #715) until that's possible.
@@ -370,7 +377,9 @@ export function BookDetail() {
   if (error || !book) {
     return (
       <main className={styles.container}>
-        <Link href="/" className={styles.back}>{t('← Library')}</Link>
+        <Link href={bookBackTarget.href} className={styles.back}>
+          {t(bookBackTarget.isOrigin ? '← Back' : '← Library')}
+        </Link>
         <EmptyState message={error instanceof Error ? error.message : t('Book not found.')} />
       </main>
     );
@@ -424,7 +433,9 @@ export function BookDetail() {
 
   return (
     <main className={styles.container}>
-      <Link href="/" className={styles.back}>{t('← Library')}</Link>
+      <Link href={bookBackTarget.href} className={styles.back}>
+        {t(bookBackTarget.isOrigin ? '← Back' : '← Library')}
+      </Link>
 
       <BookUserNotices bookId={book.id} />
 
@@ -702,6 +713,19 @@ export function BookDetail() {
               <Highlighter size={14} aria-hidden="true" focusable={false} />
               {t('Highlights')}
             </Link>
+
+            {/* Stage 0 per-book two-way state, when the user opted in and the
+                book has pipeline state. Read-only; manage it on Account. */}
+            {(() => {
+              const twoWayBook = selectKoboTwoWayBook(twoWay.data, book.id);
+              if (!twoWay.data?.enabled || !twoWayBook) return null;
+              return (
+                <Link href="/account" className={styles.twoWayChip}>
+                  {t('Kobo two-way sync: {state}', { state: authorityLabel(t, twoWayBook, twoWay.data.scope) })}
+                  {opaqueLabel(t, twoWayBook) && <span className={styles.twoWayBlocked}>{opaqueLabel(t, twoWayBook)}</span>}
+                </Link>
+              );
+            })()}
 
             {/* Personal action, deliberately outside the delete-role gate. It
                 sits immediately beside Delete when Delete is available and is
