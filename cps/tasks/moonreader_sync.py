@@ -159,6 +159,14 @@ class TaskMoonReaderSync(CalibreTask):
                 ub.session.rollback()
             self._handleError(str(exc))
         finally:
+            # WorkerThread is a real OS thread and does not get Flask request
+            # teardown. Drop this thread/greenlet's app.db scoped Session after
+            # each reconciliation so transaction state never survives a task.
+            try:
+                if ub.session is not None and hasattr(ub.session, "remove"):
+                    ub.session.remove()
+            except Exception:
+                pass
             with _pending_lock:
                 _pending_keys.discard(pending_key)
 

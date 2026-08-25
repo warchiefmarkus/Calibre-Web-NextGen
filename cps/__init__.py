@@ -509,21 +509,46 @@ def create_app():
         # Clear the Flask-session shelf count cache so sidebar counts stay fresh.
         session.pop('magic_shelf_counts', None)
 
-    @app.teardown_appcontext
-    def shutdown_session(exception=None):
-        # Close before session_factory.remove(): they operate on different objects (concrete
-        # Session vs scoped proxy), and NullPool needs an explicit close to drop the connection.
-        if calibre_db._desktop_compat and calibre_db.session is not None:
+    def _close_request_db_sessions():
+        """Release only the current request greenlet's DB sessions."""
+        if ub.session is not None and hasattr(ub.session, "remove"):
             try:
-                calibre_db.session.rollback()
+                ub.session.remove()
+            except Exception:
+                pass
+
+        calibre_session = None
+        try:
+            calibre_session = calibre_db._peek_session()
+        except Exception:
+            pass
+        if calibre_session is not None:
+            try:
+                calibre_session.rollback()
             except Exception:
                 pass
             try:
-                calibre_db.session.close()
+                calibre_session.close()
             except Exception:
                 pass
         if calibre_db.session_factory:
-            calibre_db.session_factory.remove()
+            try:
+                calibre_db.session_factory.remove()
+            except Exception:
+                pass
+
+    @app.teardown_request
+    def shutdown_request_session(exception=None):
+        # Run while the request greenlet is unquestionably still current. This
+        # is what makes greenlet-scoped registries deterministic under gevent.
+        _close_request_db_sessions()
+
+    @app.teardown_appcontext
+    def shutdown_session(exception=None):
+        # Safety net for non-request app contexts (scheduler/startup helpers).
+        # _peek_session() above deliberately avoids creating a fresh Session
+        # merely because teardown is running.
+        _close_request_db_sessions()
 
     if deployment_profile.enable_library_automation():
         from .schedule import register_scheduled_tasks, register_startup_tasks
@@ -541,5 +566,16 @@ def create_app():
     @app.get("/healthz")
     def _healthz():
         return {"status": "ok", "profile": deployment_profile.profile_name()}
+
+    # Startup helpers (notably store_calibre_uuid) can materialise the root
+    # greenlet's Calibre Session after setup_db has released its own connection.
+    # DESKTOP_COMPAT_MODE must enter the server loop with no persistent
+    # metadata.db connection; otherwise SQLite's Unix VFS retains descriptors
+    # from subsequently closed request connections for POSIX-lock safety.
+    if calibre_db._desktop_compat and calibre_db.session_factory is not None:
+        try:
+            calibre_db.session_factory.remove()
+        except Exception:
+            pass
 
     return app

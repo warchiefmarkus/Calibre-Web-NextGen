@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timezone, timedelta
 import itertools
 import uuid
+from weakref import WeakKeyDictionary
 from flask import session as flask_session, has_request_context, g
 from binascii import hexlify
 
@@ -42,6 +43,10 @@ try:
 except ImportError:
     from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import backref, relationship, sessionmaker, Session, scoped_session, validates
+try:
+    from greenlet import getcurrent as _current_greenlet
+except ImportError:  # pragma: no cover - greenlet is required by gevent deployments
+    _current_greenlet = None
 from werkzeug.security import generate_password_hash
 
 from . import constants, logger
@@ -4482,6 +4487,24 @@ def create_system_magic_shelves_for_user(user_id):
         return 0
 
 
+def _make_app_session_factory(engine):
+    """Build the app.db scoped session per gevent greenlet / OS thread.
+
+    CWNG serves concurrent requests as greenlets on one OS thread without
+    monkey.patch_all(). A thread-scoped or concrete global Session therefore
+    lets concurrent requests share transaction state. Scope by greenlet, just
+    like calibre_db, and weak-key the registry so abandoned greenlets cannot
+    retain Sessions indefinitely.
+    """
+    factory = scoped_session(
+        sessionmaker(bind=engine, future=True),
+        scopefunc=_current_greenlet,
+    )
+    if _current_greenlet is not None:
+        factory.registry.registry = WeakKeyDictionary()
+    return factory
+
+
 def init_db_thread():
     global app_DB_path
     if not app_DB_path:
@@ -4511,9 +4534,7 @@ def init_db(app_db_path):
     engine = create_engine('sqlite:///{0}'.format(app_db_path), echo=False,
                            connect_args={'timeout': 30})
 
-    Session = scoped_session(sessionmaker())
-    Session.configure(bind=engine)
-    session = Session()
+    session = _make_app_session_factory(engine)
 
     _healthcheck_app_db(app_db_path)
 

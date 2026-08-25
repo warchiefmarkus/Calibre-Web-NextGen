@@ -1419,12 +1419,21 @@ class CalibreDB:
             elif os.getenv("CWNG_PROFILE", "").strip().lower() == "mcp-managed-library":
                 log.info("Skipping Calibre checksum schema migration in mcp-managed-library profile")
 
-            # With NullPool (DESKTOP_COMPAT_MODE) the setup connection is not the
-            # shared persistent connection — close it so the file lock is released
-            # before normal request handling begins.
+            # With NullPool (DESKTOP_COMPAT_MODE) neither the setup connection
+            # nor the root-greenlet Session may survive startup. SQLite's Unix
+            # VFS keeps closed descriptors in an "unused fd" list while another
+            # connection to the same inode remains open (POSIX-lock safety).
+            # A single startup Session therefore makes otherwise-correct request
+            # closes look like an unbounded metadata.db FD leak. Request access
+            # is lazy, so drop the root scope after initialization.
             if desktop_compat:
                 try:
                     conn.close()
+                except Exception:
+                    pass
+                try:
+                    if cls.session_factory is not None:
+                        cls.session_factory.remove()
                 except Exception:
                     pass
 
