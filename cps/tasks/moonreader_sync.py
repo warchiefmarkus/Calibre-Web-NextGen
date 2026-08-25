@@ -6,7 +6,7 @@ from threading import Lock
 
 from flask_babel import lazy_gettext as N_
 
-from cps import calibre_db, logger, ub
+from cps import logger, ub
 from cps.services.worker import CalibreTask, STAT_CANCELLED, STAT_ENDED, WorkerThread
 
 log = logger.create()
@@ -113,11 +113,6 @@ class TaskMoonReaderSync(CalibreTask):
 
         pending_key = _key(self.user_id, self.book_id)
         try:
-            try:
-                ub.init_db_thread()
-            except Exception:
-                pass
-            calibre_db.ensure_session()
             settings = self._settings()
             if settings is None:
                 return self._handleError("Moon+ Reader WebDAV settings no longer exist")
@@ -164,15 +159,6 @@ class TaskMoonReaderSync(CalibreTask):
                 ub.session.rollback()
             self._handleError(str(exc))
         finally:
-            try:
-                calibre_db.session.rollback()
-                calibre_db.session.expire_all()
-            except Exception:
-                pass
-            try:
-                ub.session.remove()
-            except Exception:
-                pass
             with _pending_lock:
                 _pending_keys.discard(pending_key)
 
@@ -193,10 +179,6 @@ def start_moonreader_polling(app, *, seconds: int = 60):
         def poll():
             with app.app_context():
                 try:
-                    try:
-                        ub.init_db_thread()
-                    except Exception:
-                        pass
                     rows = (ub.session.query(ub.MoonReaderWebdavSettings)
                             .filter(ub.MoonReaderWebdavSettings.enabled.is_(True)).all())
                     for row in rows:
@@ -207,11 +189,6 @@ def start_moonreader_polling(app, *, seconds: int = 60):
                 except Exception:
                     ub.session.rollback()
                     log.exception("Moon+ Reader polling tick failed")
-                finally:
-                    try:
-                        ub.session.remove()
-                    except Exception:
-                        pass
 
         scheduler.scheduler.add_job(
             poll, trigger=IntervalTrigger(seconds=max(30, int(seconds))),

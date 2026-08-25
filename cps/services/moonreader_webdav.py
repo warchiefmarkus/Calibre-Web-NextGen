@@ -38,6 +38,7 @@ from .moonreader_locator import (
 
 log = logger.create()
 
+
 DEFAULT_BASE_URL = "http://192.168.31.150:18283/books/"
 DEFAULT_USERNAME = "reader"
 DISCOVERY_MAX_DEPTH = 5
@@ -441,7 +442,7 @@ class WebDavClient:
 
 
 class BookMatcher:
-    def __init__(self):
+    def __init__(self, books: list[dict[str, Any]]):
         self._exact: dict[str, list[BookMatch]] = {}
         self._stem: dict[str, list[BookMatch]] = {}
         self._metadata: dict[str, list[tuple[str, BookMatch]]] = {}
@@ -451,23 +452,51 @@ class BookMatcher:
             int(row.book_id): row.filename
             for row in ub.session.query(ub.BookOriginalFilename).all()
         }
-        books = (calibre_db.session.query(db.Books)
-                 .options(selectinload(db.Books.data), selectinload(db.Books.authors))
-                 .all())
+
+        # In the managed profile CalibreMCP owns library access. The Moon
+        # poller consumes its read-only REST snapshot instead of opening
+        # metadata.db from the long-lived Calibre-Web process.
         for book in books:
-            for item in book.data or []:
-                fmt = str(item.format or "").lower()
-                name = str(item.name or "")
-                filename = name if name.casefold().endswith(f".{fmt}") else f"{name}.{fmt}"
-                match = BookMatch(int(book.id), fmt.upper(), filename, "filename")
+            try:
+                book_id = int(book["id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            title = str(book.get("title") or "")
+            authors = book.get("authors") or []
+            first_author = ""
+            if authors and isinstance(authors[0], dict):
+                first_author = str(authors[0].get("name") or "")
+            elif authors:
+                first_author = str(authors[0] or "")
+
+            for item in book.get("formats") or []:
+                if not isinstance(item, dict):
+                    continue
+                fmt = str(item.get("format") or "").lower()
+                if not fmt:
+                    continue
+                filename = str(item.get("filename") or item.get("name") or "")
+                if not filename:
+                    continue
+                if not filename.casefold().endswith(f".{fmt}"):
+                    filename = f"{filename}.{fmt}"
+                match = BookMatch(book_id, fmt.upper(), filename, "filename")
                 self._add(filename, match)
-                self._add_metadata(book, match)
-                self._by_id_format[(int(book.id), fmt.upper())] = match
-                path = os.path.join(config.config_calibre_dir, book.path, filename)
-                self._local_files.append((match, path, getattr(item, "uncompressed_size", None)))
-            original = originals.get(int(book.id))
+                self._add_metadata_values(title, first_author, match)
+                self._by_id_format[(book_id, fmt.upper())] = match
+                path = str(item.get("path") or "")
+                if not path:
+                    path = os.path.join(
+                        config.config_calibre_dir, str(book.get("path") or ""), filename,
+                    )
+                self._local_files.append((match, path, item.get("size")))
+
+            original = originals.get(book_id)
             if original:
-                self._add(original, BookMatch(int(book.id), _extension(original), original, "original_filename"))
+                self._add(
+                    original,
+                    BookMatch(book_id, _extension(original), original, "original_filename"),
+                )
 
     @staticmethod
     def _text_key(value: str) -> str:
@@ -491,17 +520,22 @@ class BookMatcher:
         self._stem.setdefault(self._stem_key(filename), []).append(match)
 
     def _add_metadata(self, book: Any, match: BookMatch):
-        title = self._text_key(str(getattr(book, "title", "") or ""))
         authors = list(getattr(book, "authors", None) or [])
-        if not title or not authors or not match.format:
+        self._add_metadata_values(
+            str(getattr(book, "title", "") or ""),
+            str(getattr(authors[0], "name", "") or "") if authors else "",
+            match,
+        )
+
+    def _add_metadata_values(self, title_value: str, author_value: str, match: BookMatch):
+        title = self._text_key(title_value)
+        author = self._text_key(author_value)
+        if not title or not author or not match.format:
             return
         # CWNG's download filename is ``Title - first author.ext``. Moon may
         # append publisher/other embedded metadata when importing that OPDS
         # download, so index the stable title+first-author prefix separately
         # from the physical Calibre filename.
-        author = self._text_key(str(getattr(authors[0], "name", "") or ""))
-        if not author:
-            return
         prefix = f"{title} {author}"
         self._metadata.setdefault(str(match.format).upper(), []).append((prefix, match))
 
@@ -1147,27 +1181,9 @@ def _match_remote(matcher: BookMatcher, resource: WebDavResource,
 def _native_pairs(user_name: str) -> set[tuple[int, str]]:
     if not deployment_profile.use_calibre_native_reader_data():
         return set()
-    # Keep bulk enumeration in the exact same Calibre reader namespace used by
-    # the catalog progress adapter and CalibreMCP. CWNG's visible user may be
-    # ``admin`` while Calibre stores the native row as ``cwng-admin``. Querying
-    # by the visible name silently drops every native-only position and prevents
-    # proactive Moon+ .po creation.
-    from .reading_progress import _native_reader_username
-
-    native_user = _native_reader_username(user_name)
-    if not native_user:
-        return set()
-    path = os.path.join(config.config_calibre_dir, "metadata.db")
     try:
-        import sqlite3
-        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
-            return {
-                (int(row[0]), str(row[1]).upper())
-                for row in connection.execute(
-                    "SELECT DISTINCT book, format FROM last_read_positions WHERE user = ?",
-                    (native_user,),
-                )
-            }
+        from .calibremcp_client import get_reader_position_pairs
+        return get_reader_position_pairs(user_name)
     except Exception:
         log.exception("Could not enumerate native Calibre reading positions")
         return set()
@@ -1271,11 +1287,12 @@ def sync_positions(user_id: int, *, book_id: int | None = None,
         _, files, found = client.discover_positions(cache_path)
         summary["cache_found"] = found
         summary["files_found"] = len(files)
-        matcher = BookMatcher()
         user = ub.session.get(ub.User, int(user_id))
         if user is None:
             raise MoonReaderError("Moon+ Reader sync user no longer exists.",
                                   code="user_not_found", status=404)
+        from .calibremcp_client import list_books
+        matcher = BookMatcher(list_books(str(user.name)))
         root_files = {os.path.basename(row.path).casefold(): row for row in client.root_files()}
         remote_by_key: dict[
             tuple[int, str], list[tuple[WebDavResource, BookMatch]]

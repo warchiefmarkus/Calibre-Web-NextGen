@@ -193,6 +193,43 @@ def update_rag_ocr_config(cwng_user: str, max_pages: int) -> dict[str, Any]:
     )
 
 
+def list_books(cwng_user: str) -> list[dict[str, Any]]:
+    """Return a complete managed-library snapshot through CalibreMCP REST."""
+    items: list[dict[str, Any]] = []
+    offset = 0
+    limit = 200
+    while True:
+        payload = _request(
+            "GET", "/api/v1/books/search", cwng_user,
+            params={"limit": limit, "offset": offset},
+            timeout_seconds=60.0,
+        )
+        page = payload.get("items", []) if isinstance(payload, dict) else []
+        if not isinstance(page, list):
+            raise CalibreMCPClientError("CalibreMCP returned an invalid book list")
+        items.extend(row for row in page if isinstance(row, dict))
+        total = int(payload.get("total") or len(items))
+        offset += len(page)
+        if not page or offset >= total:
+            return items
+
+
+def get_reader_position_pairs(cwng_user: str) -> set[tuple[int, str]]:
+    payload = _request("GET", "/api/v1/reader/positions", cwng_user)
+    rows = payload.get("positions", []) if isinstance(payload, dict) else []
+    if not isinstance(rows, list):
+        raise CalibreMCPClientError("CalibreMCP returned invalid reader positions")
+    result: set[tuple[int, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            result.add((int(row["book_id"]), str(row["format"]).upper()))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return result
+
+
 def get_reader_position(cwng_user: str, book_id: int, fmt: str) -> dict[str, Any]:
     return _request(
         "GET",

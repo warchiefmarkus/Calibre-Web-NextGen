@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+import zipfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -179,6 +180,30 @@ def test_book_matcher_metadata_name_refuses_ambiguous_duplicate_books():
     ) is None
 
 
+def test_book_matcher_builds_from_calibremcp_snapshot():
+    from cps.services import moonreader_webdav as mod
+
+    session = MagicMock()
+    session.query.return_value.all.return_value = []
+    books = [{
+        "id": 146,
+        "title": "Console Wars",
+        "authors": [{"name": "Blake Harris"}],
+        "formats": [{
+            "format": "FB2",
+            "filename": "Console Wars - Blake Harris.fb2",
+            "path": "/library/Console Wars - Blake Harris.fb2",
+            "size": 1234,
+        }],
+    }]
+    with patch.object(mod.ub, "session", session):
+        matcher = mod.BookMatcher(books)
+
+    match = matcher.match_filename("Moon/.Moon+/Cache/Console Wars - Blake Harris.fb2.po")
+    assert (match.book_id, match.format) == (146, "FB2")
+    assert matcher.local_path(match) == "/library/Console Wars - Blake Harris.fb2"
+
+
 def test_book_matcher_uses_calibre_export_book_id_with_same_format():
     from cps.services.moonreader_webdav import BookMatch, BookMatcher
     matcher = BookMatcher.__new__(BookMatcher)
@@ -249,6 +274,60 @@ def test_fb2_mapping_uses_moon_chapter_and_character_offset(tmp_path):
         fraction_from_locator(chapters, 1, mapped.offset) * 100,
     )
 
+
+
+def test_epub_moon_chapters_skip_cover_only_spine_and_use_body_offsets(tmp_path):
+    from cps.services.moonreader_locator import chapters_and_foliate_sections
+
+    path = tmp_path / "book.epub"
+    container = '''<?xml version="1.0"?>
+    <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+      <rootfiles><rootfile full-path="content.opf"/></rootfiles>
+    </container>'''
+    opf = '''<package xmlns="http://www.idpf.org/2007/opf">
+      <manifest>
+        <item id="cover" href="titlepage.xhtml"/>
+        <item id="c1" href="chapter1.xhtml"/>
+        <item id="c2" href="chapter2.xhtml"/>
+      </manifest>
+      <spine><itemref idref="cover"/><itemref idref="c1"/><itemref idref="c2"/></spine>
+    </package>'''
+    cover = '''<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Cover</title></head>
+      <body><svg xmlns="http://www.w3.org/2000/svg"><image/></svg></body></html>'''
+    chapter1 = '''<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Not rendered</title></head>
+      <body><p>first visible chapter</p></body></html>'''
+    chapter2 = '''<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Also hidden</title></head>
+      <body><p>second visible chapter</p></body></html>'''
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("META-INF/container.xml", container)
+        archive.writestr("content.opf", opf)
+        archive.writestr("titlepage.xhtml", cover)
+        archive.writestr("chapter1.xhtml", chapter1)
+        archive.writestr("chapter2.xhtml", chapter2)
+
+    chapters, mapping = chapters_and_foliate_sections(str(path), "EPUB")
+    assert [chapter.index for chapter in chapters] == [0, 1]
+    assert [chapter.text for chapter in chapters] == [
+        "first visible chapter", "second visible chapter",
+    ]
+    assert mapping == {0: 1, 1: 2}
+
+
+def test_epoch_of_dead_epub_moon_locator_matches_device_text_when_fixture_available():
+    from cps.services.moonreader_locator import anchor_from_locator, epub_chapters, parse_position
+
+    path = Path(
+        "/root/calibre/Library/Andriei Kruz/Epokha miertvykh. Nachalo (175)/"
+        "Epokha miertvykh. Nachalo - Andriei Kruz.epub"
+    )
+    if not path.exists():
+        pytest.skip("deployment fixture is not available")
+    chapters = epub_chapters(str(path))
+    position = parse_position("1634339204311*4@0#5290:2.2%")
+    anchor = anchor_from_locator(chapters, position)
+    assert anchor is not None
+    assert anchor.startswith("инались случаи немотивированной агрессии")
+    assert "Наши материалы – это или полевые наблюдения" in anchor
 
 
 def test_canonical_fraction_from_anchor_ignores_foliate_renderer_fraction(tmp_path):
@@ -458,31 +537,21 @@ def test_server_device_without_tracking_uses_timestamp_instead_of_rounded_percen
     assert mod._conflict_direction(resource, position, native, "2222222222222") == "to_moon"
 
 
-def test_native_pairs_use_calibre_reader_namespace(tmp_path, monkeypatch):
-    import sqlite3
+def test_native_pairs_use_calibremcp_reader_endpoint(monkeypatch):
+    from cps.services import calibremcp_client
     from cps.services import moonreader_webdav as mod
 
-    db_path = tmp_path / "metadata.db"
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            "CREATE TABLE last_read_positions (user TEXT, book INTEGER, format TEXT)"
-        )
-        connection.execute(
-            "INSERT INTO last_read_positions(user, book, format) VALUES (?, ?, ?)",
-            ("cwng-admin", 7, "fb2"),
-        )
-        connection.execute(
-            "INSERT INTO last_read_positions(user, book, format) VALUES (?, ?, ?)",
-            ("somebody-else", 8, "epub"),
-        )
-    monkeypatch.delenv("CWNG_NATIVE_READER_USERNAME", raising=False)
-    monkeypatch.delenv("CWNG_NATIVE_READER_USERNAME_TEMPLATE", raising=False)
-    monkeypatch.setattr(mod.config, "config_calibre_dir", str(tmp_path), raising=False)
+    calls = []
     monkeypatch.setattr(
         mod.deployment_profile, "use_calibre_native_reader_data", lambda: True,
     )
+    monkeypatch.setattr(
+        calibremcp_client, "get_reader_position_pairs",
+        lambda user_name: calls.append(user_name) or {(7, "FB2")},
+    )
 
     assert mod._native_pairs("admin") == {(7, "FB2")}
+    assert calls == ["admin"]
 
 
 def test_remote_path_ignores_tracking_from_an_obsolete_cache_folder():
@@ -818,7 +887,7 @@ def test_sync_reconciles_all_remote_files_matching_same_book_oldest_first():
         order.append(resource.path)
         return "unchanged"
 
-    with patch.object(mod, "get_or_create_settings", return_value=settings),          patch.object(mod, "decrypt_password", return_value="secret"),          patch.object(mod, "WebDavClient", return_value=client),          patch.object(mod, "BookMatcher", return_value=matcher),          patch.object(mod, "_match_remote", return_value=match),          patch.object(mod, "reconcile_book", side_effect=reconcile),          patch.object(mod.ub, "session", session):
+    with patch.object(mod, "get_or_create_settings", return_value=settings),          patch.object(mod, "decrypt_password", return_value="secret"),          patch.object(mod, "WebDavClient", return_value=client),          patch("cps.services.calibremcp_client.list_books", return_value=[]),          patch.object(mod, "BookMatcher", return_value=matcher),          patch.object(mod, "_match_remote", return_value=match),          patch.object(mod, "reconcile_book", side_effect=reconcile),          patch.object(mod.ub, "session", session):
         summary = mod.sync_positions(1, include_native_only=False)
 
     assert order == [older.path, newer.path]
@@ -949,6 +1018,7 @@ def test_book_scoped_sync_without_format_reconciles_all_native_formats():
     with patch.object(mod, "get_or_create_settings", return_value=settings), \
          patch.object(mod, "decrypt_password", return_value="secret"), \
          patch.object(mod, "WebDavClient", return_value=client), \
+         patch("cps.services.calibremcp_client.list_books", return_value=[]), \
          patch.object(mod, "BookMatcher", return_value=matcher), \
          patch.object(mod.ub, "session", session), \
          patch.object(mod, "_native_pairs", return_value={(7, "FB2"), (7, "EPUB"), (8, "PDF")}), \

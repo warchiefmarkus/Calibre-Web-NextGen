@@ -275,7 +275,16 @@ def _epub_rootfile(archive: zipfile.ZipFile) -> str:
     raise MoonLocatorError("EPUB package document was not found.")
 
 
-def epub_chapters(path: str) -> list[MoonChapter]:
+def epub_chapters_and_foliate_sections(
+    path: str,
+) -> tuple[list[MoonChapter], dict[int, int]]:
+    """Parse Moon EPUB chapters and map them back to EPUB/Foliate spine indexes.
+
+    Moon numbers visible body documents, not every OPF spine item.  In
+    particular a Calibre ``titlepage.xhtml`` containing only an SVG cover has
+    no Moon chapter.  Head metadata such as ``<title>`` is also outside Moon's
+    rendered-text offset coordinate system.
+    """
     try:
         with zipfile.ZipFile(path) as archive:
             opf_name = _epub_rootfile(archive)
@@ -290,7 +299,8 @@ def epub_chapters(path: str) -> list[MoonChapter]:
             ]
             base = os.path.dirname(opf_name)
             chapters: list[MoonChapter] = []
-            for index, item_id in enumerate(spine):
+            moon_to_foliate: dict[int, int] = {}
+            for spine_index, item_id in enumerate(spine):
                 href = manifest.get(item_id)
                 if not href:
                     continue
@@ -301,23 +311,36 @@ def epub_chapters(path: str) -> list[MoonChapter]:
                     document = ET.fromstring(archive.read(name))
                 except (KeyError, ET.ParseError):
                     continue
-                for node in list(document.iter()):
+                body = next(
+                    (node for node in document.iter() if _local_name(node.tag) == "body"),
+                    None,
+                )
+                if body is None:
+                    continue
+                body = copy.deepcopy(body)
+                for node in list(body.iter()):
                     if _local_name(node.tag) in {"script", "style", "svg"}:
                         node.clear()
-                text = _node_text(document)
-                if text:
-                    source = copy.deepcopy(document)
-                    _strip_xml_namespaces(source)
-                    chapters.append(MoonChapter(
-                        index=index,
-                        text=text,
-                        source_html=ET.tostring(
-                            source, encoding="unicode", method="html",
-                        ),
-                    ))
-            return chapters
+                text = _node_text(body)
+                if not text:
+                    continue
+                _strip_xml_namespaces(body)
+                moon_index = len(chapters)
+                chapters.append(MoonChapter(
+                    index=moon_index,
+                    text=text,
+                    source_html=ET.tostring(
+                        body, encoding="unicode", method="html",
+                    ),
+                ))
+                moon_to_foliate[moon_index] = spine_index
+            return chapters, moon_to_foliate
     except (OSError, zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
         raise MoonLocatorError("Could not parse the EPUB document.") from exc
+
+
+def epub_chapters(path: str) -> list[MoonChapter]:
+    return epub_chapters_and_foliate_sections(path)[0]
 
 
 def chapters_and_foliate_sections(
@@ -327,8 +350,7 @@ def chapters_and_foliate_sections(
     if name in {"FB2", "FBZ"} or path.casefold().endswith((".fb2", ".fbz", ".fb2.zip")):
         return fb2_chapters_and_foliate_sections(path)
     if name in {"EPUB", "KEPUB"} or path.casefold().endswith((".epub", ".kepub")):
-        chapters = epub_chapters(path)
-        return chapters, {chapter.index: chapter.index for chapter in chapters}
+        return epub_chapters_and_foliate_sections(path)
     return [], {}
 
 
