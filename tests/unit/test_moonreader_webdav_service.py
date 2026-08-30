@@ -719,6 +719,43 @@ def test_first_open_zero_is_repaired_from_cwng_web_without_anchor():
     assert export.call_args.kwargs["remote_position"].percentage == 0.0
 
 
+def test_existing_pdf_accepts_newer_cwng_page_without_text_anchor():
+    from cps.services import moonreader_webdav as mod
+    resource = mod.WebDavResource(
+        "Moon/.Moon+/Cache/Book.pdf.po", False, etag='"remote"',
+        modified=datetime(2026, 8, 27, 23, 30, tzinfo=timezone.utc),
+    )
+    client = MagicMock()
+    client.get_bytes.return_value = b"1634339204311*4:1.5%"
+    matcher = MagicMock()
+    match = mod.BookMatch(203, "PDF", "Book.pdf", "filename")
+    user = SimpleNamespace(id=3, name="admin")
+    native = {"positions": [{
+        "pos_frac": .04075,
+        "epoch": datetime(2026, 8, 27, 23, 36, tzinfo=timezone.utc).timestamp(),
+        "device": "cwng-web-live",
+        "cfi": '{"type":"pdf-position","version":1,"page":14,"scroll":{"x":0,"y":6818}}',
+    }]}
+    query = MagicMock()
+    query.filter.return_value.first.return_value = None
+    session = MagicMock()
+    session.query.return_value = query
+    with patch.object(mod.ub, "session", session), \
+         patch.object(mod.deployment_profile, "use_calibre_native_reader_data", return_value=True), \
+         patch.object(mod, "moon_device_id", return_value="2222222222222"), \
+         patch("cps.services.calibremcp_client.get_reader_position", return_value=native), \
+         patch.object(mod, "_remote_fraction", return_value=.015), \
+         patch.object(mod, "_export_native", return_value="uploaded") as export:
+        result = mod.reconcile_book(
+            user, client, "Moon/.Moon+/Cache", matcher, match, resource,
+            anchor_text=None,
+        )
+    assert result == "uploaded"
+    export.assert_called_once()
+    assert export.call_args.args[4].format == "PDF"
+    assert export.call_args.args[6]["cfi"].find('"page":14') != -1
+
+
 def test_existing_moon_file_is_not_overwritten_by_old_web_position_without_anchor():
     from cps.services import moonreader_webdav as mod
     resource = mod.WebDavResource(

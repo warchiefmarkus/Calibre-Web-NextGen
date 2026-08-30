@@ -102,3 +102,43 @@ def test_feed_rejects_anonymous_or_visibility_restricted_user(monkeypatch, user)
     with app.test_request_context("/opds/currentlyreading"):
         with pytest.raises(Forbidden):
             opds.feed_currently_reading.__wrapped__()
+
+
+@pytest.mark.unit
+def test_currently_reading_navigation_fields_cannot_collapse_into_read_books():
+    import inspect
+
+    source = inspect.getsource(opds)
+    block = source.split("'currently_reading': {", 1)[1].split("'unread': {", 1)[0]
+    assert "'title': N_('Currently Reading')" in block
+    assert "'description': N_('Currently Reading')" in block
+    assert "N_('Read Books')" not in block
+
+
+@pytest.mark.unit
+def test_dynamic_opds_feeds_are_not_client_cached(monkeypatch):
+    from flask import Flask
+
+    mini = Flask(__name__)
+    monkeypatch.setattr(opds, "render_template", lambda *args, **kwargs: "<feed/>")
+    monkeypatch.setattr(opds.config, "config_calibre_web_title", "Test", raising=False)
+    with mini.test_request_context("/opds/currentlyreading"):
+        response = opds.render_xml_template("feed.xml", feed_title="Currently Reading")
+    cache_control = response.headers.get("Cache-Control", "")
+    assert "no-store" in cache_control
+    assert "no-cache" in cache_control
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["Expires"] == "0"
+
+
+@pytest.mark.unit
+def test_system_currently_reading_magic_shelf_is_not_duplicated_in_opds_navigation():
+    user = _User()
+    system_current = SimpleNamespace(is_system=True, name="Currently Reading")
+    custom_current = SimpleNamespace(is_system=False, name="Currently Reading")
+
+    assert opds._opds_magic_shelf_duplicates_visible_root(system_current, user) is True
+    assert opds._opds_magic_shelf_duplicates_visible_root(custom_current, user) is False
+
+    user.view_settings = {"opds": {"hidden_entries": ["currently_reading"]}}
+    assert opds._opds_magic_shelf_duplicates_visible_root(system_current, user) is False

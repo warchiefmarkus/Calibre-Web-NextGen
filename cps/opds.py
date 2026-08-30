@@ -203,7 +203,10 @@ OPDS_ROOT_ENTRY_DEFS = {
     'currently_reading': {
         'endpoint': 'opds.feed_currently_reading',
         'title': N_('Currently Reading'),
-        'description': N_('Books currently being read'),
+        # Some OPDS clients (Moon+ among them on particular catalog views)
+        # surface the entry content/description as the navigation label. Keep
+        # both fields identical so this feed can never masquerade as Read Books.
+        'description': N_('Currently Reading'),
         'visible': lambda user, __: user.check_visibility(constants.SIDEBAR_READ_AND_UNREAD) and not user.is_anonymous,
     },
     'unread': {
@@ -425,6 +428,28 @@ def get_opds_visible_magic_shelves(user=None):
             and_(ub.OpdsMagicShelfExposure.shelf_id == ub.MagicShelf.id, ub.OpdsMagicShelfExposure.user_id == user.id),
         )
     return query
+
+
+_OPDS_SYSTEM_MAGIC_ROOT_EQUIVALENTS = {
+    'Currently Reading': 'currently_reading',
+    'Yet to Read': 'unread',
+}
+
+
+def _opds_magic_shelf_duplicates_visible_root(shelf, user, allow_anonymous=False):
+    """Hide only built-in magic shelves already represented at OPDS root.
+
+    A custom shelf is never hidden even when the user gave it the same name.
+    If the user explicitly hides the corresponding root entry, the system shelf
+    remains available under Magic Shelves instead of becoming unreachable.
+    """
+    if not getattr(shelf, 'is_system', False):
+        return False
+    root_key = _OPDS_SYSTEM_MAGIC_ROOT_EQUIVALENTS.get(getattr(shelf, 'name', ''))
+    if not root_key or root_key in get_opds_hidden_entries_for_user(user):
+        return False
+    entry_def = OPDS_ROOT_ENTRY_DEFS[root_key]
+    return bool(entry_def['visible'](user, allow_anonymous))
 
 
 def is_opds_entity_exposed(entity, entity_type=None, user=None):
@@ -948,13 +973,16 @@ def feed_magic_shelfindex():
     class OpdsMagicShelfEntry:
         def __init__(self, magic):
             self.id = magic.id
-            self.name = magic.name
+            self.name = magic_shelf.system_magic_shelf_display_name(magic)
             self.is_public = magic.is_public
             self.icon = magic.icon
             self.is_magic_shelf = True
             self.opds_url = url_for('opds.feed_magic_shelf', shelf_id=magic.id)
 
-    listelements = [OpdsMagicShelfEntry(magic) for magic in magic_shelves]
+    listelements = [
+        OpdsMagicShelfEntry(magic) for magic in magic_shelves
+        if not _opds_magic_shelf_duplicates_visible_root(magic, auth.current_user(), g.allow_anonymous)
+    ]
     pagination = Pagination((int(off) / (int(config.config_books_per_page)) + 1),
                             config.config_books_per_page,
                             len(listelements))
@@ -1272,6 +1300,12 @@ def render_xml_template(*args, feed_title=None, **kwargs):
                           feed_title=feed_title, constants=constants.sidebar_settings, *args, **kwargs)
     response = make_response(xml)
     response.headers["Content-Type"] = "application/atom+xml; charset=utf-8"
+    # Navigation membership is user state (read/in-progress/shelves), not book
+    # metadata. Moon+ otherwise reuses an old OPDS page after the web reader has
+    # advanced or changed a read state. Force every catalog open to revalidate.
+    response.headers["Cache-Control"] = "private, no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
 
 

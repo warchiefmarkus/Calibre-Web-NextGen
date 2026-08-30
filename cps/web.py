@@ -1059,7 +1059,10 @@ def render_read_books(page, are_read, as_xml=False, order=None, extra_filter=Non
             db_filter = and_(ub.ReadBook.user_id == int(current_user.id),
                              ub.ReadBook.read_status == ub.ReadBook.STATUS_FINISHED)
         else:
-            db_filter = coalesce(ub.ReadBook.read_status, 0) != ub.ReadBook.STATUS_FINISHED
+            # Tri-state read status is exclusive: an in-progress book belongs
+            # to Currently Reading, not to Unread. Missing rows still mean the
+            # default unread state.
+            db_filter = coalesce(ub.ReadBook.read_status, ub.ReadBook.STATUS_UNREAD) == ub.ReadBook.STATUS_UNREAD
     else:
         try:
             if are_read:

@@ -749,17 +749,22 @@ def build_filter_from_rule(rule, user_id=None):
                         ub.ReadBook.read_status == ub.ReadBook.STATUS_FINISHED
                     ).all()
                 else:
-                    # Unread: books with no ReadBook entry or STATUS_UNREAD
+                    # Unread is the default/no-row state or an explicit
+                    # STATUS_UNREAD row. Exclude both FINISHED and IN_PROGRESS
+                    # so the three read-state shelves are mutually exclusive.
                     matching_books = ub.session.query(ub.ReadBook).filter(
                         ub.ReadBook.user_id == user_id,
-                        ub.ReadBook.read_status == ub.ReadBook.STATUS_FINISHED
+                        ub.ReadBook.read_status.in_((
+                            ub.ReadBook.STATUS_FINISHED,
+                            ub.ReadBook.STATUS_IN_PROGRESS,
+                        )),
                     ).all()
 
                 matching_book_ids = [rb.book_id for rb in matching_books]
 
                 if operator_name == 'equal':
                     if status_value == ub.ReadBook.STATUS_UNREAD:
-                        # Unread = NOT in finished list
+                        # Unread = NOT in the finished-or-in-progress set.
                         return ~db.Books.id.in_(matching_book_ids)
                     else:
                         return db.Books.id.in_(matching_book_ids)
@@ -810,10 +815,13 @@ def build_filter_from_rule(rule, user_id=None):
         elif status_value == ub.ReadBook.STATUS_FINISHED:
             condition = cc_read
         else:
-            # Unread: no truthy column row. Books never touched have no row
-            # at all, so match on absence-of-read rather than value == False
-            # (the old shape hid every never-marked book from "Yet to Read").
-            condition = ~cc_read
+            # Unread: no truthy custom-column row AND not currently reading in
+            # ub.ReadBook. The boolean custom column cannot encode state 2.
+            in_progress_ids = [rb.book_id for rb in ub.session.query(ub.ReadBook).filter(
+                ub.ReadBook.user_id == user_id,
+                ub.ReadBook.read_status == ub.ReadBook.STATUS_IN_PROGRESS
+            ).all()] if user_id is not None else []
+            condition = and_(~cc_read, ~db.Books.id.in_(in_progress_ids))
 
         if operator_name == 'equal':
             return condition

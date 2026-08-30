@@ -1244,8 +1244,14 @@ def reconcile_book(user, client: WebDavClient, cache_path: str,
         bootstrap_zero = _is_bootstrap_zero(
             position, native, server_device, tracking,
         )
+        # Text formats need a visible-text anchor before translating a CWNG
+        # fraction into Moon's chapter/split/offset coordinate system. PDF is
+        # different: both readers persist an explicit page number, so delaying
+        # the write here leaves Moon on its stale page and lets that stale .po
+        # win as soon as Moon touches the file.
+        needs_text_anchor = str(match.format or "").upper() != "PDF"
         if (resource is not None and native_device.startswith("cwng-web")
-                and not anchor_text and not bootstrap_zero):
+                and needs_text_anchor and not anchor_text and not bootstrap_zero):
             return "deferred"
         try:
             return _export_native(

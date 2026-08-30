@@ -138,25 +138,29 @@ class TestBuildFilterFromRuleHandlesThreeStatuses:
             "shape; that path silently misroutes STATUS_IN_PROGRESS."
         )
 
-    def test_unread_branch_uses_complement_of_finished_set(self):
-        """The unread branch must NOT issue a query for ReadBook rows
-        with STATUS_UNREAD (such rows often don't exist — the default
-        is "no ReadBook row at all"). It must build the unread set as
-        the complement of STATUS_FINISHED book ids, mirroring how the
-        original pre-backport code worked. If a future edit changes
-        the unread branch to filter on STATUS_UNREAD directly, users
-        with no ReadBook rows would see an empty unread shelf."""
+    def test_unread_branch_excludes_finished_and_in_progress_sets(self):
+        """Unread includes no-row/explicit-zero books only.
+
+        Since read status is tri-state, STATUS_IN_PROGRESS must not leak into
+        Yet to Read. The no-row default is still expressed as the complement
+        of all non-unread rows rather than requiring an explicit zero row.
+        """
         from cps.magic_shelf import build_filter_from_rule
 
         src = inspect.getsource(build_filter_from_rule)
-        # The unread branch must emit ~db.Books.id.in_(...) when
-        # status_value == STATUS_UNREAD. Pin the operator usage.
-        assert "~db.Books.id.in_(matching_book_ids)" in src, (
-            "Unread must be expressed as the negation of the finished "
-            "set (~db.Books.id.in_(matching_book_ids)). Direct "
-            "STATUS_UNREAD filtering would miss users whose default "
-            "state is no ReadBook row."
-        )
+        assert "ub.ReadBook.STATUS_FINISHED" in src
+        assert "ub.ReadBook.STATUS_IN_PROGRESS" in src
+        assert "ub.ReadBook.read_status.in_((" in src
+        assert "~db.Books.id.in_(matching_book_ids)" in src
+
+    def test_classic_unread_list_excludes_in_progress(self):
+        from cps import web
+
+        src = inspect.getsource(web.render_read_books)
+        assert (
+            "coalesce(ub.ReadBook.read_status, ub.ReadBook.STATUS_UNREAD) "
+            "== ub.ReadBook.STATUS_UNREAD"
+        ) in src
 
 
 @pytest.mark.unit
