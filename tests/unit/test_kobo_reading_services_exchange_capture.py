@@ -7,9 +7,8 @@ from __future__ import annotations
 import gzip
 import importlib
 import json
-import os
 import stat
-import time
+import threading
 from types import SimpleNamespace
 
 import gevent
@@ -28,11 +27,22 @@ def _module():
     return importlib.import_module("cps.services.kobo_exchange_capture")
 
 
-def _enable(monkeypatch, tmp_path):
+def _run_capture_io_inline(monkeypatch, capture):
+    """Keep persistence-focused tests independent of the request deadline."""
+    monkeypatch.setattr(
+        capture,
+        "_run_off_hub_bounded",
+        lambda _scope, function: function(),
+    )
+
+
+def _enable(monkeypatch, tmp_path, *, run_io_inline=True):
     capture = _module()
     root = tmp_path / "private-captures"
     monkeypatch.setenv(capture.ENABLE_ENV, ACK)
     monkeypatch.setattr(capture, "_capture_root", lambda: root)
+    if run_io_inline:
+        _run_capture_io_inline(monkeypatch, capture)
     return capture, root
 
 
@@ -291,6 +301,7 @@ def test_unauthenticated_patch_401_captures_body_with_explicit_provenance_outsid
     monkeypatch, tmp_path,
 ):
     capture = _module()
+    _run_capture_io_inline(monkeypatch, capture)
     unauthenticated_root = tmp_path / "unauthenticated-exchange-captures"
     recovery_spool_root = tmp_path / "recovery-spool-must-stay-empty"
     monkeypatch.setenv(capture.ENABLE_ENV, ACK)
@@ -419,31 +430,35 @@ def test_unauthenticated_capture_churn_cannot_evict_authenticated_diagnostics(
 
 @pytest.mark.unit
 def test_capture_persistence_yields_to_gevent_hub(monkeypatch, tmp_path):
-    capture, _root = _enable(monkeypatch, tmp_path)
+    capture, _root = _enable(monkeypatch, tmp_path, run_io_inline=False)
+    monkeypatch.setattr(capture, "REQUEST_IO_TIMEOUT_SECONDS", 5.0)
     session = capture.begin_capture(
         exchange="annotations_patch", method="PATCH", path="/annotations/book",
         query_string=b"", headers=[], body=b'{"updatedAnnotations":[]}',
         authentication="authenticated", user_id=7,
     )
-    original_persist = session._persist
+    request_thread = threading.get_ident()
+    release_worker = threading.Event()
+    worker_threads = []
     events = []
 
-    def slow_native_io():
-        time.sleep(0.05)
-        original_persist()
+    def native_io_waiting_on_hub():
+        worker_threads.append(threading.get_ident())
+        assert release_worker.wait(2), "hub greenlet did not release capture worker"
         events.append("persisted")
 
     def hub_ticker():
-        gevent.sleep(0.01)
         events.append("hub-ran")
+        release_worker.set()
 
-    monkeypatch.setattr(session, "_persist", slow_native_io)
+    monkeypatch.setattr(session, "_persist", native_io_waiting_on_hub)
     ticker = gevent.spawn(hub_ticker)
 
     assert _finish(session) is True
-    ticker.join(timeout=1)
+    ticker.get(timeout=1)
 
     assert events == ["hub-ran", "persisted"]
+    assert worker_threads != [request_thread]
 
 
 @pytest.mark.unit
@@ -494,3 +509,79 @@ def test_annotations_get_and_patch_capture_both_proxy_legs_and_device_response(
     assert record["upstream_response"]["body"]["data"].encode() == upstream_body
     assert record["device_response"]["body"]["data"].encode() == upstream_body
     assert "secret" not in json.dumps(record).lower()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("method", "request_body", "expected_status"),
+    [
+        ("GET", b"", 200),
+        ("PATCH", b"{}", 204),
+    ],
+)
+def test_owned_annotations_capture_records_local_answer_without_upstream_leg(
+    monkeypatch, tmp_path, method, request_body, expected_status,
+):
+    _capture, root = _enable(monkeypatch, tmp_path)
+    app = Flask(__name__)
+    book = SimpleNamespace(id=347, title="Flatland", identifiers=[])
+
+    @app.route("/annotations/<content_id>", methods=["GET", "PATCH"])
+    def annotations(content_id):
+        return rs.handle_annotations.__wrapped__(content_id)
+
+    monkeypatch.setattr(rs, "current_user", SimpleNamespace(id=7, is_authenticated=True))
+    monkeypatch.setattr(rs, "resolve_entitlement_ownership", lambda _content_id: book)
+    monkeypatch.setattr(rs, "_capture_authority_status", lambda _ownership: "authoritative")
+    monkeypatch.setattr(rs, "_stage_patch_for_recovery", lambda *_args: None)
+    monkeypatch.setattr(
+        rs, "_persist_owned_patch_atomically", lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(rs, "log_annotation_data", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "cps.services.kobo_annotation_authority.local_get_is_eligible",
+        lambda **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        "cps.services.kobo_annotation_authority.ever_authoritative",
+        lambda *_args, **_kwargs: "never_authoritative",
+    )
+    monkeypatch.setattr(
+        "cps.services.kobo_annotation_authority.mark_authoritative_oversize",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        "cps.services.kobo_annotation_authority.advance_authoritative_patch_revision",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        rs, "proxy_to_kobo_reading_services",
+        lambda **_kwargs: pytest.fail("owned request must not create an upstream leg"),
+    )
+    monkeypatch.setattr(
+        "cps.services.kobo_annotation_authority.render_owned_annotations",
+        lambda **_kwargs: (
+            b'{"annotations":[],"nextPageOffsetToken":null}',
+            'W/"CWNG:00000000-0000-0000-0000-000000000000:1:0000000000000000"',
+        ),
+    )
+
+    response = app.test_client().open(
+        f"/annotations/{OWNED}?limit=100", method=method, data=request_body,
+        content_type="application/json",
+    )
+
+    assert response.status_code == expected_status
+    [record] = _records(root)
+    assert record["upstream_request"] is None
+    assert record["upstream_response"] is None
+    assert record["upstream_error"] is None
+    assert record["decisions"] == [{
+        "stage": "local_authority",
+        "index": 0,
+        "content_id": OWNED,
+        "ownership": "owned",
+        "authority_status": "authoritative",
+        "action": "answered_locally",
+    }]
+    assert record["device_response"]["status"] == expected_status

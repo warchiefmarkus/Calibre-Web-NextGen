@@ -16,7 +16,147 @@ is for things you can see or feel when running the app.
 
 ## [Unreleased]
 
+## [v4.1.43] - 2026-08-28
+
 ### Fixed
+
+- Kobo no longer shows Download again for books you already have after a sync hiccup.
+
+## [v4.1.42] - 2026-08-28
+
+### Added
+
+- **Runtime data paths can be configured without editing the installation.**
+  Packagers can set `CWA_INGEST_FOLDER`, `CWA_CALIBRE_LIBRARY_DIR`, and
+  `CWA_TMP_CONVERSION_DIR` from the process environment while existing
+  `dirs.json` values remain supported as fallbacks. Requested with
+  @chloeroform and @Thovi98 in #1611. Runtime values are normalized and
+  validated as non-root, absolute, traversal-free paths before startup services
+  use them.
+
+- **New ingest setting: move a misplaced `ComicInfo.xml` to the archive root.**
+  The ComicInfo.xml standard requires the file at the root of a `.cbz`; some
+  real scan-group releases package it one folder down instead, alongside the
+  pages, and every reader we checked (including ComicTagger and Komga) then
+  silently gets no metadata from it. Off by default — turn it on in CWA
+  Settings and ingest repackages a copy with the file moved to root before
+  import, only when it's present but misplaced. Your original download is
+  never touched.
+
+### Changed
+
+- **Environment settings now have one complete, drift-checked reference.**
+  `examples/.env.example` documents every supported application, service, and test
+  variable, and automated tests keep it synchronized with the code. Initiated by
+  @Thovi98.
+
+- **The "Delete book" control no longer looks like a page-wide warning.** It
+  remains visible to users with delete permission and separate from everyday
+  book actions, but now sits in a quiet, clearly labelled region instead of a
+  filled danger banner. The existing confirmation is unchanged. Reported via
+  the in-app feedback form.
+
+- **Russian translation updated.** 31 previously untranslated strings now have
+  Russian text — Kobo two-way sync settings, bulk-action results, and the
+  annotations import summary. Contributed by @standhaftsohnsergius.
+
+### Fixed
+
+- **Local-only accounts can now sign in through the classic login form when
+  an LDAP directory rejects their credentials.** The fallback accepts only a
+  non-empty stored local password hash, so LDAP-imported accounts remain
+  passwordless locally. LDAP outages, account-creation failures, and successful
+  directory authentication also no longer show a misleading extra "Wrong
+  Username or Password" message. Reported by @justemu
+  ([#1903](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1903)).
+
+- **Tag view no longer crams 5–6 columns.** The tags browse list now uses the same 300px column floor as the editor view (~4 columns), so tag names have room instead of ellipsis. Contributed by @0x5t4l1n (#1693).
+
+- **An `.acsm` is fulfilled even when Auto-Convert is off.** An Adobe fulfilment ticket only
+  reached its Calibre plugin when Auto-Convert was enabled; with the setting off — or with `acsm`
+  on the Auto-Convert ignore list — ingest stopped short and printed guidance telling you to
+  install a plugin you already had. A ticket is not a book, so the plugin is the only path to one;
+  it now runs on every path. Books are unaffected: with Auto-Convert off, a book still imports in
+  its original format. Reported by @jakejoh, following @auspex's original report.
+
+- **Bare-metal startup and uploads survive unusable local configuration.** Read-only profile storage and invalid `PUID` or `PGID` values now warn and fall back instead of interrupting use.
+
+- **Remote annotation updates are no longer queued when the matching local database change could not be saved.**
+
+- **Two ingest runs can no longer run at once.**
+
+- **Ingest keeps working after the post-batch follow-up.**
+
+- **Database restores now recover from stale locks and refuse to run while ingest or cover enforcement is active.**
+
+- **Automatic duplicate resolution no longer deletes a book when its reading data could not be moved.** The duplicate remains available and the group is reported as unresolved so it can be retried safely.
+
+- **Annotations imported from a Kobo now retain their original creation time.** Kobo creation timestamps without an explicit offset are interpreted consistently with the device's paired UTC modification timestamps instead of being replaced by the import time.
+
+- **The container healthcheck can no longer freeze the app it is measuring.**
+  Database and service probes now run away from gevent's request thread, and a
+  normal short-lived `metadata.db` writer lock uses a strictly bounded recent
+  known-good result for that database object instead of parking every request;
+  using that fallback emits an operator-visible warning. A lock-free corrupt or
+  missing DB is degraded immediately; corruption behind a qualifying lock is
+  only detected once the lock clears. Stale health can be reused for at most a
+  five-minute grace; after that, the lock itself degrades the probe even though
+  the database contents remain unknown.
+  Longruns explicitly reported `down` are degraded, while the pre-existing
+  `unknown` state (no `s6-rc`, timeout, error, or nonzero exit) remains
+  non-degrading. Repeated checks retain at most one DB worker and one service
+  worker even if filesystem I/O wedges. On slow ARM and virtual-machine hosts,
+  HTTPS detection now has a one-second cap before curl's five-second cap, all
+  inside Docker's seven-second outer cap, so a dead app still fails fast.
+  Reported by
+  [@hayvan96](https://github.com/hayvan96) and corroborated by
+  [@chloeroform](https://github.com/chloeroform)
+  ([#1799](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1799)).
+
+- **Settings-database saves now keep their rollback boundaries without blocking
+  unrelated reads or startup work.** Live backups include committed WAL data, and
+  `NETWORK_SHARE_MODE=true` safely retains legacy behavior.
+
+- **Fix issues occurring on bare metal setups.** The `user_profiles.json` file
+  is now created by the Python application instead of rc script, and a `chown`
+  operation uses the environment variables `PUID` and `PGID` instead of
+  `1000:1000`.
+
+- **"Make public" is no longer offered on a shelf you are not allowed to
+  share.** Sharing a shelf needs the "Edit public shelves" permission, and the
+  server has always refused without it, but the New UI's shelf page showed the
+  button to every owner — so clicking it only ever produced *"you are not
+  allowed to edit shelves"*. The control is now hidden when the permission is
+  absent, matching the classic UI. "Make private" is unaffected. Reported by
+  @iroQuai.
+
+## [v4.1.41] - 2026-08-25
+
+### Added
+
+- **Kobo hardware experiments can now record the complete Reading Services
+  exchange instead of relying on request-line access logs.** Operators can use
+  a deliberately explicit private-data environment gate to capture the device
+  request, the actual filtered request sent to Kobo, Kobo's raw response, and
+  the final byte stream returned to the device for `checkforchanges` and
+  annotation GET/PATCH calls. Credentials are redacted, records never enter
+  ordinary logs or support bundles, and local retention is capped.
+
+### Changed
+
+- **Contributors no longer have to edit the same changelog insertion point in
+  every pull request.** Each change now carries an isolated `changelog.d`
+  fragment, and release preparation assembles the fragments deterministically.
+
+### Fixed
+
+- **A series added or changed in the library now reaches the Kobo copy of the
+  book.** Download-time metadata embedding was removing the EPUB 3 collection
+  metadata Kobo firmware reads, even when the stored KEPUB had already been
+  corrected. The served KEPUB now carries the current series and index while
+  retaining its cover marker, modified timestamp, refinements, and unrelated
+  collections. Reported by @bjekel
+  ([#1372](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1372)).
 
 - **The small edit pencil under each book cover no longer looks like a dark
   sticker on the light, sepia and high-contrast themes.** It was drawn with the
@@ -39,6 +179,83 @@ is for things you can see or feel when running the app.
   by @ericsilberberg on Discord, who was running NextGen and stock Calibre-Web
   side by side and noticed pages populating more slowly here
   ([#1571](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1571)).
+
+- **A comic dropped into the ingest folder now keeps the title, series, issue
+  number, author and language its `ComicInfo.xml` already carries.** Auto-ingest
+  ran a bare `calibredb add` for comic files, which does not read that embedded
+  metadata, so a `.cbz`/`.cbr` tagged by ComicTagger, Kapowarr, Mylar3 or a
+  well-tagged scene release landed as `<filename>` by `Unknown` — the same
+  guesswork an untagged file gets. Uploading the identical file by hand through
+  the web UI already read it correctly; ingest now does too. A comic with no
+  embedded tags is unaffected. Contributed by
+  [@rfsbraz](https://github.com/rfsbraz)
+  ([#1690](https://github.com/new-usemame/Calibre-Web-NextGen/issues/1690),
+  [#1691](https://github.com/new-usemame/Calibre-Web-NextGen/pull/1691)).
+
+- **Kobo annotation uploads are no longer acknowledged when their JSON shape
+  prevents CWNG from addressing the uploaded annotations.** Non-empty
+  non-object bodies and non-empty non-list annotation batches now receive a
+  temporary failure so the device retains the delta for retry, while legitimate
+  empty sync and delete-carrying batches continue normally. Operators running
+  the explicit private
+  Reading Services diagnostic can also capture the body of a pre-authentication
+  401 refusal in a separate, tightly bounded unauthenticated store. Repeated
+  attempts for the same unresolved upload now share one protected recovery
+  record, preventing one retrying device from exhausting the instance-wide
+  spool and denying recovery staging to other users.
+
+- **Kobo annotation recovery copies could be deleted by maintenance meant for a
+  different folder.** The background job that expires old recovery records
+  looked up which folder to clean when it eventually ran, rather than when it
+  was scheduled, so a change in between could point it somewhere else. It now
+  carries its target with it.
+
+- **A highlight that fails to save no longer looks saved.** If the database
+  rejected the write, the web reader still showed the highlight as created and
+  a delete still reported success — the change was gone but nothing said so.
+  Those paths now report the failure, and KOReader is told its push did not
+  land instead of being acknowledged.
+
+- **Slow storage no longer discards Kobo annotation recovery bodies.** If a
+  durable spool write outlasts the request deadline, it now finishes in the
+  background, and one following PATCH can also be admitted instead of being
+  rejected merely because the first write is still completing.
+
+- **A Kobo annotation upload now has a bounded local recovery record even if
+  local processing throws before it can persist the delta.** Before parsing or
+  dispatch, CWNG fsyncs the exact raw PATCH body and its new directory entries.
+  Blocking storage work runs off the gevent hub behind a 100 ms request
+  deadline; on timeout or any storage failure, the PATCH continues without a
+  new record. Unresolved records are never evicted to admit a newer body, and
+  transactional replacement restores the previous record set if a new write
+  fails. Private retention remains bounded even when no new PATCH arrives. The
+  device still receives the same explicit failure it does today when nothing
+  was stored — recovery is in addition to that refusal, not a replacement for
+  it.
+
+- **Bulk actions now report partial failures truthfully.** Delete, read/unread,
+  add-to-shelf, and metadata updates count each request separately; failed books
+  are reported instead of being included in a false success total, and only
+  confirmed deletions are removed from the library cache.
+
+- **Restoring a Kobo backup no longer drops the annotations from most of your
+  books.** The recovery importer only understood the chapter identifier that a
+  Kobo writes for books whose EPUB keeps its package file at the top level. For
+  every other book — the common case — it counted the annotations as
+  unreadable and skipped them, so a restore that reported success could bring
+  back a fraction of what the backup held. Those annotations now import.
+
+- **Kobo PATCH recovery no longer commits a record after retention scheduling
+  has already failed.** Timer admission now happens before the durable spool
+  transaction, so a maintenance setup failure leaves the established recovery
+  record set unchanged and the annotation PATCH still fails open.
+
+- **Test-suite reliability: concurrent test processes no longer fight over the
+  same lock file.** Several maintenance scripts guard themselves with a
+  one-at-a-time lock in the system temp directory, which is correct when the app
+  runs but meant any second process on the machine — a parallel test worker, a
+  second test run, or the app itself — could make unrelated tests report
+  failures. Each test process now gets its own temp directory.
 
 ## [v4.1.40] - 2026-08-23
 
@@ -164,15 +381,6 @@ is for things you can see or feel when running the app.
   source, and anything genuinely missing is listed again. Docker users see the
   same list as before, minus two rows that never applied. Packaging work by
   @chloeroform (#1442).
-
-- **A comic dropped into the ingest folder now keeps the title, series, issue
-  number, author and language its `ComicInfo.xml` already carries.** Auto-ingest
-  ran a bare `calibredb add` for comic files, which does not read that embedded
-  metadata, so a `.cbz`/`.cbr` tagged by ComicTagger, Kapowarr, Mylar3 or a
-  well-tagged scene release landed as `<filename>` by `Unknown` — the same
-  guesswork an untagged file gets. Uploading the identical file by hand through
-  the web UI already read it correctly; ingest now does too. A comic with no
-  embedded tags is unaffected.
 
 ## [v4.1.39] - 2026-08-21
 

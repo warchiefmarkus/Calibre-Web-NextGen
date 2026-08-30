@@ -16,7 +16,6 @@ from weakref import WeakSet, WeakKeyDictionary
 from uuid import uuid4
 
 import sqlite3
-from sqlite3 import OperationalError as sqliteOperationalError
 from sqlalchemy import create_engine, event
 from sqlalchemy import Table, Column, ForeignKey, CheckConstraint
 from sqlalchemy import String, Integer, Boolean, TIMESTAMP, Float
@@ -30,7 +29,7 @@ try:
 except ImportError:
     from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.pool import StaticPool
-from sqlalchemy.sql.expression import and_, true, false, text, func, or_
+from sqlalchemy.sql.expression import and_, true, false, text, func, literal, or_, select, union_all
 try:
     # Scope key for the session registry, see _make_session_factory. greenlet is
     # a pinned dependency (pyproject.toml) and a hard dependency of gevent;
@@ -43,14 +42,19 @@ from sqlalchemy.ext.associationproxy import association_proxy
 from .cw_login import current_user
 from flask_babel import gettext as _
 from flask_babel import get_locale
-from flask import flash, url_for, has_request_context
+from flask import flash, url_for, has_request_context, g
 
 from . import logger, ub, isoLanguages
 from .pagination import Pagination
 from .string_helper import strip_whitespaces
+from .sqlite_utils import network_share_mode_enabled
 from .unicode_collation import unicode_initial, unicode_sort_key
 
 log = logger.create()
+
+
+class FilteredBookVisibilityUnavailable(RuntimeError):
+    """The configured filtered-library policy could not be resolved safely."""
 
 # Rate-limit author-sort drift diagnostics. Books.author_sort is denormalized
 # from Authors.sort and can drift after an Authors edit; the divergence is
@@ -58,6 +62,61 @@ log = logger.create()
 # fires from every page render. Module-level set so we warn once per process
 # per drifted sort string. See fork issue #108.
 _AUTHOR_SORT_DRIFT_WARNED: set = set()
+_SQLITE_JSON_CAPABILITY = None
+_SQLITE_JSON_CAPABILITY_LOCK = threading.Lock()
+
+
+def _sqlite_json_available(app_session, metadata_session):
+    """Detect JSON SQL functions once; bare-metal SQLite may omit them."""
+    global _SQLITE_JSON_CAPABILITY
+    if _SQLITE_JSON_CAPABILITY is not None:
+        return _SQLITE_JSON_CAPABILITY
+    with _SQLITE_JSON_CAPABILITY_LOCK:
+        if _SQLITE_JSON_CAPABILITY is not None:
+            return _SQLITE_JSON_CAPABILITY
+        try:
+            for session in (app_session, metadata_session):
+                with session.get_bind().connect() as connection:
+                    connection.exec_driver_sql(
+                        "SELECT json_array(1), json_group_array(1)"
+                    ).one()
+            _SQLITE_JSON_CAPABILITY = True
+        except (SQLAlchemyError, AttributeError):
+            _SQLITE_JSON_CAPABILITY = False
+            log.warning(
+                "SQLite JSON functions are unavailable; My Library will use "
+                "the compatible expanded-id predicate"
+            )
+    return _SQLITE_JSON_CAPABILITY
+
+
+def user_library_membership_filter(app_session, metadata_session, user_id,
+                                   include=True):
+    """Build the cross-database membership predicate without a join."""
+    user_id = int(user_id)
+    if _sqlite_json_available(app_session, metadata_session):
+        member_ids_json = (app_session.query(
+            func.json_group_array(ub.UserLibraryBook.book_id)
+        ).filter(
+            ub.UserLibraryBook.user_id == user_id
+        ).scalar() or "[]")
+        membership_values = (
+            func.json_each(member_ids_json)
+            .table_valued("value")
+            .alias("my_library_membership")
+        )
+        membership_ids = select(membership_values.c.value)
+    else:
+        # Correct portability fallback for SQLite builds without JSON1. It is
+        # slower for very large sets but never turns a supported bare-metal
+        # installation into listing 500s.
+        membership_ids = [int(row.book_id) for row in (
+            app_session.query(ub.UserLibraryBook.book_id)
+            .filter(ub.UserLibraryBook.user_id == user_id).all()
+        )]
+    if include:
+        return Books.id.in_(membership_ids)
+    return Books.id.notin_(membership_ids)
 
 
 def _register_sqlite_udfs(dbapi_connection, _connection_record):
@@ -1168,7 +1227,7 @@ class CalibreDB:
                 # Try enabling WAL to improve concurrency unless running on a network share
                 # Controlled by env var NETWORK_SHARE_MODE (default False)
                 try:
-                    nsm = os.getenv('NETWORK_SHARE_MODE', 'False').lower() in ('1', 'true', 'yes', 'on')
+                    nsm = network_share_mode_enabled()
                     dc = os.getenv('DESKTOP_COMPAT_MODE', 'False').lower() in ('1', 'true', 'yes', 'on')
                     if not nsm and not dc and db_writable:
                         connection.execute(text("PRAGMA calibre.journal_mode=WAL"))
@@ -1260,7 +1319,7 @@ class CalibreDB:
                 return None
 
             db_writable = os.access(dbpath, os.W_OK)
-            nsm = os.getenv('NETWORK_SHARE_MODE', 'False').lower() in ('1', 'true', 'yes', 'on')
+            nsm = network_share_mode_enabled()
             desktop_compat = os.getenv('DESKTOP_COMPAT_MODE', 'False').lower() in ('1', 'true', 'yes', 'on')
 
             try:
@@ -1444,7 +1503,8 @@ class CalibreDB:
         self.ensure_session()
         return self.session.query(Books).filter(Books.id == book_id).first()
 
-    def get_filtered_book(self, book_id, allow_show_archived=False, allow_show_hidden=False):
+    def get_filtered_book(self, book_id, allow_show_archived=False,
+                          allow_show_hidden=False, user=None):
         self.ensure_session()
         # Eagerly load all relationships to prevent detached instance errors during editing
         # allow_show_hidden=True: covers/read/edit/download flows for a user's
@@ -1462,10 +1522,144 @@ class CalibreDB:
                          joinedload(Books.publishers),
                          joinedload(Books.identifiers))
                 .filter(Books.id == book_id)
-                .filter(self.common_filters(allow_show_archived, allow_show_hidden=allow_show_hidden))
+                .filter(self.common_filters(
+                    allow_show_archived,
+                    allow_show_hidden=allow_show_hidden,
+                    user=user,
+                ))
                 .first())
 
-    def get_book_read_archived(self, book_id, read_column, allow_show_archived=False, allow_show_hidden=False):
+    def get_filtered_book_ids_for_users(self, users, visibility_state,
+                                        candidates_by_user):
+        """Resolve candidate books in several users' current filtered views.
+
+        ``common_filters`` intentionally performs app-database lookups for one
+        user.  A cross-user board must not repeat those lookups per account, so
+        its caller supplies the archived/hidden/membership rows prefetched once
+        per table.  The predicates below are the same policy expressed against
+        that immutable request snapshot; the metadata query is one UNION ALL
+        execution.  Every branch is constrained to IDs that already have
+        device data, so the admin board never evaluates an owner's policy over
+        the entire Calibre library.
+        """
+        self.ensure_session()
+        users = list(users)
+        if not users:
+            return {}
+        if has_request_context():
+            g._common_filters_user_specific = True
+
+        branches = []
+        for filter_user in users:
+            user_id = int(filter_user.id)
+            candidate_ids = tuple(sorted({
+                int(book_id)
+                for book_id in candidates_by_user.get(user_id, ())
+                if book_id is not None
+            }))
+            if not candidate_ids:
+                continue
+            state = visibility_state.get(user_id, {})
+            archived_ids = tuple(state.get("archived", ()))
+            hidden_ids = (
+                () if filter_user.is_anonymous
+                else tuple(state.get("hidden", ()))
+            )
+            membership_ids = tuple(state.get("membership", ()))
+
+            language = filter_user.filter_language()
+            language_filter = (
+                true() if language == "all"
+                else Books.languages.any(Languages.lang_code == language)
+            )
+            denied_tags = filter_user.list_denied_tags()
+            allowed_tags = filter_user.list_allowed_tags()
+            denied_tags_filter = (
+                false() if denied_tags == [""]
+                else Books.tags.any(Tags.name.in_(denied_tags))
+            )
+            allowed_tags_filter = (
+                true() if allowed_tags == [""]
+                else Books.tags.any(Tags.name.in_(allowed_tags))
+            )
+
+            if self.config.config_restricted_column:
+                try:
+                    column = getattr(
+                        Books,
+                        "custom_column_" + str(self.config.config_restricted_column),
+                    )
+                    values = cc_classes[self.config.config_restricted_column]
+                    allowed_values = filter_user.list_allowed_column_values()
+                    denied_values = filter_user.list_denied_column_values()
+                    allowed_column_filter = (
+                        true() if allowed_values == [""]
+                        else column.any(values.value.in_(allowed_values))
+                    )
+                    denied_column_filter = (
+                        false() if denied_values == [""]
+                        else column.any(values.value.in_(denied_values))
+                    )
+                except (KeyError, AttributeError, IndexError):
+                    log.error(
+                        "Custom Column No.%s does not exist in calibre database",
+                        self.config.config_restricted_column,
+                    )
+                    raise FilteredBookVisibilityUnavailable(
+                        "configured restricted column is unavailable"
+                    )
+            else:
+                allowed_column_filter = true()
+                denied_column_filter = false()
+
+            membership_filter = true()
+            if bool(getattr(filter_user, "has_own_library", False)):
+                membership_filter = Books.id.in_(membership_ids)
+
+            candidate_values = func.json_each(
+                json.dumps(candidate_ids),
+            ).table_valued("value").alias()
+
+            branches.append(select(
+                literal(user_id).label("user_id"),
+                Books.id.label("book_id"),
+            ).where(and_(
+                Books.id.in_(select(candidate_values.c.value)),
+                language_filter,
+                allowed_tags_filter,
+                ~denied_tags_filter,
+                allowed_column_filter,
+                ~denied_column_filter,
+                Books.id.notin_(archived_ids),
+                Books.id.notin_(hidden_ids),
+                membership_filter,
+            )))
+
+        result = {int(user.id): frozenset() for user in users}
+        if not branches:
+            return result
+        visible = union_all(*branches).subquery("device_visible_books")
+        rows = self.session.execute(select(
+            visible.c.user_id,
+            visible.c.book_id,
+        )).all()
+        mutable = {user_id: set() for user_id in result}
+        for user_id, book_id in rows:
+            mutable[int(user_id)].add(int(book_id))
+        result = {
+            user_id: frozenset(book_ids)
+            for user_id, book_ids in mutable.items()
+        }
+        return result
+
+    def get_book_read_archived(
+        self,
+        book_id,
+        read_column,
+        allow_show_archived=False,
+        allow_show_hidden=False,
+        allow_show_global=False,
+    ):
         self.ensure_session()
         if not read_column:
             bd = (self.session.query(Books, ub.ReadBook.read_status, ub.ArchivedBook.is_archived).select_from(Books)
@@ -1486,7 +1680,11 @@ class CalibreDB:
         return (bd.filter(Books.id == book_id)
                 .join(ub.ArchivedBook, and_(Books.id == ub.ArchivedBook.book_id,
                                             int(current_user.id) == ub.ArchivedBook.user_id), isouter=True)
-                .filter(self.common_filters(allow_show_archived, allow_show_hidden=allow_show_hidden)).first())
+                .filter(self.common_filters(
+                    allow_show_archived,
+                    allow_show_hidden=allow_show_hidden,
+                    allow_show_global=allow_show_global,
+                )).first())
 
     def get_book_by_uuid(self, book_uuid):
         self.ensure_session()
@@ -1561,10 +1759,20 @@ class CalibreDB:
         viewing_tag_id=None,
         allow_show_hidden=False,
         extra_filter=None,
+        allow_show_global=False,
+        user=None,
     ):
+        filter_user = user or current_user
+        if has_request_context():
+            # Every result built through this funnel can vary by account
+            # (language, tag rules, archived/hidden state, and library mode).
+            # The app-wide after_request hook turns this marker into explicit
+            # private/no-store + Vary headers, including header-login requests
+            # that never touch Flask's session cookie.
+            g._common_filters_user_specific = True
         if not allow_show_archived:
             archived_books = (ub.session.query(ub.ArchivedBook)
-                              .filter(ub.ArchivedBook.user_id==int(current_user.id))
+                              .filter(ub.ArchivedBook.user_id==int(filter_user.id))
                               .filter(ub.ArchivedBook.is_archived.is_(True))
                               .all())
             archived_book_ids = [archived_book.book_id for archived_book in archived_books]
@@ -1574,21 +1782,21 @@ class CalibreDB:
 
         # Per-user hidden books — fork issue #64. allow_show_hidden=True is the
         # /hidden listing's escape hatch (so users can see + unhide).
-        if not allow_show_hidden and not current_user.is_anonymous:
+        if not allow_show_hidden and not filter_user.is_anonymous:
             hidden_books = (ub.session.query(ub.UserHiddenBook)
-                            .filter(ub.UserHiddenBook.user_id == int(current_user.id))
+                            .filter(ub.UserHiddenBook.user_id == int(filter_user.id))
                             .all())
             hidden_book_ids = [h.book_id for h in hidden_books]
             hidden_filter = Books.id.notin_(hidden_book_ids)
         else:
             hidden_filter = true()
 
-        if current_user.filter_language() == "all" or return_all_languages:
+        if filter_user.filter_language() == "all" or return_all_languages:
             lang_filter = true()
         else:
-            lang_filter = Books.languages.any(Languages.lang_code == current_user.filter_language())
-        negtags_list = current_user.list_denied_tags()
-        postags_list = current_user.list_allowed_tags()
+            lang_filter = Books.languages.any(Languages.lang_code == filter_user.filter_language())
+        negtags_list = filter_user.list_denied_tags()
+        postags_list = filter_user.list_allowed_tags()
         neg_content_tags_filter = false() if negtags_list == [''] else Books.tags.any(Tags.name.in_(negtags_list))
         
         # Issue #906: When viewing a specific tag category, include that tag in allowed tags
@@ -1602,11 +1810,11 @@ class CalibreDB:
         pos_content_tags_filter = true() if postags_list == [''] else Books.tags.any(Tags.name.in_(postags_list))
         if self.config.config_restricted_column:
             try:
-                pos_cc_list = current_user.allowed_column_value.split(',')
+                pos_cc_list = filter_user.allowed_column_value.split(',')
                 pos_content_cc_filter = true() if pos_cc_list == [''] else \
                     getattr(Books, 'custom_column_' + str(self.config.config_restricted_column)). \
                     any(cc_classes[self.config.config_restricted_column].value.in_(pos_cc_list))
-                neg_cc_list = current_user.denied_column_value.split(',')
+                neg_cc_list = filter_user.denied_column_value.split(',')
                 neg_content_cc_filter = false() if neg_cc_list == [''] else \
                     getattr(Books, 'custom_column_' + str(self.config.config_restricted_column)). \
                     any(cc_classes[self.config.config_restricted_column].value.in_(neg_cc_list))
@@ -1622,11 +1830,49 @@ class CalibreDB:
         else:
             pos_content_cc_filter = true()
             neg_content_cc_filter = false()
+
+        # #1939: keep this predicate inside the canonical policy funnel. It
+        # must remain a raw book-id lookup over UserLibraryBook. Never derive
+        # membership by calling magic-shelf rules or common_filters here: magic
+        # shelves already re-enter common_filters, which would recurse forever.
+        # The
+        # app and Calibre databases use separate engines, so a cross-engine
+        # join is unavailable. A single JSON bind consumed by SQLite json_each
+        # avoids expanding an entire 20k-book library into SQL parameters.
+        # Cache the expression per request because common_filters is often
+        # called several times for counts, random books, and the page itself.
+        membership_filter = true()
+        # The persisted boolean is the mode selector: false is intentionally
+        # Monolibrary mode, not an unspecified or disabled feature state.
+        membership_mode_value = getattr(
+            filter_user, "has_own_library", False
+        )
+        membership_enabled = (
+            isinstance(membership_mode_value, (bool, int))
+            and bool(membership_mode_value)
+        )
+        if not allow_show_global and membership_enabled:
+            user_id = int(filter_user.id)
+            cache = None
+            if has_request_context():
+                cache = getattr(g, "_user_library_filter_cache", None)
+                if cache is None:
+                    cache = {}
+                    g._user_library_filter_cache = cache
+                membership_filter = cache.get(user_id)
+            if membership_filter is None or cache is None:
+                # SQLite aggregates directly into one JSON bind when possible;
+                # the helper falls back to an expanded predicate without JSON.
+                membership_filter = user_library_membership_filter(
+                    ub.session, self.session, user_id
+                )
+                if cache is not None:
+                    cache[user_id] = membership_filter
         if extra_filter is None:
             extra_filter = true()
         return and_(lang_filter, pos_content_tags_filter, ~neg_content_tags_filter,
                     pos_content_cc_filter, ~neg_content_cc_filter, archived_filter,
-                    hidden_filter, extra_filter)
+                    hidden_filter, membership_filter, extra_filter)
 
     def generate_linked_query(self, config_read_column, database):
         # Safety: session can be briefly None during DB reconnects
@@ -1684,6 +1930,7 @@ class CalibreDB:
         self.ensure_session()
         viewing_tag_id = kwargs.get('viewing_tag_id')
         allow_show_hidden = kwargs.get('allow_show_hidden', False)
+        allow_show_global = kwargs.get('allow_show_global', False)
         extra_filter = kwargs.get('extra_filter')
         pagesize = pagesize or self.config.config_books_per_page
         if current_user.show_detail_random():
@@ -1701,6 +1948,7 @@ class CalibreDB:
             randm = (random_query.filter(self.common_filters(allow_show_archived,
                                                              viewing_tag_id=viewing_tag_id,
                                                              allow_show_hidden=allow_show_hidden,
+                                                             allow_show_global=allow_show_global,
                                                              extra_filter=extra_filter))
                      .order_by(func.random())
                      .limit(self.config.config_random_books).all())
@@ -1743,6 +1991,7 @@ class CalibreDB:
             .filter(self.common_filters(allow_show_archived,
                                         viewing_tag_id=viewing_tag_id,
                                         allow_show_hidden=allow_show_hidden,
+                                        allow_show_global=allow_show_global,
                                         extra_filter=extra_filter))
         entries = list()
         pagination = list()

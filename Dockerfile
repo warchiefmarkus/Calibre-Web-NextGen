@@ -374,21 +374,21 @@ RUN \
   /app/calibre-web-automated/scripts/setup-cwa.sh && \
   # STEP 7.3 - Create koplugin.zip from KOReader plugin folder
   echo "~~~~ Creating koplugin.zip from KOReader plugin folder... ~~~~" && \
-  if [ -d "/app/calibre-web-automated/koreader/plugins/cwasync.koplugin" ]; then \
+  if [ -d "/app/calibre-web-automated/koreader/plugins/cwngsync.koplugin" ]; then \
   cd /app/calibre-web-automated/koreader/plugins && \
   # Calculate digest of all files in the plugin for debugging purposes
   echo "Calculating digest of plugin files..." && \
-  PLUGIN_DIGEST=$(find cwasync.koplugin -type f -name "*.lua" -o -name "*.json" | sort | xargs sha256sum | sha256sum | cut -d' ' -f1) && \
+  PLUGIN_DIGEST=$(find cwngsync.koplugin -type f -name "*.lua" -o -name "*.json" | sort | xargs sha256sum | sha256sum | cut -d' ' -f1) && \
   echo "Plugin digest: $PLUGIN_DIGEST" && \
   # Create a file named after the digest inside the plugin folder
-  echo "Plugin files digest: $PLUGIN_DIGEST" > cwasync.koplugin/${PLUGIN_DIGEST}.digest && \
-  echo "Build date: $(date)" >> cwasync.koplugin/${PLUGIN_DIGEST}.digest && \
-  echo "Files included:" >> cwasync.koplugin/${PLUGIN_DIGEST}.digest && \
-  find cwasync.koplugin -type f -name "*.lua" -o -name "*.json" | sort >> cwasync.koplugin/${PLUGIN_DIGEST}.digest && \
-  zip -r koplugin.zip cwasync.koplugin/ && \
-  echo "Created koplugin.zip from cwasync.koplugin folder with digest file: ${PLUGIN_DIGEST}.digest"; \
+  echo "Plugin files digest: $PLUGIN_DIGEST" > cwngsync.koplugin/${PLUGIN_DIGEST}.digest && \
+  echo "Build date: $(date)" >> cwngsync.koplugin/${PLUGIN_DIGEST}.digest && \
+  echo "Files included:" >> cwngsync.koplugin/${PLUGIN_DIGEST}.digest && \
+  find cwngsync.koplugin -type f -name "*.lua" -o -name "*.json" | sort >> cwngsync.koplugin/${PLUGIN_DIGEST}.digest && \
+  zip -r koplugin.zip cwngsync.koplugin/ && \
+  echo "Created koplugin.zip from cwngsync.koplugin folder with digest file: ${PLUGIN_DIGEST}.digest"; \
   else \
-  echo "Warning: cwasync.koplugin folder not found, skipping zip creation"; \
+  echo "Warning: cwngsync.koplugin folder not found, skipping zip creation"; \
   fi && \
   # STEP 7.4 - Move koplugin.zip to static directory
   if [ -f "/app/calibre-web-automated/koreader/plugins/koplugin.zip" ]; then \
@@ -444,11 +444,10 @@ RUN find /opt/calibre -maxdepth 1 -type f -perm -u+x \
   test -x /usr/bin/calibredb
 
 # Deliberately NO global CALIBRE_CONFIG_DIRECTORY here. (A misspelled
-# CALIBRE_CONFIG_DIR lived here for a while -- Calibre ignores that name,
-# and setting the real one globally would force user-plugin loading on for
-# every Calibre subprocess. Plugin loading is opt-in via
-# CWA_CALIBRE_USER_PLUGINS; cps/services/calibre_user_plugins.py sets
-# CALIBRE_CONFIG_DIRECTORY per-subprocess when the operator enables it.)
+# CALIBRE_CONFIG_DIR lived here for a while -- Calibre ignores that name.) The
+# s6 units that can launch Calibre choose a writable, plugin-free config for
+# their execution uid; cps/services/calibre_user_plugins.py overrides it with
+# /config/.config/calibre only when CWA_CALIBRE_USER_PLUGINS is enabled.
 
 # Ports and volumes
 WORKDIR /config
@@ -459,9 +458,13 @@ VOLUME /cwa-book-ingest
 VOLUME /calibre-library
 
 # Health check for container orchestration
-# Targets the /health endpoint (cps/web.py:1051) which verifies the
+# Targets the /health endpoint (cps/web.py) which verifies the
 # Calibre metadata.db is reachable and returns 503 on database failure.
 # The helper auto-switches to HTTPS when app.db has a valid cert/key
 # configured, which avoids spurious HTTP-on-HTTPS warnings from gevent.
-HEALTHCHECK --interval=30s --timeout=3s --start-period=120s --retries=3 \
+# Slow ARM/VM hosts need room for bounded scheduler/fork variance (#1799).
+# HTTPS detection gets <=1s, then curl gets <=5s total (including its connect
+# timeout); this 7s outer cap covers the sequential <=6s plus shell scheduling
+# while still failing a truly dead app quickly.
+HEALTHCHECK --interval=30s --timeout=7s --start-period=120s --retries=3 \
   CMD /usr/local/bin/cwa-healthcheck || exit 1

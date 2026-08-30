@@ -37,7 +37,7 @@ import time
 from ..editbooks import edit_book_param, delete_book_from_table, modify_identifiers
 from ..helper import (convert_book_format, save_cover, save_cover_from_url, tags_filters,
                      get_convert_options, mark_book_modified, log_metadata_change,
-                     replace_cover_thumbnail_cache)
+                     replace_cover_thumbnail_cache, book_cover_is_locked)
 
 # Fields the SPA edit form can change, applied in this order. Title/authors come
 # first because they may restructure the book's directory; the rest follow.
@@ -45,6 +45,17 @@ EDITABLE_FIELDS = [
     "title", "authors", "series", "series_index",
     "tags", "publishers", "languages", "comments", "rating", "pubdate",
 ]
+
+# ``list_mode`` is request-level and deliberately not part of EDITABLE_FIELDS:
+# it changes how relationship fields are prepared, never what fields are
+# writable. Omission remains the historical replace behaviour for every
+# existing API client.
+LIST_FIELD_SEPARATORS = {
+    "authors": "&",
+    "tags": ",",
+    "publishers": ",",
+    "languages": ",",
+}
 
 # Custom columns (#pages, #status, …) are addressed by their calibre table name,
 # the same key the classic editor's form fields and inline table editor use.
@@ -200,6 +211,70 @@ def _ordered_language_codes(book_id):
     ).fetchall()
     return [row[0] for row in rows]
 
+def _book_list_values(book, field):
+    """Return one relationship field in the spelling/order shown to editors."""
+    if field == "authors":
+        # Calibre stores commas in author names as ``|``. edit_book_param's
+        # author parser reverses this display form before it writes.
+        return [author.name.replace("|", ",") for author in (book.authors or [])]
+    if field == "languages":
+        return [
+            isoLanguages.get_language_name(get_locale(), language.lang_code)
+            for language in (getattr(book, "languages", None) or [])
+        ]
+    return [
+        item.name
+        for item in (getattr(book, field, None) or [])
+    ]
+
+
+def _add_list_values(book, field, raw):
+    """Merge a list-field input, returning the editor value or ``None``.
+
+    Existing values are emitted first and unchanged. Incoming values are
+    stripped, compared with Unicode-aware case folding, and appended in input
+    order only once. ``None`` means the request adds no relationship and the
+    caller must skip the write entirely.
+    """
+    separator = LIST_FIELD_SEPARATORS[field]
+    existing = _book_list_values(book, field)
+    seen = {value.strip().casefold() for value in existing}
+    additions = []
+    for part in ("" if raw is None else str(raw)).split(separator):
+        value = part.strip()
+        folded = value.casefold()
+        if not value or folded in seen:
+            continue
+        seen.add(folded)
+        additions.append(value)
+    if not additions:
+        return None
+    joiner = " & " if field == "authors" else ", "
+    return joiner.join(existing + additions)
+
+
+def _delete_api_response(result):
+    """Translate the legacy delete core's message list into an API contract."""
+    try:
+        payload = json.loads(result or "[]")
+    except (TypeError, ValueError):
+        return _err("delete_failed", "Deleting the book failed", 500)
+    messages = payload if isinstance(payload, list) else [payload]
+    danger = next((item for item in messages
+                   if isinstance(item, dict) and item.get("type") == "danger"), None)
+    if danger:
+        return _err("delete_failed", str(danger.get("message") or "Deleting the book failed"), 500)
+    warning = next((item for item in messages
+                    if isinstance(item, dict) and item.get("type") == "warning"), None)
+    if warning:
+        return jsonify({
+            "deleted": True,
+            "warning": {
+                "code": "cleanup_incomplete",
+                "message": str(warning.get("message") or "File cleanup was incomplete"),
+            },
+        })
+    return "", 204
 
 def _custom_column_defs():
     """The custom columns the editor offers, or ``[]`` if they can't be read.
@@ -488,9 +563,22 @@ def update_metadata(book_id):
         return _err("not_found", "Book not found", 404)
 
     data = request.get_json(silent=True) or {}
+    list_mode = data.get("list_mode", "replace")
+    if list_mode not in ("add", "replace"):
+        return _err("invalid_request", "list_mode must be 'add' or 'replace'", 400)
 
     if deployment_profile.is_mcp_managed_library():
-        payload, errors = _managed_metadata_payload(data)
+        managed_data = dict(data)
+        if list_mode == "add":
+            for field in LIST_FIELD_SEPARATORS:
+                if field not in data:
+                    continue
+                value = _add_list_values(book, field, data[field])
+                if value is None:
+                    managed_data.pop(field, None)
+                else:
+                    managed_data[field] = value
+        payload, errors = _managed_metadata_payload(managed_data)
         if errors:
             body = _editable_metadata(book)
             body["errors"] = errors
@@ -516,7 +604,12 @@ def update_metadata(book_id):
         if field not in data:
             continue
         raw = data[field]
-        value = "" if raw is None else str(raw)
+        if list_mode == "add" and field in LIST_FIELD_SEPARATORS:
+            value = _add_list_values(book, field, raw)
+            if value is None:
+                continue  # A no-op add must not touch modified time or metadata.
+        else:
+            value = "" if raw is None else str(raw)
         # edit_book_param reads vals['pk'] + vals['value']; checkA auto-syncs the
         # author sort key from the authors string (the inline-editor default).
         vals = {"pk": str(book_id), "value": value, "checkA": "true"}
@@ -587,7 +680,7 @@ def update_metadata(book_id):
 def delete_book(book_id):
     if not current_user.is_authenticated or current_user.is_anonymous:
         return _err("unauthorized", "You must be signed in", 401)
-    if not current_user.role_delete_books():
+    if not current_user.role_delete_books() or not current_user.role_edit():
         return _err("forbidden", "You are not allowed to delete books", 403)
     # Authorize against the caller's VISIBLE library, not the raw table: a user
     # with the (global) delete role but a language/tag/custom-column visibility
@@ -639,8 +732,7 @@ def delete_book(book_id):
         return "", 204
     # delete_book_from_table re-checks the role and does the data-safe (DB-first,
     # files-last) whole-book delete + shelf cleanup. book_format="" = whole book.
-    delete_book_from_table(book_id, "", True)
-    return "", 204
+    return _delete_api_response(delete_book_from_table(book_id, "", True))
 
 
 @api_v1.route("/books/<int:book_id>/formats/<fmt>/delete", methods=["POST"])
@@ -653,8 +745,12 @@ def delete_format(book_id, fmt):
     if not current_user.role_delete_books():
         return _err("forbidden", "You are not allowed to delete books", 403)
     # Same visibility-scoped authorization as whole-book delete above.
-    if not calibre_db.get_filtered_book(book_id, allow_show_archived=True, allow_show_hidden=True):
+    book = calibre_db.get_filtered_book(book_id, allow_show_archived=True, allow_show_hidden=True)
+    if not book:
         return _err("not_found", "Book not found", 404)
+    matching_formats = [data for data in book.data if data.format.upper() == fmt.upper()]
+    if matching_formats and len(book.data) == 1:
+        return _err("last_format", "A book must keep at least one format", 409)
     if deployment_profile.is_mcp_managed_library():
         try:
             mcp_delete_book_format(current_user.name, book_id, fmt.upper())
@@ -663,8 +759,7 @@ def delete_format(book_id, fmt):
         calibre_db.session.rollback()
         calibre_db.session.expire_all()
         return "", 204
-    delete_book_from_table(book_id, fmt.upper(), True)
-    return "", 204
+    return _delete_api_response(delete_book_from_table(book_id, fmt.upper(), True))
 
 
 @api_v1.route("/books/<int:book_id>/convert", methods=["POST"])
@@ -721,9 +816,23 @@ def set_cover(book_id):
     guard = _require_edit()
     if guard:
         return guard
-    book = calibre_db.get_filtered_book(book_id)
+    # Match the sibling endpoints in this module (and the detail endpoint the
+    # edit page is opened from): a user may edit their OWN hidden or archived
+    # book, so resolving with strict defaults 404s a page that opened fine.
+    book = calibre_db.get_filtered_book(
+        book_id, allow_show_archived=True, allow_show_hidden=True
+    )
     if not book:
         return _err("not_found", "Book not found", 404)
+
+    # The per-book cover lock is a deliberate user decision and must be
+    # enforced before either the managed CalibreMCP path or the local writer.
+    if book_cover_is_locked(book_id):
+        return _err(
+            "locked",
+            "This book's cover is locked. Unlock it first.",
+            409,
+        )
 
     if deployment_profile.is_mcp_managed_library():
         upload = request.files.get("file")

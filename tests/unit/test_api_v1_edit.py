@@ -6,6 +6,7 @@ import inspect
 import json
 import flask
 import pytest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
@@ -119,6 +120,28 @@ def test_delete_book_requires_delete_role():
 
 
 @pytest.mark.unit
+def test_delete_book_requires_edit_role_as_well_as_delete_role():
+    from cps.api import edit as mod
+    with _ctx("/api/v1/books/5/delete"):
+        with patch.object(mod, "current_user", _editor(role_edit=False, role_delete=True)), \
+             patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=5)), \
+             patch.object(mod, "delete_book_from_table") as core:
+            resp = inspect.unwrap(mod.delete_book)(5)
+    assert resp[1] == 403
+    core.assert_not_called()
+
+
+@pytest.mark.unit
+def test_spa_whole_book_delete_controls_require_both_roles():
+    root = Path(__file__).parents[2]
+    detail = (root / "frontend" / "src" / "pages" / "BookDetail.tsx").read_text()
+    bulk = (root / "frontend" / "src" / "components" / "BulkBar.tsx").read_text()
+    assert "me?.role?.delete_books && me?.role?.edit" in detail
+    assert "!!me?.role?.delete_books && !!me?.role?.edit" in bulk
+    assert "same delete-and-edit policy as the server" in detail
+
+
+@pytest.mark.unit
 def test_delete_book_not_found_404():
     from cps.api import edit as mod
     with _ctx("/api/v1/books/999/delete"):
@@ -166,6 +189,55 @@ def test_delete_book_authorizes_with_visibility_filter():
     # whole-book delete: book_format="" , json_response=True
     assert core.call_args.args[0] == 5 and core.call_args.args[1] == ""
     assert seen == {"archived": True, "hidden": True}
+
+
+@pytest.mark.unit
+def test_delete_book_returns_cleanup_warning_instead_of_empty_204():
+    from cps.api import edit as mod
+    core_result = json.dumps([
+        {"type": "warning", "message": "Database row deleted; files remain"},
+        {"type": "success", "message": "Book Successfully Deleted"},
+    ])
+    with _ctx("/api/v1/books/5/delete"):
+        with patch.object(mod, "current_user", _editor()), \
+             patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=5)), \
+             patch.object(mod, "delete_book_from_table", return_value=core_result):
+            resp = inspect.unwrap(mod.delete_book)(5)
+    assert resp.status_code == 200
+    assert json.loads(resp.get_data()) == {
+        "deleted": True,
+        "warning": {"code": "cleanup_incomplete", "message": "Database row deleted; files remain"},
+    }
+
+
+@pytest.mark.unit
+def test_delete_endpoints_translate_core_danger_to_non_2xx():
+    from cps.api import edit as mod
+    core_result = json.dumps([{"type": "danger", "message": "permission denied"}])
+    for path, call in [
+        ("/api/v1/books/5/delete", lambda: inspect.unwrap(mod.delete_book)(5)),
+        ("/api/v1/books/5/formats/epub/delete", lambda: inspect.unwrap(mod.delete_format)(5, "epub")),
+    ]:
+        with _ctx(path):
+            with patch.object(mod, "current_user", _editor()), \
+                 patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(
+                     id=5, data=[SimpleNamespace(format="EPUB"), SimpleNamespace(format="PDF")])), \
+                 patch.object(mod, "delete_book_from_table", return_value=core_result):
+                resp = call()
+        assert resp[1] == 500
+        assert json.loads(resp[0].get_data())["error"]["message"] == "permission denied"
+
+
+@pytest.mark.unit
+def test_spa_surfaces_delete_warnings_and_format_failures():
+    from pathlib import Path
+    root = Path(__file__).parents[2]
+    queries = (root / "frontend" / "src" / "lib" / "queries.ts").read_text()
+    detail = (root / "frontend" / "src" / "pages" / "BookDetail.tsx").read_text()
+    edit = (root / "frontend" / "src" / "pages" / "EditBook.tsx").read_text()
+    assert "export interface DeleteResult" in queries
+    assert "result?.warning" in detail and "window.alert(result.warning.message)" in detail
+    assert "onError: (err) => setMsg" in edit
 
 
 @pytest.mark.unit
@@ -239,11 +311,36 @@ def test_delete_format_uses_core_with_uppercased_format():
     from cps.api import edit as mod
     with _ctx("/api/v1/books/5/formats/epub/delete"):
         with patch.object(mod, "current_user", _editor()), \
-             patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(id=5)), \
-             patch.object(mod, "delete_book_from_table") as core:
+             patch.object(mod.calibre_db, "get_filtered_book", return_value=SimpleNamespace(
+                 id=5, data=[SimpleNamespace(format="EPUB"), SimpleNamespace(format="PDF")])), \
+             patch.object(mod, "delete_book_from_table", return_value=json.dumps([
+                  {}, {"type": "success", "message": "Book Format Successfully Deleted"}
+              ])) as core:
             resp = inspect.unwrap(mod.delete_format)(5, "epub")
     assert resp[1] == 204
     core.assert_called_once_with(5, "EPUB", True)
+
+
+@pytest.mark.unit
+def test_delete_format_rejects_removing_the_last_format():
+    from cps.api import edit as mod
+    book = SimpleNamespace(id=5, data=[SimpleNamespace(format="EPUB")])
+    with _ctx("/api/v1/books/5/formats/epub/delete"):
+        with patch.object(mod, "current_user", _editor()), \
+             patch.object(mod.calibre_db, "get_filtered_book", return_value=book), \
+             patch.object(mod, "delete_book_from_table") as core:
+            resp = inspect.unwrap(mod.delete_format)(5, "epub")
+    assert resp[1] == 409
+    assert json.loads(resp[0].get_data())["error"]["code"] == "last_format"
+    core.assert_not_called()
+
+
+@pytest.mark.unit
+def test_edit_book_explains_why_the_last_format_cannot_be_deleted():
+    component = (Path(__file__).parents[2] / "frontend" / "src" / "pages" / "EditBook.tsx").read_text()
+    assert "const isLastFormat = book!.formats.length === 1" in component
+    assert "disabled={deleteFormat.isPending || isLastFormat}" in component
+    assert "A book must keep at least one format." in component
 
 
 @pytest.mark.unit

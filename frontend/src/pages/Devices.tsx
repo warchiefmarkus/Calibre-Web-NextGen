@@ -3,25 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import { ChevronLeft, MoreHorizontal, Pencil, Smartphone } from 'lucide-react';
 import { apiDelete, apiGet, apiPatch, apiPost, apiUrl } from '../lib/api';
+import { clampOffset } from '../lib/pagination';
 import { useAnnouncer } from '../lib/a11y/announcer';
 import { useT } from '../lib/i18n';
 import { EmptyState } from '../components/EmptyState';
 import { SpinnerCentered } from '../components/Spinner';
+import { DeviceInventory, type Device } from '../components/DeviceInventory';
 import styles from './Devices.module.css';
 
-interface Device {
-  public_id: string;
-  label: string;
-  type: string;
-  model: string | null;
-  firmware: string | null;
-  first_seen: string | null;
-  last_seen: string | null;
-  annotation_count: number;
-  active: boolean;
-}
-
 interface Counts { origin_count: number; assigned_count: number }
+interface DevicePage { devices: Device[]; limit: number; offset: number; total: number }
+
+const DEVICE_PAGE_SIZE = 100;
 
 function relativeWhen(value: string | null): string {
   if (!value) return '—';
@@ -30,6 +23,12 @@ function relativeWhen(value: string | null): string {
   const hours = Math.round(elapsed / 3_600_000);
   if (Math.abs(hours) < 48) return formatter.format(hours, 'hour');
   return formatter.format(Math.round(hours / 24), 'day');
+}
+
+function formatStorage(bytes: number): string {
+  const gibibytes = bytes / (1024 ** 3);
+  if (gibibytes >= 1) return `${gibibytes.toFixed(1)} GB`;
+  return `${(bytes / (1024 ** 2)).toFixed(1)} MB`;
 }
 
 function RemoveDialog({ device, counts, onCancel, onRemove }: {
@@ -79,12 +78,24 @@ export function Devices() {
   const [editing, setEditing] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [menu, setMenu] = useState<string | null>(null);
+  const [expandedInventory, setExpandedInventory] = useState<string | null>(null);
   const [removing, setRemoving] = useState<{ device: Device; counts: Counts } | null>(null);
   const [undoDevice, setUndoDevice] = useState<Device | null>(null);
+  const [deviceOffset, setDeviceOffset] = useState(0);
   const invokerRef = useRef<HTMLButtonElement | null>(null);
-  const { data, isLoading, error } = useQuery<{ devices: Device[] }>({
-    queryKey: ['annotation-devices'], queryFn: () => apiGet('/api/annotations/devices?active=true'),
+  const { data, isLoading, error } = useQuery<DevicePage>({
+    queryKey: ['annotation-devices', deviceOffset],
+    queryFn: () => apiGet(
+      `/api/annotations/devices?active=true&limit=${DEVICE_PAGE_SIZE}&offset=${deviceOffset}`,
+    ),
   });
+  const correctedDeviceOffset = data
+    ? clampOffset(deviceOffset, data.total, DEVICE_PAGE_SIZE)
+    : deviceOffset;
+  const staleDevicePage = correctedDeviceOffset !== deviceOffset;
+  useEffect(() => {
+    if (staleDevicePage) setDeviceOffset(correctedDeviceOffset);
+  }, [correctedDeviceOffset, staleDevicePage]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['annotation-devices'] });
   const rename = useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => apiPatch(`/api/annotations/devices/${id}`, { label: name }),
@@ -109,12 +120,12 @@ export function Devices() {
     setMenu(null); setRemoving({ device, counts });
   };
 
-  if (isLoading) return <SpinnerCentered size={40} />;
+  if (isLoading || staleDevicePage) return <SpinnerCentered size={40} />;
   const devices = data?.devices ?? [];
   return (
     <main className={styles.container}>
-      <Link href="/account" className={styles.back}><ChevronLeft size={16} aria-hidden="true" /> {t('Account')}</Link>
-      <div className={styles.heading}><Smartphone aria-hidden="true" /><h1>{t('E-readers')}</h1></div>
+      <Link href="/account" className={styles.back}><ChevronLeft size={16} aria-hidden="true" focusable={false} /> {t('Account')}</Link>
+      <div className={styles.heading}><Smartphone aria-hidden="true" focusable={false} /><h1>{t('E-readers')}</h1></div>
       {error ? <EmptyState message={t('Could not load e-readers.')} /> : devices.length === 0 ? (
         <section className={styles.empty}>
           <h2>{t('No e-readers yet.')}</h2>
@@ -122,8 +133,13 @@ export function Devices() {
           <a href={apiUrl('/me')}>{t('Set up Kobo sync')}</a>
         </section>
       ) : (
-        <ul className={styles.list}>
-          {devices.map((device) => (
+        <>
+          <p role="status">{t('Page {page} of {pages}', {
+            page: Math.floor(deviceOffset / DEVICE_PAGE_SIZE) + 1,
+            pages: Math.max(1, Math.ceil((data?.total ?? 0) / DEVICE_PAGE_SIZE)),
+          })}</p>
+          <ul className={styles.list} role="list">
+            {devices.map((device) => (
             <li key={device.public_id} className={styles.card}>
               <div className={styles.cardMain}>
                 {editing === device.public_id ? (
@@ -134,25 +150,66 @@ export function Devices() {
                     <button type="submit" disabled={!label.trim() || rename.isPending}>{t('Save')}</button>
                     <button type="button" onClick={() => setEditing(null)}>{t('Cancel')}</button>
                   </form>
-                ) : <h2>{device.label}</h2>}
+                ) : <h2><Link href={`/account/devices/${device.public_id}`}>{device.label}</Link></h2>}
                 <p>{[device.model, device.firmware && `FW ${device.firmware}`].filter(Boolean).join(' · ')}</p>
                 <p>{t('{n} highlights and notes', { n: device.annotation_count })} · {t('Last seen {when}', { when: relativeWhen(device.last_seen) })}
                   {device.last_seen && Date.now() - new Date(device.last_seen).getTime() > 30 * 86400000 && <> · {t('Not seen lately')}</>}</p>
+                <p>{t('{n} books in latest inventory', { n: device.inventory_count })}</p>
+                {device.storage_free !== null && device.storage_total !== null && (
+                  <p>{t('{free} free of {total}', {
+                    free: formatStorage(device.storage_free), total: formatStorage(device.storage_total),
+                  })}</p>
+                )}
+                <button type="button" className={styles.inventoryToggle}
+                  aria-expanded={expandedInventory === device.public_id}
+                  aria-controls={`device-inventory-${device.public_id}`}
+                  onClick={() => setExpandedInventory(
+                    expandedInventory === device.public_id ? null : device.public_id)}>
+                  {expandedInventory === device.public_id ? t('Hide device library') : t('View device library')}
+                </button>
+                {expandedInventory === device.public_id && (
+                  <div id={`device-inventory-${device.public_id}`} className={styles.inventory}>
+                    <DeviceInventory device={device} />
+                  </div>
+                )}
               </div>
               <div className={styles.cardActions}>
                 <button type="button" aria-label={t('Rename {name}', { name: device.label })}
-                  onClick={() => { setEditing(device.public_id); setLabel(device.label); }}><Pencil size={17} aria-hidden="true" /></button>
+                  onClick={() => { setEditing(device.public_id); setLabel(device.label); }}><Pencil size={17} aria-hidden="true" focusable={false} /></button>
                 <button type="button" aria-label={t('More actions for {name}', { name: device.label })}
                   aria-expanded={menu === device.public_id} onClick={() => setMenu(menu === device.public_id ? null : device.public_id)}>
-                  <MoreHorizontal aria-hidden="true" />
+                  <MoreHorizontal aria-hidden="true" focusable={false} />
                 </button>
                 {menu === device.public_id && <div className={styles.menu}>
                   <button type="button" onClick={(event) => void openRemove(device, event.currentTarget)}>{t('Remove device')}</button>
                 </div>}
               </div>
             </li>
-          ))}
-        </ul>
+            ))}
+          </ul>
+          {(data?.total ?? 0) > DEVICE_PAGE_SIZE && (
+            <nav className={styles.pagination} aria-label={t('E-readers')}>
+              <button
+                type="button"
+                disabled={deviceOffset === 0}
+                onClick={() => setDeviceOffset(Math.max(0, deviceOffset - DEVICE_PAGE_SIZE))}
+              >
+                {t('Previous')}
+              </button>
+              <span>{t('Page {page} of {pages}', {
+                page: Math.floor(deviceOffset / DEVICE_PAGE_SIZE) + 1,
+                pages: Math.ceil((data?.total ?? 0) / DEVICE_PAGE_SIZE),
+              })}</span>
+              <button
+                type="button"
+                disabled={deviceOffset + DEVICE_PAGE_SIZE >= (data?.total ?? 0)}
+                onClick={() => setDeviceOffset(deviceOffset + DEVICE_PAGE_SIZE)}
+              >
+                {t('Next')}
+              </button>
+            </nav>
+          )}
+        </>
       )}
       <section className={styles.setup}>
         <h2>{t('Kobo setup')}</h2>

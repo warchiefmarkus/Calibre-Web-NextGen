@@ -48,7 +48,7 @@ FRONTEND_DIR = os.path.join(REPO_DIR, "frontend")
 # referenced" asset must fail the test rather than hide behind an exemption.
 #
 #   koplugin.zip  the KOReader plugin archive is zipped up by the Dockerfile at
-#                 image-build time from koreader/plugins/cwasync.koplugin/ and
+#                 image-build time from koreader/plugins/cwngsync.koplugin/ and
 #                 dropped into cps/static/. It is correctly absent from a source
 #                 tree and correctly present in every published image.
 BUILD_TIME_GENERATED = {"koplugin.zip"}

@@ -39,6 +39,7 @@ from .cwa_functions import get_ingest_dir
 from .services.calibre_db_lock import metadata_db_write_lock
 from .services.kepub_package_normalizer import normalize_kepub_package
 from .services.pubdate_parse import parse_partial_pubdate
+from .sqlite_utils import network_share_mode_enabled
 from .usermanagement import user_login_required, login_required_if_no_ano
 from .string_helper import strip_whitespaces
 from werkzeug.utils import secure_filename
@@ -190,7 +191,11 @@ def upload():
                 tmp_path, final_path = _save_to_ingest_atomic_rename(requested_file, final_path)
                 with open(final_path + ".cwa.json", 'w', encoding='utf-8') as mf:
                     json.dump({"action": "import",
-                               "original_filename": requested_file.filename},
+                               "original_filename": requested_file.filename,
+                               "uploader_user_id": int(current_user.id),
+                               "uploader_personal_library": bool(
+                                   current_user.has_own_library
+                               )},
                               mf, ensure_ascii=False)
                 os.replace(tmp_path, final_path)
                 upload_text = N_("Upload done, processing, please wait...")
@@ -395,6 +400,15 @@ def _validate_uploaded_file(uploaded_file):
     return True
 
 # Helper to get a unique, prefixed path in the ingest directory
+def _get_ingest_owner_id(variable):
+    value = os.environ.get(variable, "1000")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        log.warning("Invalid %s value %r; falling back to 1000", variable, value)
+        return 1000
+
+
 def _get_ingest_path(uploaded_file, prefix_parts=None):
     ingest_dir = get_ingest_dir()
     try:
@@ -404,10 +418,12 @@ def _get_ingest_path(uploaded_file, prefix_parts=None):
         raise
     # Ensure proper ownership of ingest directory (fix for issue #603)
     try:
-        nsm = os.getenv("NETWORK_SHARE_MODE", "false").strip().lower() in ("1", "true", "yes", "on")
+        nsm = network_share_mode_enabled()
         if not (nsm and ingest_dir == "/cwa-book-ingest"):
             # Set ownership to abc:abc (uid=1000, gid=1000)
-            os.chown(ingest_dir, 1000, 1000)
+            uid = _get_ingest_owner_id("PUID")
+            gid = _get_ingest_owner_id("PGID")
+            os.chown(ingest_dir, uid, gid)
     except (OSError, PermissionError) as e:
         # Log warning but don't crash the upload process
         log.warning('Failed to set ownership of ingest directory %s: %s', ingest_dir, e)
@@ -837,6 +853,7 @@ def merge_list_book():
         to_book = calibre_db.get_book(vals[0])
         vals.pop(0)
         if to_book:
+            target_formats_changed = False
             for file in to_book.data:
                 to_file.append(file.format)
             to_name = helper.get_valid_filename(to_book.title,
@@ -859,14 +876,21 @@ def merge_list_book():
                                                         element.uncompressed_size,
                                                         to_name))
                             to_file.append(element.format)
+                            target_formats_changed = True
                         elif element.format in overwrite_formats:
                             # Replace keeper's existing format file and update its size
                             copyfile(filepath_old, filepath_new)
                             for data_entry in to_book.data:
                                 if data_entry.format == element.format:
                                     data_entry.uncompressed_size = element.uncompressed_size
+                                    target_formats_changed = True
                                     break
                     delete_book_from_table(from_book.id, "", True, skip_cache_invalidation=True)
+            if target_formats_changed:
+                # Format availability and Size are rendered into Kobo
+                # entitlements, so every add/overwrite must advance the same
+                # cursor provenance as ordinary metadata edits.
+                helper.mark_book_modified(to_book)
             calibre_db.session.commit()
             _queue_duplicate_scan_after_change([to_book.id] + vals)
             return json.dumps({'success': True})
@@ -1673,7 +1697,7 @@ def delete_book_from_table(book_id, book_format, json_response, location="", ski
                     return json.dumps([{"location": url_for("edit-book.show_edit_book", book_id=book_id),
                                         "type": "danger",
                                         "format": "",
-                                        "message": ex}])
+                                        "message": str(ex)}])
                 else:
                     flash(str(ex), category="error")
                     return redirect(url_for('edit-book.show_edit_book', book_id=book_id))

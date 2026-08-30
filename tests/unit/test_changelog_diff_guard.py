@@ -157,10 +157,73 @@ def test_findings_ledger_only_pr_does_not_require_a_changelog_entry():
     assert changelog_requirement_errors(["findings/kobo/F-66edbc.md"]) == []
 
 
+def test_frontend_e2e_only_pr_does_not_require_a_changelog_entry():
+    assert changelog_requirement_errors(["frontend/e2e/shelf-visibility.spec.ts"]) == []
+
+
+def test_mixing_frontend_e2e_with_shipping_frontend_still_requires_an_entry():
+    errors = changelog_requirement_errors(
+        ["frontend/e2e/shelf-visibility.spec.ts", "frontend/src/pages/Shelf.tsx"]
+    )
+    assert len(errors) == 1
+    assert "shipping paths" in errors[0]
+
+
+def test_frontend_unit_tests_only_pr_does_not_require_a_changelog_entry():
+    assert changelog_requirement_errors(
+        ["frontend/tests/unit/libModuleResolution.test.ts"]
+    ) == []
+
+
+def test_mixing_frontend_tests_with_shipping_frontend_still_requires_an_entry():
+    errors = changelog_requirement_errors(
+        [
+            "frontend/tests/unit/libModuleResolution.test.ts",
+            "frontend/src/lib/api.ts",
+        ]
+    )
+    assert len(errors) == 1
+    assert "shipping paths" in errors[0]
+
+
+def test_translation_only_pr_does_not_require_a_changelog_entry():
+    assert changelog_requirement_errors(
+        ["cps/translations/ru/LC_MESSAGES/messages.po", "messages.pot"]
+    ) == []
+
+
+def test_mixing_a_translation_with_shipping_code_requires_an_entry():
+    errors = changelog_requirement_errors(
+        ["cps/translations/ru/LC_MESSAGES/messages.po", "cps/web.py"]
+    )
+    assert len(errors) == 1
+    assert "shipping paths" in errors[0]
+
+
 def test_mixing_a_findings_ledger_with_shipping_code_requires_an_entry():
     errors = changelog_requirement_errors(
         ["findings/kobo/F-66edbc.md", "cps/readingservices.py"]
     )
+    assert len(errors) == 1
+    assert "shipping paths" in errors[0]
+
+
+def test_mission_state_only_pr_does_not_require_a_changelog_entry():
+    """`state/` holds agent mission records, which have no release-note form.
+
+    This case was unreachable until PR #2034: every earlier `state/`-only
+    COMMIT rode inside a PR that also carried shipping code, so that PR's
+    fragment satisfied the guard and the gap never surfaced. The first
+    genuinely state-only PR went red, and the only way to satisfy the guard
+    would have been to invent a user-facing changelog entry for a note about
+    which SHAs merged -- the same failure recorded in this module for
+    translations (#1896) and the CHANGES-vs-upstream backfill.
+    """
+    assert changelog_requirement_errors(["state/MISSION.md"]) == []
+
+
+def test_mixing_mission_state_with_shipping_code_requires_an_entry():
+    errors = changelog_requirement_errors(["state/MISSION.md", "cps/spa.py"])
     assert len(errors) == 1
     assert "shipping paths" in errors[0]
 
@@ -170,11 +233,28 @@ def test_other_allowlisted_non_shipping_paths_do_not_require_an_entry():
         "notes/kobo-hardware-run.md",
         "docs/install/compose.md",
         "wiki-src/Contributing.md",
+        "examples/.env.example",
         "tests/unit/test_changelog_diff_guard.py",
         "changelog.d/README.md",
         "scripts/check_changelog_diff.py",
+        "CHANGES-vs-upstream.md",
     ):
         assert changelog_requirement_errors([path]) == []
+
+
+def test_upstream_comparison_ledger_alone_needs_no_fragment():
+    """A post-release SHA/tag backfill documents changes that already shipped.
+
+    Requiring a fragment there can only be satisfied by inventing a second
+    release-note entry for a change the changelog already announced.
+    """
+    assert changelog_requirement_errors(["CHANGES-vs-upstream.md"]) == []
+
+
+def test_the_ledger_mixed_with_shipping_code_still_requires_an_entry():
+    errors = changelog_requirement_errors(["CHANGES-vs-upstream.md", "cps/web.py"])
+    assert len(errors) == 1
+    assert "shipping paths" in errors[0]
 
 
 def test_github_paths_and_top_level_dotfiles_are_not_blanket_exempt():
