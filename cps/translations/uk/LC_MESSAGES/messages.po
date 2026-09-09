@@ -3775,7 +3775,7 @@ msgstr ""
 
 #: cps/spa_strings.py cps/templates/shelf_order.html
 msgid "Saving…"
-msgstr ""
+msgstr "Збереження…"
 
 #: cps/spa_strings.py
 msgid "Search failed."
@@ -3954,7 +3954,7 @@ msgid "{n} selected"
 msgstr ""
 
 #: cps/spa_strings.py
-#, python-brace-format, python-format
+#, python-brace-format
 msgid "{pct}% read"
 msgstr ""
 
@@ -5100,7 +5100,7 @@ msgstr ""
 
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "Current"
-msgstr ""
+msgstr "Актуально"
 
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "Current cover"
@@ -5571,7 +5571,7 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Formats"
-msgstr ""
+msgstr "Формати"
 
 #: cps/spa_strings.py
 msgid "Formats — exclude"
@@ -6873,7 +6873,7 @@ msgstr ""
 
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "Searching…"
-msgstr ""
+msgstr "Пошук…"
 
 #: cps/spa_strings.py
 msgid "Security"
@@ -7447,7 +7447,7 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Untitled"
-msgstr ""
+msgstr "Без назви"
 
 #: cps/spa_strings.py
 msgid "Update failed."
@@ -7858,7 +7858,7 @@ msgid "{ok} of {total} sources answered"
 msgstr ""
 
 #: cps/spa_strings.py
-#, python-brace-format, python-format
+#, python-brace-format
 msgid "{percent}% read"
 msgstr ""
 
@@ -7889,27 +7889,27 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "API key"
-msgstr "Clé API"
+msgstr "API-ключ"
 
 #: cps/spa_strings.py
 msgid "Add bookmark"
-msgstr "Ajouter un signet"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Additional headers must be a valid JSON object."
-msgstr "Les en-têtes supplémentaires doivent former un objet JSON valide."
+msgstr "Додаткові заголовки мають бути коректним JSON-об’єктом."
 
 #: cps/spa_strings.py
 msgid "After"
-msgstr "Après"
+msgstr "Після"
 
 #: cps/spa_strings.py
 msgid "Animated page turns"
-msgstr "Transitions de page animées"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Approve long OCR job"
-msgstr "Autoriser la tâche OCR longue"
+msgstr "Підтвердити тривале OCR-завдання"
 
 #: cps/spa_strings.py
 msgid "Auto"
@@ -7918,15 +7918,15 @@ msgstr "Auto"
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Automatic OCR page limit"
-msgstr "Limite automatique de pages OCR"
+msgstr "Автоматичний ліміт сторінок OCR"
 
 #: cps/spa_strings.py
 msgid "Automatically translate the current page"
-msgstr "Traduire automatiquement la page actuelle"
+msgstr "Автоматично перекладати поточну сторінку"
 
 #: cps/spa_strings.py
 msgid "Back to account"
-msgstr "Retour au compte"
+msgstr "Назад до облікового запису"
 
 #: cps/spa_strings.py
 msgid "Back to the classic view"
@@ -7935,11 +7935,11 @@ msgstr ""
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Background processing"
-msgstr "Traitement en arrière-plan"
+msgstr "Фонове опрацювання"
 
 #: cps/spa_strings.py
 msgid "Base URL"
-msgstr "URL de base"
+msgstr "Базова URL-адреса"
 
 #: cps/spa_strings.py
 msgid "Basic configuration"
@@ -7947,23 +7947,23 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Before"
-msgstr "Avant"
+msgstr "До"
 
 #: cps/spa_strings.py
 msgid "Book"
-msgstr "Livre"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Bookmark"
-msgstr "Signet"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Bookmarks"
-msgstr "Signets"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Browser"
-msgstr "Navigateur"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "CWA settings (ingest/convert)"
@@ -7975,7 +7975,7 @@ msgstr "Cache"
 
 #: cps/spa_strings.py
 msgid "Cache full translated pages"
-msgstr "Mettre en cache les pages entièrement traduites"
+msgstr "Кешувати повні перекладені сторінки"
 
 #: cps/spa_strings.py cps/templates/book_edit.html
 #: cps/templates/cover_picker.html cps/templates/detail.html
@@ -7984,103 +7984,101 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Comma-separated names"
-msgstr "Noms séparés par des virgules"
+msgstr "Імена через кому"
 
 #: cps/spa_strings.py
 msgid "Comma-separated tags"
-msgstr "Étiquettes séparées par des virgules"
+msgstr "Теги через кому"
 
 #: cps/spa_strings.py
 msgid "Configure Moon+ Reader WebDAV"
-msgstr "Configurer WebDAV pour Moon+ Reader"
+msgstr "Налаштувати WebDAV Moon+ Reader"
 
 #: cps/spa_strings.py
 msgid "Configured — leave blank to keep"
-msgstr "Configuré — laissez vide pour conserver"
+msgstr "Налаштовано — залиште порожнім, щоб не змінювати"
 
 #: cps/spa_strings.py
 msgid "Connection successful."
-msgstr "Connexion réussie."
+msgstr "Підключення успішне."
 
 #: cps/spa_strings.py
 msgid "Connection test failed."
-msgstr "Le test de connexion a échoué."
+msgstr "Перевірка підключення не вдалася."
 
 #: cps/spa_strings.py
 msgid "Continuous scroll"
-msgstr "Défilement continu"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not delete annotation."
-msgstr "Impossible de supprimer l’annotation."
+msgstr "Не вдалося видалити анотацію."
 
 #: cps/spa_strings.py
 msgid "Could not delete the translation profile."
-msgstr "Impossible de supprimer le profil de traduction."
+msgstr "Не вдалося видалити профіль перекладу."
 
 #: cps/spa_strings.py
 msgid "Could not load Moon+ Reader settings."
-msgstr "Impossible de charger les paramètres de Moon+ Reader."
+msgstr "Не вдалося завантажити налаштування Moon+ Reader."
 
 #: cps/spa_strings.py
 msgid "Could not load external ratings."
-msgstr "Impossible de charger les évaluations externes."
+msgstr "Не вдалося завантажити зовнішні оцінки."
 
 #: cps/spa_strings.py
 msgid "Could not load models."
-msgstr "Impossible de charger les modèles."
+msgstr "Не вдалося завантажити моделі."
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Could not load the PDF file ({status})"
-msgstr "Impossible de charger le fichier PDF ({status})"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not load the book."
-msgstr "Impossible de charger le livre."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not load this PDF file."
-msgstr "Impossible de charger ce fichier PDF."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not open this book."
-msgstr "Impossible d’ouvrir ce livre."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not read OCR status."
-msgstr "Impossible de lire l’état de l’OCR."
+msgstr "Не вдалося отримати стан OCR."
 
 #: cps/spa_strings.py
 msgid "Could not read the RAG status."
-msgstr "Impossible de lire l’état de l’index RAG."
+msgstr "Не вдалося отримати стан RAG."
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Could not save OCR settings."
-msgstr "Impossible d’enregistrer les paramètres OCR."
+msgstr "Не вдалося зберегти налаштування OCR."
 
 #: cps/spa_strings.py
 msgid "Could not save annotation."
-msgstr "Impossible d’enregistrer l’annotation."
+msgstr "Не вдалося зберегти анотацію."
 
 #: cps/spa_strings.py
 msgid "Could not save reading position. It will be retried automatically."
 msgstr ""
-"Impossible d’enregistrer la position de lecture. Une nouvelle tentative "
-"sera effectuée automatiquement."
 
 #: cps/spa_strings.py
 msgid "Could not save the translation profile."
-msgstr "Impossible d’enregistrer le profil de traduction."
+msgstr "Не вдалося зберегти профіль перекладу."
 
 #: cps/spa_strings.py
 msgid "Could not start OCR."
-msgstr "Impossible de lancer l’OCR."
+msgstr "Не вдалося запустити OCR."
 
 #: cps/spa_strings.py
 msgid "Custom OpenAI-compatible"
-msgstr "Personnalisé compatible OpenAI"
+msgstr "Власний OpenAI-сумісний"
 
 #: cps/spa_strings.py
 msgid "Database & library path"
@@ -8088,43 +8086,39 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Delete note"
-msgstr "Supprimer la note"
+msgstr "Видалити нотатку"
 
 #: cps/spa_strings.py
 msgid "Delete this translation profile?"
-msgstr "Supprimer ce profil de traduction ?"
+msgstr "Видалити цей профіль перекладу?"
 
 #: cps/spa_strings.py
 msgid "Describe an idea, scene, fact, quote, technology, or topic…"
-msgstr ""
-"Décrivez une idée, une scène, un fait, une citation, une technologie ou "
-"un sujet…"
+msgstr "Опишіть ідею, сцену, факт, цитату, технологію або тему…"
 
 #: cps/spa_strings.py
 msgid "Detect automatically"
-msgstr "Détecter automatiquement"
+msgstr "Визначати автоматично"
 
 #: cps/spa_strings.py
 msgid "Discovered Moon+ sync folders"
-msgstr "Dossiers de synchronisation Moon+ détectés"
+msgstr "Знайдені папки синхронізації Moon+"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Document OCR"
-msgstr "OCR du document"
+msgstr "OCR документа"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid ""
 "Documents above this limit require explicit confirmation and are not "
 "started automatically."
-msgstr ""
-"Les documents dépassant cette limite nécessitent une confirmation "
-"explicite et ne démarrent pas automatiquement."
+msgstr "Документи понад цей ліміт потребують явного підтвердження й не запускаються автоматично."
 
 #: cps/spa_strings.py
 msgid "Download PDF"
-msgstr "Télécharger le PDF"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Duplicate detection settings"
@@ -8132,39 +8126,39 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Edit highlight"
-msgstr "Modifier le surlignage"
+msgstr "Редагувати виділення"
 
 #: cps/spa_strings.py
 msgid "Embedding"
-msgstr "Vectorisation"
+msgstr "Ембединг"
 
 #: cps/spa_strings.py
 msgid "Embedding model"
-msgstr "Modèle de vectorisation"
+msgstr "Модель ембедингів"
 
 #: cps/spa_strings.py
 msgid "Enable Moon+ Reader position sync"
-msgstr "Activer la synchronisation des positions Moon+ Reader"
+msgstr "Увімкнути синхронізацію позицій Moon+ Reader"
 
 #: cps/spa_strings.py
 msgid "Endpoint"
-msgstr "Point de terminaison"
+msgstr "Ендпоінт"
 
 #: cps/spa_strings.py
 msgid "Enter WebDAV password"
-msgstr "Saisissez le mot de passe WebDAV"
+msgstr "Введіть пароль WebDAV"
 
 #: cps/spa_strings.py
 msgid "Failed jobs"
-msgstr "Tâches échouées"
+msgstr "Завдання з помилками"
 
 #: cps/spa_strings.py
 msgid "Filters"
-msgstr "Filtres"
+msgstr "Фільтри"
 
 #: cps/spa_strings.py
 msgid "Find Moon sync files"
-msgstr "Rechercher les fichiers de synchronisation Moon"
+msgstr "Знайти файли синхронізації Moon"
 
 #: cps/spa_strings.py cps/templates/read.html
 msgid "Font"
@@ -8173,13 +8167,11 @@ msgstr ""
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Found {count} Moon+ sync folders. Select one below."
-msgstr ""
-"{count} dossiers de synchronisation Moon+ trouvés. Sélectionnez-en un ci-"
-"dessous."
+msgstr "Знайдено папок синхронізації Moon+: {count}. Виберіть одну нижче."
 
 #: cps/spa_strings.py
 msgid "From"
-msgstr "De"
+msgstr "З"
 
 #: cps/spa_strings.py
 msgid "Full user table & restrictions"
@@ -8191,39 +8183,37 @@ msgstr "Groq"
 
 #: cps/spa_strings.py
 msgid "Headers, JSON"
-msgstr "En-têtes, JSON"
+msgstr "Заголовки, JSON"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Idle"
-msgstr "Inactif"
+msgstr "Неактивно"
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Import errors ({count})"
-msgstr "Erreurs d’importation ({count})"
+msgstr "Помилки імпорту ({count})"
 
 #: cps/spa_strings.py
 msgid "Import reading positions from Moon+ Reader through a WebDAV connection."
-msgstr ""
-"Importer les positions de lecture depuis Moon+ Reader via une connexion "
-"WebDAV."
+msgstr "Імпорт позицій читання з Moon+ Reader через з’єднання WebDAV."
 
 #: cps/spa_strings.py
 msgid "Imported from Moon+"
-msgstr "Importé depuis Moon+"
+msgstr "Імпортовано з Moon+"
 
 #: cps/spa_strings.py
 msgid "Importing Moon+ positions…"
-msgstr "Importation des positions Moon+…"
+msgstr "Імпорт позицій Moon+…"
 
 #: cps/spa_strings.py
 msgid "Include neighboring text for context"
-msgstr "Inclure le texte voisin comme contexte"
+msgstr "Додавати сусідній текст для контексту"
 
 #: cps/spa_strings.py
 msgid "Indexed books"
-msgstr "Livres indexés"
+msgstr "Проіндексовані книги"
 
 #: cps/spa_strings.py
 msgid "JSON"
@@ -8231,7 +8221,7 @@ msgstr "JSON"
 
 #: cps/spa_strings.py
 msgid "Justify text"
-msgstr "Justifier le texte"
+msgstr "Вирівнювати текст по ширині"
 
 #: cps/spa_strings.py
 msgid "Kobo setup"
@@ -8240,52 +8230,50 @@ msgstr ""
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Last check: {date}"
-msgstr "Dernière vérification : {date}"
+msgstr "Остання перевірка: {date}"
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Last sync: {date}"
-msgstr "Dernière synchronisation : {date}"
+msgstr "Остання синхронізація: {date}"
 
 #: cps/spa_strings.py
 msgid "Last synchronization failed"
-msgstr "La dernière synchronisation a échoué"
+msgstr "Остання синхронізація завершилася помилкою"
 
 #: cps/spa_strings.py
 msgid "Latency"
-msgstr "Latence"
+msgstr "Затримка"
 
 #: cps/spa_strings.py
 msgid "Leave blank to keep the saved key"
-msgstr "Laisser vide pour conserver la clé enregistrée"
+msgstr "Залиште порожнім, щоб зберегти поточний ключ"
 
 #: cps/spa_strings.py
 msgid "Leave blank to use the built-in literary translation prompt."
-msgstr "Laisser vide pour utiliser l’invite de traduction littéraire intégrée."
+msgstr "Залиште порожнім, щоб використовувати вбудований промпт літературного перекладу."
 
 #: cps/spa_strings.py
 msgid ""
 "Leave blank, search the WebDAV server, then select one discovered Moon+ "
 "folder."
-msgstr ""
-"Laissez vide, recherchez sur le serveur WebDAV, puis sélectionnez un "
-"dossier Moon+ détecté."
+msgstr "Залиште поле порожнім, виконайте пошук на WebDAV-сервері та виберіть одну знайдену папку Moon+."
 
 #: cps/spa_strings.py
 msgid "Load"
-msgstr "Charger"
+msgstr "Завантажити"
 
 #: cps/spa_strings.py
 msgid "Loading ratings…"
-msgstr "Chargement des évaluations…"
+msgstr "Завантаження оцінок…"
 
 #: cps/spa_strings.py
 msgid "Loading translation profiles…"
-msgstr "Chargement des profils de traduction…"
+msgstr "Завантаження профілів перекладу…"
 
 #: cps/spa_strings.py
 msgid "Location"
-msgstr "Emplacement"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Manage your Kobo sync URL in the classic account page."
@@ -8293,15 +8281,15 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Matched"
-msgstr "Correspondance"
+msgstr "Збіги"
 
 #: cps/spa_strings.py
 msgid "Matched books"
-msgstr "Livres associés"
+msgstr "Зіставлено книг"
 
 #: cps/spa_strings.py
 msgid "Max tokens"
-msgstr "Nombre maximal de jetons"
+msgstr "Макс. токенів"
 
 #: cps/spa_strings.py
 msgid "Mistral"
@@ -8309,40 +8297,40 @@ msgstr "Mistral"
 
 #: cps/spa_strings.py
 msgid "Model check completed."
-msgstr "Vérification des modèles terminée."
+msgstr "Перевірку моделей завершено."
 
 #: cps/spa_strings.py
 msgid "Model check failed."
-msgstr "Échec de la vérification des modèles."
+msgstr "Не вдалося перевірити модель."
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Model {model} selected."
-msgstr "Modèle {model} sélectionné."
+msgstr "Вибрано модель {model}."
 
 #: cps/spa_strings.py
 msgid "Models"
-msgstr "Modèles"
+msgstr "Моделі"
 
 #: cps/spa_strings.py
 msgid "Moon+ Reader operation failed."
-msgstr "L’opération Moon+ Reader a échoué."
+msgstr "Операція Moon+ Reader завершилася помилкою."
 
 #: cps/spa_strings.py
 msgid "Moon+ Reader settings saved."
-msgstr "Paramètres Moon+ Reader enregistrés."
+msgstr "Налаштування Moon+ Reader збережено."
 
 #: cps/spa_strings.py
 msgid "Moon+ Reader sync"
-msgstr "Synchronisation Moon+ Reader"
+msgstr "Синхронізація Moon+ Reader"
 
 #: cps/spa_strings.py
 msgid "Moon+ cache path"
-msgstr "Chemin du cache Moon+"
+msgstr "Шлях до кешу Moon+"
 
 #: cps/spa_strings.py
 msgid "Moon+ position sync queued."
-msgstr "Synchronisation des positions Moon+ mise en file d’attente."
+msgstr "Синхронізацію позицій Moon+ поставлено в чергу."
 
 #: cps/spa_strings.py
 msgid "More server configuration"
@@ -8355,143 +8343,137 @@ msgstr "NVIDIA NIM"
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Newest: {date}"
-msgstr "Plus récent : {date}"
+msgstr "Найновіший файл: {date}"
 
 #: cps/spa_strings.py
 msgid "No Moon+ sync folders found."
-msgstr "Aucun dossier de synchronisation Moon+ trouvé."
+msgstr "Папок синхронізації Moon+ не знайдено."
 
 #: cps/spa_strings.py
 msgid "No Moon+ sync folders were found in the scanned WebDAV area."
-msgstr ""
-"Aucun dossier de synchronisation Moon+ n’a été trouvé dans la zone WebDAV"
-" analysée."
+msgstr "У просканованій області WebDAV не знайдено папок синхронізації Moon+."
 
 #: cps/spa_strings.py
 msgid "No PDF annotations yet. Use the Annotate tools above the document."
 msgstr ""
-"Aucune annotation PDF pour le moment. Utilisez les outils d’annotation "
-"au-dessus du document."
 
 #: cps/spa_strings.py
 msgid "No bookmarks yet."
-msgstr "Aucun signet pour le moment."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "No excerpt available."
-msgstr "Aucun extrait disponible."
+msgstr "Фрагмент недоступний."
 
 #: cps/spa_strings.py
 msgid "No external ratings found."
-msgstr "Aucune évaluation externe trouvée."
+msgstr "Зовнішніх оцінок не знайдено."
 
 #: cps/spa_strings.py
 msgid "No highlights or notes yet."
-msgstr "Aucun surlignage ni aucune note pour le moment."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "No matching passages were found."
-msgstr "Aucun passage correspondant n’a été trouvé."
+msgstr "Відповідних фрагментів не знайдено."
 
 #: cps/spa_strings.py
 msgid "No models loaded. The check will load them first."
-msgstr "Aucun modèle chargé. La vérification les chargera d’abord."
+msgstr "Моделі ще не завантажено. Перед перевіркою їх буде завантажено."
 
 #: cps/spa_strings.py
 msgid "No models were returned by the provider."
-msgstr "Le fournisseur n’a renvoyé aucun modèle."
+msgstr "Провайдер не повернув жодної моделі."
 
 #: cps/spa_strings.py
 msgid "No profile selected"
-msgstr "Aucun profil sélectionné"
+msgstr "Профіль не вибрано"
 
 #: cps/spa_strings.py
 msgid "No response"
-msgstr "Aucune réponse"
+msgstr "Немає відповіді"
 
 #: cps/spa_strings.py
 msgid "No supported reader format is available."
-msgstr "Aucun format de lecture pris en charge n’est disponible."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "No visible text was found on this page."
-msgstr "Aucun texte visible n’a été trouvé sur cette page."
+msgstr "На цій сторінці не знайдено видимого тексту."
 
 #: cps/spa_strings.py
 msgid "Not checked"
-msgstr "Non vérifié"
+msgstr "Не перевірено"
 
 #: cps/spa_strings.py
 msgid "Not checked yet."
-msgstr "Pas encore vérifié."
+msgstr "Ще не перевірялося."
 
 #: cps/spa_strings.py
 msgid "Not enabled"
-msgstr "Non activé"
+msgstr "Не ввімкнено"
 
 #: cps/spa_strings.py
 msgid "Not indexed"
-msgstr "Non indexé"
+msgstr "Не проіндексовано"
 
 #: cps/spa_strings.py
 msgid "Note (optional)"
-msgstr "Note (facultative)"
+msgstr "Нотатка (необов’язково)"
 
 #: cps/spa_strings.py
 msgid "OCR and RAG indexing completed."
-msgstr "OCR et indexation RAG terminés."
+msgstr "OCR та індексацію RAG завершено."
 
 #: cps/spa_strings.py
 msgid "OCR completed; RAG indexing is running."
-msgstr "OCR terminé ; l’indexation RAG est en cours."
+msgstr "OCR завершено; виконується індексація RAG."
 
 #: cps/spa_strings.py
 msgid "OCR failed."
-msgstr "Échec de l’OCR."
+msgstr "Помилка OCR."
 
 #: cps/spa_strings.py
 msgid "OCR is processing the PDF."
-msgstr "L’OCR traite le PDF."
+msgstr "OCR обробляє PDF."
 
 #: cps/spa_strings.py
 msgid "OCR is queued."
-msgstr "L’OCR est en file d’attente."
+msgstr "OCR поставлено в чергу."
 
 #: cps/spa_strings.py
 msgid ""
 "OCR job queued. You can leave this page; processing continues in the "
 "background."
-msgstr ""
-"Tâche OCR mise en file d’attente. Vous pouvez quitter cette page ; le "
-"traitement continue en arrière-plan."
+msgstr "OCR-завдання поставлено в чергу. Можна залишити цю сторінку — обробка продовжиться у фоновому режимі."
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "OCR page limit saved."
-msgstr "Limite de pages OCR enregistrée."
+msgstr "Ліміт сторінок OCR збережено."
 
 #: cps/spa_strings.py
 msgid "OCR processing…"
-msgstr "OCR en cours…"
+msgstr "OCR-обробка…"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "OCR queued"
-msgstr "OCR en attente"
+msgstr "OCR у черзі"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "OCR running"
-msgstr "OCR en cours"
+msgstr "OCR виконується"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "OCR settings"
-msgstr "Paramètres OCR"
+msgstr "Налаштування OCR"
 
 #: cps/spa_strings.py
 msgid "OCR was not started."
-msgstr "L’OCR n’a pas été lancé."
+msgstr "OCR не було запущено."
 
 #: cps/spa_strings.py
 msgid "Ollama"
@@ -8499,19 +8481,19 @@ msgstr "Ollama"
 
 #: cps/spa_strings.py cps/templates/annotations_view.html
 msgid "Open book"
-msgstr ""
+msgstr "Відкрити книгу"
 
 #: cps/spa_strings.py
 msgid "Open full annotations page"
-msgstr "Ouvrir la page complète des annotations"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Open selected text in ChatGPT"
-msgstr "Ouvrir le texte sélectionné dans ChatGPT"
+msgstr "Відкрити виділений текст у ChatGPT"
 
 #: cps/spa_strings.py
 msgid "Open with browser PDF viewer"
-msgstr "Ouvrir avec le lecteur PDF du navigateur"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "OpenCode Go"
@@ -8531,45 +8513,41 @@ msgstr "Original"
 
 #: cps/spa_strings.py
 msgid "Other models"
-msgstr "Autres modèles"
+msgstr "Інші моделі"
 
 #: cps/spa_strings.py
 msgid "PDF annotation changes could not be saved. Retry the edit."
 msgstr ""
-"Impossible d’enregistrer les modifications des annotations PDF. Réessayez"
-" la modification."
 
 #: cps/spa_strings.py
 msgid "Page"
-msgstr "Page"
+msgstr "Сторінка"
 
 #: cps/spa_strings.py
 msgid ""
 "Page count changes with font, margins, and window size; progress remains "
 "stable."
 msgstr ""
-"Le nombre de pages varie selon la police, les marges et la taille de la "
-"fenêtre ; la progression reste stable."
 
 #: cps/spa_strings.py
 msgid "Page language view"
-msgstr "Affichage de la langue de la page"
+msgstr "Режим мови сторінки"
 
 #: cps/spa_strings.py
 msgid "Page translation"
-msgstr "Traduction de page"
+msgstr "Переклад сторінки"
 
 #: cps/spa_strings.py
 msgid "Page translation failed."
-msgstr "La traduction de la page a échoué."
+msgstr "Не вдалося перекласти сторінку."
 
 #: cps/spa_strings.py
 msgid "Page translation timed out."
-msgstr "Le délai de traduction de la page a expiré."
+msgstr "Час очікування перекладу сторінки вичерпано."
 
 #: cps/spa_strings.py
 msgid "Pages"
-msgstr "Pages"
+msgstr "Сторінки"
 
 #: cps/spa_strings.py
 msgid ""
@@ -8580,175 +8558,190 @@ msgstr ""
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Pending"
-msgstr "En attente"
+msgstr "Очікує"
 
 #: cps/spa_strings.py
 msgid "Position files"
-msgstr "Fichiers de position"
+msgstr "Файлів позицій"
 
 #: cps/spa_strings.py
 msgid "Positions synchronize both ways between Moon+ Reader and Calibre-Web."
-msgstr ""
-"Les positions se synchronisent dans les deux sens entre Moon+ Reader et "
-"Calibre-Web."
+msgstr "Позиції синхронізуються в обох напрямках між Moon+ Reader і Calibre-Web."
 
 #: cps/spa_strings.py
 msgid "Preload one translated page ahead"
-msgstr "Précharger une page traduite à l’avance"
+msgstr "Попередньо перекладати одну наступну сторінку"
 
 #: cps/spa_strings.py
 msgid "Preserve page structure, images, and inline formatting"
-msgstr "Conserver la structure de la page, les images et la mise en forme en ligne"
+msgstr "Зберігати структуру сторінки, зображення та вбудоване форматування"
 
 #: cps/spa_strings.py
 msgid ""
 "Private endpoints are blocked. Set "
 "CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true on the server to use"
 " Ollama or another LAN model."
-msgstr ""
-"Les points de terminaison privés sont bloqués. Définissez "
-"CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true sur le serveur pour "
-"utiliser Ollama ou un autre modèle du réseau local."
+msgstr "Приватні endpoint заблоковано. Щоб використовувати Ollama або іншу модель у локальній мережі, задайте на сервері CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true."
 
 #: cps/spa_strings.py
 msgid "Prompt"
-msgstr "Invite"
+msgstr "Промпт"
 
 #: cps/spa_strings.py
 msgid "Provider"
-msgstr "Fournisseur"
+msgstr "Провайдер"
 
 #: cps/spa_strings.py
 msgid "Publisher / serif"
-msgstr "Éditeur / avec empattements"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "RAG index status"
-msgstr "État de l’index RAG"
+msgstr "Стан індексу RAG"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "RAG indexing"
-msgstr "Indexation RAG"
+msgstr "Індексація RAG"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "RAG queued"
-msgstr "RAG en attente"
+msgstr "RAG у черзі"
 
 #: cps/spa_strings.py
 msgid "RAG search"
-msgstr "Recherche RAG"
+msgstr "RAG-пошук"
 
 #: cps/spa_strings.py
 msgid "RAG search failed."
-msgstr "La recherche RAG a échoué."
+msgstr "Не вдалося виконати RAG-пошук."
 
 #: cps/spa_strings.py
 msgid "RAG search is not available for this account."
-msgstr "La recherche RAG n’est pas disponible pour ce compte."
+msgstr "RAG-пошук недоступний для цього облікового запису."
+
+#: cps/spa_strings.py
+msgid "Hybrid"
+msgstr "Гібридний"
+
+#: cps/spa_strings.py
+msgid "Semantic"
+msgstr "Семантичний"
+
+#: cps/spa_strings.py
+msgid "Lexical"
+msgstr "Лексичний"
+
+#: cps/spa_strings.py
+msgid "match"
+msgstr "збіг"
+
+#: cps/spa_strings.py
+msgid "neural"
+msgstr "нейронний"
+
+#: cps/spa_strings.py
+msgid "semantic"
+msgstr "семантична відповідність"
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Ratings: {count}"
-msgstr "Évaluations : {count}"
+msgstr "Оцінок: {count}"
 
 #: cps/spa_strings.py
 msgid "Read aloud"
-msgstr "Lecture à voix haute"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Reader settings"
-msgstr "Paramètres du lecteur"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Reader settings are saved to your account and follow you across devices."
 msgstr ""
-"Les paramètres du lecteur sont enregistrés dans votre compte et vous "
-"suivent sur tous vos appareils."
 
 #: cps/spa_strings.py
 msgid "Reader tools"
-msgstr "Outils du lecteur"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Reading mode"
-msgstr "Mode de lecture"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Reading position could not be saved. Retrying…"
-msgstr "Impossible d’enregistrer la position de lecture. Nouvelle tentative…"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Ready"
-msgstr "Prêt"
+msgstr "Готово"
 
 #: cps/spa_strings.py
 msgid "Refresh ratings"
-msgstr "Actualiser les évaluations"
+msgstr "Оновити оцінки"
 
 #: cps/spa_strings.py
 msgid "Reranker"
-msgstr "Reclassement"
+msgstr "Реранжувальник"
 
 #: cps/spa_strings.py
 msgid "Reranker model"
-msgstr "Modèle de reclassement"
+msgstr "Модель реранжування"
 
 #: cps/spa_strings.py
 msgid "Result limit"
-msgstr "Limite de résultats"
+msgstr "Ліміт результатів"
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Reviews: {count}"
-msgstr "Avis : {count}"
+msgstr "Відгуків: {count}"
 
 #: cps/spa_strings.py
 msgid "Run OCR"
-msgstr "Lancer l’OCR"
+msgstr "Запустити OCR"
 
 #: cps/spa_strings.py
 msgid "Run OCR again"
-msgstr "Relancer l’OCR"
+msgstr "Запустити OCR знову"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Save OCR limit"
-msgstr "Enregistrer la limite OCR"
+msgstr "Зберегти ліміт OCR"
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Scanned {count} WebDAV folders up to {depth} levels deep."
-msgstr "{count} dossiers WebDAV analysés jusqu’à {depth} niveaux de profondeur."
+msgstr "Проскановано папок WebDAV: {count}, глибина — до {depth} рівнів."
 
 #: cps/spa_strings.py
 msgid "Search book contents"
-msgstr "Rechercher dans le contenu des livres"
+msgstr "Шукати у вмісті книг"
 
 #: cps/spa_strings.py
 msgid "Search in book"
-msgstr "Rechercher dans le livre"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
 "Search inside the full text of your indexed books, not only titles and "
 "metadata."
-msgstr ""
-"Recherchez dans le texte intégral de vos livres indexés, pas seulement "
-"dans les titres et les métadonnées."
+msgstr "Шукайте в повному тексті проіндексованих книг, а не лише в назвах і метаданих."
 
 #: cps/spa_strings.py
 msgid "Search mode"
-msgstr "Mode de recherche"
+msgstr "Режим пошуку"
 
 #: cps/spa_strings.py
 msgid "Selected"
-msgstr "Sélectionné"
+msgstr "Вибрано"
 
 #: cps/spa_strings.py
 msgid "Selected text actions"
-msgstr "Actions sur le texte sélectionné"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Set up Kobo sync"
@@ -8756,15 +8749,15 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Show surrounding context"
-msgstr "Afficher le contexte environnant"
+msgstr "Показати сусідній контекст"
 
 #: cps/spa_strings.py
 msgid "Sources"
-msgstr "Sources"
+msgstr "Джерела"
 
 #: cps/spa_strings.py
 msgid "Starting…"
-msgstr "Démarrage…"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Statistics dashboard"
@@ -8772,7 +8765,7 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Stop reading aloud"
-msgstr "Arrêter la lecture à voix haute"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Structure"
@@ -8780,87 +8773,81 @@ msgstr "Structure"
 
 #: cps/spa_strings.py
 msgid "Sync error"
-msgstr "Erreur de synchronisation"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Sync now"
-msgstr "Synchroniser maintenant"
+msgstr "Синхронізувати зараз"
 
 #: cps/spa_strings.py
 msgid "Synced"
-msgstr "Synchronisé"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Synchronization status"
-msgstr "État de la synchronisation"
+msgstr "Стан синхронізації"
 
 #: cps/spa_strings.py
 msgid ""
 "Synchronize Moon+ Reader WebDAV positions with Calibre-Web reading "
 "progress."
-msgstr ""
-"Synchronisez les positions WebDAV de Moon+ Reader avec la progression de "
-"lecture de Calibre-Web."
+msgstr "Синхронізуйте позиції Moon+ Reader через WebDAV із прогресом читання Calibre-Web."
 
 #: cps/spa_strings.py
 msgid "Syncing positions…"
-msgstr "Synchronisation des positions…"
+msgstr "Синхронізація позицій…"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Tasks remaining"
-msgstr "Tâches restantes"
+msgstr "Завдань залишилося"
 
 #: cps/spa_strings.py
 msgid "Temperature"
-msgstr "Température"
+msgstr "Температура"
 
 #: cps/spa_strings.py
 msgid "Test"
-msgstr "Tester"
+msgstr "Тест"
 
 #: cps/spa_strings.py
 msgid "Test connection"
-msgstr "Tester la connexion"
+msgstr "Перевірити підключення"
 
 #: cps/spa_strings.py
 msgid "Text chunks"
-msgstr "Segments de texte"
+msgstr "Текстові фрагменти"
 
 #: cps/spa_strings.py
 msgid "Text width"
-msgstr "Largeur du texte"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "The PDF reader could not initialize its navigation or annotation plugins."
 msgstr ""
-"Le lecteur PDF n’a pas pu initialiser ses modules de navigation ou "
-"d’annotation."
 
 #: cps/spa_strings.py
 msgid ""
 "The WebDAV password is encrypted on the server and is never returned to "
 "the browser after saving."
-msgstr ""
-"Le mot de passe WebDAV est chiffré sur le serveur et n’est jamais renvoyé"
-" au navigateur après son enregistrement."
+msgstr "Пароль WebDAV шифрується на сервері й після збереження ніколи не повертається у браузер."
 
 #: cps/spa_strings.py
 msgid "The book is already in the target language."
-msgstr "Le livre est déjà dans la langue cible."
+msgstr "Книга вже написана цільовою мовою."
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "The page refreshes processing status automatically."
-msgstr "La page actualise automatiquement l’état du traitement."
+msgstr "Сторінка автоматично оновлює стан обробки."
 
 #: cps/spa_strings.py
 msgid "The scan reached its safety limit and may be incomplete."
-msgstr "L’analyse a atteint sa limite de sécurité et peut être incomplète."
+msgstr "Сканування досягло безпечного ліміту й може бути неповним."
 
 #: cps/spa_strings.py
 msgid "The selected text is already in the target language."
-msgstr "Le texte sélectionné est déjà dans la langue cible."
+msgstr "Виділений текст уже написаний цільовою мовою."
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -8868,33 +8855,30 @@ msgid ""
 "This PDF has {pages} pages, above the automatic OCR limit of {limit}. "
 "Processing may take a long time and use significant CPU."
 msgstr ""
-"Ce PDF contient {pages} pages, au-dessus de la limite OCR automatique de "
-"{limit}. Le traitement peut être long et utiliser beaucoup de ressources "
-"processeur."
 
 #: cps/spa_strings.py
 msgid "Timeout, s"
-msgstr "Délai d’attente, s"
+msgstr "Тайм-аут, с"
 
 #: cps/spa_strings.py
 msgid "To"
-msgstr "Vers"
+msgstr "На"
 
 #: cps/spa_strings.py
 msgid "Translation"
-msgstr "Traduction"
+msgstr "Переклад"
 
 #: cps/spa_strings.py
 msgid "Translation profile deleted."
-msgstr "Profil de traduction supprimé."
+msgstr "Профіль перекладу видалено."
 
 #: cps/spa_strings.py
 msgid "Translation profile saved."
-msgstr "Profil de traduction enregistré."
+msgstr "Профіль перекладу збережено."
 
 #: cps/spa_strings.py
 msgid "Turn pages by clicking the left or right side"
-msgstr "Tourner les pages en cliquant sur le côté gauche ou droit"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "UI / display configuration"
@@ -8902,21 +8886,21 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Unchanged"
-msgstr "Inchangé"
+msgstr "Без змін"
 
 #: cps/spa_strings.py
 msgid "Unknown model"
-msgstr "Modèle inconnu"
+msgstr "Невідома модель"
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Unmatched Moon+ files ({count})"
-msgstr "Fichiers Moon+ non associés ({count})"
+msgstr "Не зіставлено файлів Moon+ ({count})"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Vector sync"
-msgstr "Synchronisation vectorielle"
+msgstr "Синхронізація векторів"
 
 #: cps/spa_strings.py
 msgid "WebDAV URL"
@@ -8925,56 +8909,54 @@ msgstr "URL WebDAV"
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "WebDAV connected. Found {count} Moon+ position files."
-msgstr "WebDAV connecté. {count} fichier(s) de position Moon+ trouvé(s)."
+msgstr "WebDAV підключено. Знайдено файлів позицій Moon+: {count}."
 
 #: cps/spa_strings.py
 msgid "WebDAV connected. The selected Moon+ cache folder was not found."
-msgstr "WebDAV connecté. Le dossier de cache Moon+ sélectionné est introuvable."
+msgstr "WebDAV підключено. Вибрану папку кешу Moon+ не знайдено."
 
 #: cps/spa_strings.py
 msgid "WebDAV connected. Use Find Moon sync files to choose a folder."
-msgstr ""
-"WebDAV connecté. Utilisez « Rechercher les fichiers de synchronisation "
-"Moon » pour choisir un dossier."
+msgstr "WebDAV підключено. Натисніть «Знайти файли синхронізації Moon», щоб вибрати папку."
 
 #: cps/spa_strings.py
 msgid "WebDAV connection"
-msgstr "Connexion WebDAV"
+msgstr "З’єднання WebDAV"
 
 #: cps/spa_strings.py
 msgid "What do you want to find?"
-msgstr "Que souhaitez-vous trouver ?"
+msgstr "Що ви хочете знайти?"
 
 # OCR/RAG activity UI
 #: cps/spa_strings.py
 msgid "Working"
-msgstr "En cours"
+msgstr "Працює"
 
 #: cps/spa_strings.py
 msgid "Written to Moon+"
-msgstr "Écrit dans Moon+"
+msgstr "Записано в Moon+"
 
 #: cps/spa_strings.py
 msgid "books indexed"
-msgstr "livres indexés"
+msgstr "книг проіндексовано"
 
 #: cps/spa_strings.py
 msgid "pages"
-msgstr "pages"
+msgstr "сторінок"
 
 #: cps/spa_strings.py
 msgid "results"
-msgstr "résultats"
+msgstr "результатів"
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "{count} characters"
-msgstr "{count} caractères"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "{count} models loaded."
-msgstr "{count} modèles chargés."
+msgstr "Завантажено моделей: {count}."
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -8984,7 +8966,7 @@ msgstr "{count} pages"
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "{count} position files"
-msgstr "{count} fichiers de position"
+msgstr "Файлів позицій: {count}"
 
 #: cps/tasks_status.py
 msgid "Waiting"
@@ -10228,9 +10210,9 @@ msgid "Chapter progress: %(pct)d%%"
 msgstr ""
 
 #: cps/templates/annotations_view.html
-#, fuzzy, python-format
+#, python-format
 msgid "Source: %(s)s"
-msgstr "Серії: %(serie)s"
+msgstr "Джерело: %(s)s"
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

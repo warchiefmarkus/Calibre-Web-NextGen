@@ -3852,7 +3852,7 @@ msgid "{n} selected"
 msgstr "{n} 選中"
 
 #: cps/spa_strings.py
-#, python-brace-format, python-format
+#, python-brace-format
 msgid "{pct}% read"
 msgstr "{pct}% 閱讀"
 
@@ -7756,7 +7756,7 @@ msgid "{ok} of {total} sources answered"
 msgstr "{ok} / {total} 個來源已回應"
 
 #: cps/spa_strings.py
-#, python-brace-format, python-format
+#, python-brace-format
 msgid "{percent}% read"
 msgstr "已讀 {percent}%"
 

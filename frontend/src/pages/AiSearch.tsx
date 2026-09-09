@@ -11,36 +11,40 @@ import {
   useSearchOptions, useUpdateRagOcrConfig,
 } from '../lib/queries';
 import type { RagSearchMode, RagSearchResult } from '../lib/api';
-import { useT } from '../lib/i18n';
+import { useT, type TFunction } from '../lib/i18n';
 import { formatAuthors } from '../lib/authors';
 import styles from './AiSearch.module.css';
 
 const LIMITS = [6, 12, 20];
-const MODES: RagSearchMode[] = ['hybrid', 'semantic', 'lexical'];
+const MODES: Array<{ value: RagSearchMode; label: string }> = [
+  { value: 'hybrid', label: 'Hybrid' },
+  { value: 'semantic', label: 'Semantic' },
+  { value: 'lexical', label: 'Lexical' },
+];
 
 function csv(value: string): string[] | undefined {
   const items = value.split(',').map((item) => item.trim()).filter(Boolean);
   return items.length ? items : undefined;
 }
 
-function resultLocation(result: RagSearchResult): string | null {
+function resultLocation(result: RagSearchResult, t: TFunction): string | null {
   if (result.page_start != null) {
     return result.page_end != null && result.page_end !== result.page_start
-      ? `Pages ${result.page_start}–${result.page_end}`
-      : `Page ${result.page_start}`;
+      ? `${t('Pages')} ${result.page_start}–${result.page_end}`
+      : `${t('Page')} ${result.page_start}`;
   }
   return result.chapter || result.section || null;
 }
 
-function scoreLabel(result: RagSearchResult): string | null {
+function scoreLabel(result: RagSearchResult, t: TFunction): string | null {
   if (typeof result.evidence_score === 'number' && result.evidence_score > 0) {
-    const evidence = `${Math.round(result.evidence_score * 100)}% match`;
+    const evidence = `${Math.round(result.evidence_score * 100)}% ${t('match')}`;
     return typeof result.reranker_rank === 'number'
-      ? `${evidence} · neural #${result.reranker_rank}`
+      ? `${evidence} · ${t('neural')} #${result.reranker_rank}`
       : evidence;
   }
   if (typeof result.semantic_score === 'number') {
-    return `${Math.round(result.semantic_score * 100)}% semantic`;
+    return `${Math.round(result.semantic_score * 100)}% ${t('semantic')}`;
   }
   return null;
 }
@@ -145,8 +149,8 @@ export function AiSearch() {
             <span>{t('Search mode')}</span>
             <select className={styles.select} value={mode}
               onChange={(event) => setMode(event.target.value as RagSearchMode)}>
-              {MODES.map((value) => (
-                <option key={value} value={value}>{t(value)}</option>
+              {MODES.map(({ value, label }) => (
+                <option key={value} value={value}>{t(label)}</option>
               ))}
             </select>
           </label>
@@ -359,8 +363,8 @@ export function AiSearch() {
             </div>
             <div className={styles.resultList}>
               {results.map((result) => {
-                const location = resultLocation(result);
-                const score = scoreLabel(result);
+                const location = resultLocation(result, t);
+                const score = scoreLabel(result, t);
                 return (
                   <article key={`${result.book_id}-${result.chunk_id}`} className={styles.card}>
                     <div className={styles.cardHeader}>

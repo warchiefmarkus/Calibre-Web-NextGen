@@ -14946,3 +14946,27 @@ msgstr ""
 msgid "Show Read/Unread Section"
 msgstr ""
 
+
+#: cps/spa_strings.py
+msgid "Hybrid"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Semantic"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Lexical"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "match"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "neural"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "semantic"
+msgstr ""

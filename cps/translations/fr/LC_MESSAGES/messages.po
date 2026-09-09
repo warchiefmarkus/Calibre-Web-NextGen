@@ -4170,7 +4170,7 @@ msgid "{n} selected"
 msgstr "{n} sélectionné(s)"
 
 #: cps/spa_strings.py
-#, python-brace-format, python-format
+#, python-brace-format
 msgid "{pct}% read"
 msgstr "{pct} % lu"
 
@@ -8290,7 +8290,7 @@ msgid "{ok} of {total} sources answered"
 msgstr "{ok} sources sur {total} ont répondu"
 
 #: cps/spa_strings.py
-#, python-brace-format, python-format
+#, python-brace-format
 msgid "{percent}% read"
 msgstr "{percent} % lu"
 
