@@ -11,9 +11,23 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import _isolate_pytest_tempdir
+from tests import conftest as pytest_conftest
+
+_isolate_pytest_tempdir = pytest_conftest._isolate_pytest_tempdir
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def no_real_external_volume(monkeypatch):
+    """Keep these unit tests independent of the host's actual mounted volumes."""
+    monkeypatch.delenv("CWNG_PYTEST_TMP_BASE", raising=False)
+    monkeypatch.delenv("CWNG_PYTEST_TMP_PROBE_SECONDS", raising=False)
+    monkeypatch.setattr(
+        pytest_conftest,
+        "_pytest_external_volume_probe_runner",
+        lambda _command, _timeout_seconds: 3,
+    )
 
 
 @pytest.mark.unit
@@ -65,6 +79,144 @@ def test_the_key_is_the_process_not_the_worker_id(monkeypatch, tmp_path):
         "keying on the worker id makes two concurrent sessions collide on gw0"
     )
     assert Path(root).name == str(os.getpid())
+
+
+@pytest.mark.unit
+def test_explicit_base_override_wins(monkeypatch, tmp_path, capsys):
+    override_base = tmp_path / "override"
+    monkeypatch.setenv("CWNG_PYTEST_TMP_BASE", str(override_base))
+    monkeypatch.setattr(
+        pytest_conftest,
+        "_pytest_external_volume_probe_runner",
+        lambda _command, _timeout_seconds: pytest.fail(
+            "the external volume probe must not run with an override"
+        ),
+    )
+
+    root = Path(_isolate_pytest_tempdir())
+
+    assert root.parent == override_base
+    assert capsys.readouterr().err == (
+        f"pytest temp base: {override_base} (CWNG_PYTEST_TMP_BASE is set)\n"
+    )
+
+
+@pytest.mark.unit
+def test_mounted_writable_volume_uses_external_base(monkeypatch, tmp_path, capsys):
+    system_tmp = tmp_path / "system"
+    volume_root = tmp_path / "mounted-volume"
+    external_base = volume_root / "agent-scratch" / "cwng-pytest"
+    monkeypatch.setattr(tempfile, "tempdir", str(system_tmp))
+    monkeypatch.setattr(
+        pytest_conftest, "_PYTEST_EXTERNAL_VOLUME_ROOT", str(volume_root)
+    )
+
+    def successful_probe(command, timeout_seconds):
+        assert command[-2:] == [str(volume_root), str(external_base)]
+        assert timeout_seconds == 5
+        return 0
+
+    monkeypatch.setattr(
+        pytest_conftest,
+        "_pytest_external_volume_probe_runner",
+        successful_probe,
+    )
+
+    root = Path(_isolate_pytest_tempdir())
+
+    assert root.parent == external_base
+    assert external_base.is_dir()
+    assert capsys.readouterr().err == (
+        f"pytest temp base: {external_base} "
+        f"({volume_root} is mounted and writable)\n"
+    )
+
+
+@pytest.mark.unit
+def test_mounted_unwritable_volume_falls_back_and_reports_why(
+    monkeypatch, tmp_path, capsys
+):
+    system_tmp = tmp_path / "system"
+    volume_root = tmp_path / "mounted-volume"
+    external_base = volume_root / "agent-scratch" / "cwng-pytest"
+    monkeypatch.setattr(tempfile, "tempdir", str(system_tmp))
+    monkeypatch.setattr(
+        pytest_conftest, "_PYTEST_EXTERNAL_VOLUME_ROOT", str(volume_root)
+    )
+
+    def failed_probe(command, timeout_seconds):
+        assert command[-2:] == [str(volume_root), str(external_base)]
+        assert timeout_seconds == 5
+        return 13
+
+    monkeypatch.setattr(
+        pytest_conftest,
+        "_pytest_external_volume_probe_runner",
+        failed_probe,
+    )
+
+    root = Path(_isolate_pytest_tempdir())
+    fallback_base = system_tmp / "cwng-pytest"
+
+    assert root.parent == fallback_base
+    assert capsys.readouterr().err == (
+        f"pytest temp base: {fallback_base} "
+        "(external volume probe failed with exit 13 — falling back)\n"
+    )
+
+
+@pytest.mark.unit
+def test_missing_external_volume_uses_system_tempdir(monkeypatch, tmp_path, capsys):
+    system_tmp = tmp_path / "system"
+    volume_root = tmp_path / "missing-volume"
+    monkeypatch.setattr(tempfile, "tempdir", str(system_tmp))
+    monkeypatch.setattr(
+        pytest_conftest, "_PYTEST_EXTERNAL_VOLUME_ROOT", str(volume_root)
+    )
+
+    root = Path(_isolate_pytest_tempdir())
+    fallback_base = system_tmp / "cwng-pytest"
+
+    assert root.parent == fallback_base
+    assert capsys.readouterr().err == (
+        f"pytest temp base: {fallback_base} "
+        f"({volume_root} is not mounted — falling back)\n"
+    )
+
+
+@pytest.mark.unit
+def test_external_probe_timeout_falls_back_and_reports_why(
+    monkeypatch, tmp_path, capsys
+):
+    system_tmp = tmp_path / "system"
+    volume_root = tmp_path / "mounted-volume"
+    external_base = volume_root / "agent-scratch" / "cwng-pytest"
+    monkeypatch.setattr(tempfile, "tempdir", str(system_tmp))
+    monkeypatch.setattr(
+        pytest_conftest, "_PYTEST_EXTERNAL_VOLUME_ROOT", str(volume_root)
+    )
+    monkeypatch.setenv("CWNG_PYTEST_TMP_PROBE_SECONDS", "0.02")
+
+    def hanging_probe(command, timeout_seconds):
+        assert command[-2:] == [str(volume_root), str(external_base)]
+        assert timeout_seconds == 0.02
+        raise pytest_conftest.subprocess.TimeoutExpired(command, timeout_seconds)
+
+    monkeypatch.setattr(
+        pytest_conftest,
+        "_pytest_external_volume_probe_runner",
+        hanging_probe,
+    )
+
+    root = Path(_isolate_pytest_tempdir())
+    fallback_base = system_tmp / "cwng-pytest"
+
+    assert root.parent == fallback_base
+    assert not volume_root.exists(), "the parent touched the fake external volume"
+    assert capsys.readouterr().err == (
+        f"pytest temp base: {fallback_base} "
+        "(external volume did not answer within 0.02s — falling back)\n"
+    )
 
 
 @pytest.mark.unit

@@ -331,7 +331,9 @@ def _git(repo: Path, *args: str, committer_email: str = _NEW_USEMAME_COMMITTER):
         }
     )
     return subprocess.run(
-        ["git", "-C", str(repo), *args],
+        # Synthetic remote-less repositories must bypass the operator's
+        # identity-firewall wrapper; these commits never leave the temp tree.
+        ["/usr/bin/git", "-C", str(repo), *args],
         env=env,
         check=True,
         capture_output=True,
@@ -623,6 +625,62 @@ def _e2e_steps() -> list[dict]:
     return [s for s in (job.get("steps") or []) if isinstance(s, dict)]
 
 
+def test_e2e_playwright_install_is_version_cached_and_bounded():
+    """Warm dependency/browser setup must still fail fast on real hangs."""
+    wf = _load(WF_DIR / "tests.yml")
+    job = (wf.get("jobs") or {}).get("e2e-tests") or {}
+    steps = [s for s in (job.get("steps") or []) if isinstance(s, dict)]
+    version = next(
+        s for s in steps if s.get("name") == "Resolve Playwright browser version"
+    )
+    cache = next(
+        s for s in steps if s.get("name") == "Cache Playwright browsers"
+    )
+    dependency_installs = [
+        s for s in steps if re.search(r"\bnpm\s+ci\b", str(s.get("run") or ""))
+    ]
+    browser_installs = [
+        s for s in steps if "playwright install" in str(s.get("run") or "")
+    ]
+    assert len(dependency_installs) == 1, (
+        "E2E must install its frontend dependency tree exactly once"
+    )
+    assert len(browser_installs) == 1, (
+        "E2E must keep browser setup separate so a future stall is diagnosable"
+    )
+    dependency_install = dependency_installs[0]
+    browser_install = browser_installs[0]
+
+    assert version.get("id") == "playwright-version"
+    assert "node_modules/playwright-core" in str(version.get("run") or "")
+    assert cache.get("uses") == "actions/cache@v6"
+    cache_with = cache.get("with") or {}
+    assert cache_with.get("path") == "~/.cache/ms-playwright"
+    assert "steps.playwright-version.outputs.version" in str(
+        cache_with.get("key") or ""
+    )
+    job_timeout = job.get("timeout-minutes")
+    assert isinstance(job_timeout, int) and job_timeout > 0, (
+        "E2E browser setup must retain a job-level hang guard"
+    )
+    for install in (dependency_install, browser_install):
+        step_timeout = install.get("timeout-minutes")
+        assert isinstance(step_timeout, int), (
+            "each E2E dependency/browser install needs an explicit hang guard"
+        )
+        assert 5 <= step_timeout <= 15, (
+            "each install cap must reject the former three-minute false-red "
+            "budget but still fail fast instead of consuming the 180-minute job"
+        )
+        assert step_timeout < job_timeout
+    assert (
+        steps.index(version)
+        < steps.index(cache)
+        < steps.index(dependency_install)
+        < steps.index(browser_install)
+    )
+
+
 def test_e2e_uses_head_backend_only_for_backend_prs():
     """Backend PRs need their Python code; frontend-only PRs keep the overlay."""
     wf = _load(WF_DIR / "tests.yml")
@@ -865,12 +923,14 @@ def _repo_touching(repo: Path, paths: list[str]) -> tuple[str, str]:
     classifier = repo / "scripts" / "ci_path_classification.py"
     classifier.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(REPO_ROOT / "scripts" / "ci_path_classification.py", classifier)
+    shutil.copy2(REPO_ROOT / ".dockerignore", repo / ".dockerignore")
     package = repo / "cps" / "__init__.py"
     package.parent.mkdir(parents=True, exist_ok=True)
     package.write_text("", encoding="utf-8")
     _git(repo, "add", "seed.txt")
     _git(repo, "add", "cps/__init__.py")
     _git(repo, "add", "scripts/ci_path_classification.py")
+    _git(repo, "add", ".dockerignore")
     _git(repo, "commit", "-m", "base")
     base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 

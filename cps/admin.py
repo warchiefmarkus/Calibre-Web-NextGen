@@ -9,7 +9,6 @@ import os
 import re
 import json
 import operator
-import time
 import sys
 import string
 import requests
@@ -17,18 +16,16 @@ from datetime import datetime, timedelta, timezone
 from datetime import time as datetime_time
 from functools import wraps
 from urllib.parse import urlparse
-import shutil
+import shutil  # noqa: F401 -- test/extension monkeypatch compatibility
 import subprocess
 import tempfile
-import fcntl
-import errno
 
 from flask import Blueprint, current_app, flash, redirect, url_for, abort, request, make_response, send_from_directory, g, Response, jsonify
 from markupsafe import Markup
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from .cw_login import current_user
 from flask_babel import gettext as _
-from flask_babel import get_locale, format_time, format_datetime, format_timedelta, LazyString
+from flask_babel import get_locale, format_time, format_timedelta, LazyString
 from sqlalchemy import and_
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError, OperationalError, InvalidRequestError
@@ -43,6 +40,7 @@ from .helper import check_valid_domain, send_test_mail, reset_password, generate
 from .embed_helper import get_calibre_binarypath
 from .gdriveutils import is_gdrive_ready, gdrive_support
 from .render_template import render_title_template, get_sidebar_config
+from .services import file_lock
 from .services.worker import WorkerThread
 from .services.kobo_import import (
     KoboContentDatabaseError,
@@ -58,11 +56,12 @@ from .services.kobo_reconcile import (
 )
 from .usermanagement import user_login_required
 from .ui_themes import config_theme_code
-from .cw_babel import (get_available_translations, get_available_locale,
+from .cw_babel import (get_available_locale,
                        get_user_locale_language, sanitize_locale_for_write)
 from . import debug_info
 from .string_helper import strip_whitespaces
 from .sqlite_utils import copy_sqlite_database
+from .custom_column_sort import load_eligible_columns, persist_configured_columns
 
 log = logger.create()
 
@@ -80,7 +79,7 @@ feature_support = {
 }
 
 try:
-    import rarfile  # pylint: disable=unused-import
+    import rarfile  # noqa: F401  # pylint: disable=unused-import
 
     feature_support['rar'] = True
 except (ImportError, SyntaxError):
@@ -671,7 +670,7 @@ def configuration():
             log.debug("Unable to inspect Hardcover token status", exc_info=True)
     return render_title_template("config_edit.html",
                                  config=config,
-                                 provider=oauth_bb.oauthblueprints,
+                                 provider=oauth_bb.get_oauth_blueprints(),
                                  feature_support=feature_support,
                                  kobo_two_way_emergency_disabled=(
                                      os.environ.get("CWNG_KOBO_TWO_WAY_ANNOTATIONS", "").strip().lower()
@@ -710,10 +709,11 @@ def view_configuration():
         .filter(and_(db.CustomColumns.datatype == 'bool', db.CustomColumns.mark_for_delete == 0)).all()
     restrict_columns = calibre_db.session.query(db.CustomColumns) \
         .filter(and_(db.CustomColumns.datatype == 'text', db.CustomColumns.mark_for_delete == 0)).all()
+    sortable_columns = load_eligible_columns() or []
     languages = calibre_db.speaking_language()
     translations = get_available_locale()
     return render_title_template("config_view_edit.html", conf=config, readColumns=read_column,
-                                 restrictColumns=restrict_columns,
+                                 restrictColumns=restrict_columns, sortableColumns=sortable_columns,
                                  languages=languages,
                                  translations=translations,
                                  title=_("UI Configuration"), page="uiconfig")
@@ -895,7 +895,7 @@ def edit_list_user(param):
         vals['field_index'] = vals['field_index'][0]
     if 'value' in vals:
         vals['value'] = vals['value'][0]
-    elif not ('value[]' in vals):
+    elif 'value[]' not in vals:
         return _("Malformed request"), 400
     for user in users:
         try:
@@ -1037,6 +1037,11 @@ def update_view_configuration():
 
     _config_string(to_save, "config_calibre_web_title")
     _config_string(to_save, "config_columns_to_ignore")
+    persist_configured_columns(
+        config,
+        request.form.getlist("config_sortable_custom_columns"),
+        load_eligible_columns(),
+    )
     if _config_string(to_save, "config_title_regex"):
         # title_sort UDF reads ``CalibreDB.config.config_title_regex`` at
         # call time via closure in ``_register_sqlite_udfs``; updating the
@@ -1447,6 +1452,9 @@ def do_full_kobo_sync(userid):
     ub.session.query(ub.KoboDeviceEntitlementSeed).filter(
         ub.KoboDeviceEntitlementSeed.device_id.in_(device_ids),
     ).delete(synchronize_session=False)
+    ub.session.query(ub.KoboDevicePendingSyncPage).filter(
+        ub.KoboDevicePendingSyncPage.device_id.in_(device_ids),
+    ).delete(synchronize_session=False)
     count = ub.session.query(ub.KoboSyncedBooks).filter(userid == ub.KoboSyncedBooks.user_id).delete()
     message = _("{} sync entries deleted").format(count)
     ub.session_commit(message)
@@ -1511,6 +1519,12 @@ def do_kobo_resend(userid, bookid):
     ledger_deleted = ub.session.query(ub.KoboDeviceBookEntitlement).filter(
         ub.KoboDeviceBookEntitlement.device_id.in_(device_ids),
         ub.KoboDeviceBookEntitlement.book_id == bookid,
+    ).delete(synchronize_session=False)
+    # The bounded pending body may contain this book. It cannot be rewritten
+    # without violating byte-identical retry, so invalidate the user's page and
+    # let the next request build a fresh NewEntitlement after the ledger clear.
+    ub.session.query(ub.KoboDevicePendingSyncPage).filter(
+        ub.KoboDevicePendingSyncPage.device_id.in_(device_ids),
     ).delete(synchronize_session=False)
     deleted = ub.session.query(ub.KoboSyncedBooks).filter(
         ub.KoboSyncedBooks.user_id == userid,
@@ -1691,7 +1705,7 @@ def restriction_addition(element, list_func):
     elementlist = list_func()
     if elementlist == ['']:
         elementlist = []
-    if not element['add_element'] in elementlist:
+    if element['add_element'] not in elementlist:
         elementlist += [element['add_element']]
     return ','.join(elementlist)
 
@@ -1872,7 +1886,7 @@ def _configuration_gdrive_helper(to_save):
 def _configuration_oauth_helper(to_save):
     reboot_required = False
 
-    for element in oauth_bb.oauthblueprints:
+    for element in oauth_bb.get_oauth_blueprints():
         update = {}
         if element["provider_name"] == "generic":
             if to_save["config_generic_oauth_client_id"] != element["oauth_client_id"]:
@@ -2460,7 +2474,7 @@ def edit_user(user_id):
     all_public_shelves = ub.session.query(ub.MagicShelf).filter(
         ub.MagicShelf.is_public == 1,
         ub.MagicShelf.user_id != content.id,
-        ub.MagicShelf.is_system == False
+        ub.MagicShelf.is_system.is_(False)
     ).all()
     
     # Separate into hidden and visible
@@ -3048,7 +3062,8 @@ def _configuration_update_helper():
                   category="warning")
     # Keep the retired cwa.db auto-fetch flag synchronized solely for safe
     # rollback. Runtime consumers use ConfigSQL.hardcover_sync_enabled().
-    effective_hardcover_sync, _ = schedule.reconcile_hardcover_configuration()
+    effective_hardcover_sync, _hardcover_sync_changed = \
+        schedule.reconcile_hardcover_configuration()
     hardcover_token_available = bool(config.resolved_hardcover_token())
     if (effective_hardcover_sync != prev_hardcover_sync
             or hardcover_token_available != prev_hardcover_token_available):
@@ -3378,7 +3393,7 @@ def _handle_edit_user(to_save, content, languages, translations, kobo_support):
         all_public_shelves = ub.session.query(ub.MagicShelf).filter(
             ub.MagicShelf.is_public == 1,
             ub.MagicShelf.user_id != content.id,
-            ub.MagicShelf.is_system == False
+            ub.MagicShelf.is_system.is_(False)
         ).all()
         
         # Check which ones should be visible (checked)
@@ -3614,12 +3629,9 @@ def _acquire_restore_file_lock(lock_name):
     lock_path = os.path.join(tempfile.gettempdir(), lock_name)
     lock_handle = open(lock_path, "a+", encoding="utf-8")
     try:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError as error:
-        lock_handle.close()
-        if error.errno in (errno.EACCES, errno.EAGAIN):
+        if not file_lock.acquire(lock_handle.fileno(), blocking=False):
+            lock_handle.close()
             return None
-        raise
     except Exception:
         lock_handle.close()
         raise
@@ -3629,7 +3641,7 @@ def _acquire_restore_file_lock(lock_name):
 def _release_restore_locks(lock_handles):
     for handle in lock_handles:
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            file_lock.release(handle.fileno())
         except Exception:
             pass
         try:

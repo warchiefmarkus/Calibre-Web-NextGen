@@ -25,12 +25,12 @@ from .cw_login import user_logged_in
 try:
     from flask_dance.consumer.backend.sqla import OAuthConsumerMixin  # pyright: ignore[reportMissingImports]
     oauth_support = True
-except ImportError as e:
+except ImportError:
     # fails on flask-dance >1.3, due to renaming
     try:
         from flask_dance.consumer.storage.sqla import OAuthConsumerMixin
         oauth_support = True
-    except ImportError as e:
+    except ImportError:
         OAuthConsumerMixin = BaseException
         oauth_support = False
 from sqlalchemy import create_engine, DDL, exc, exists, event, text
@@ -481,7 +481,7 @@ class Anonymous(AnonymousUserMixin, UserBase):
         return None
 
     def set_view_property(self, page, prop, value, commit=True):
-        if not 'view' in flask_session:
+        if 'view' not in flask_session:
             flask_session['view'] = dict()
         if not flask_session['view'].get(page):
             flask_session['view'][page] = dict()
@@ -661,6 +661,36 @@ class DismissedDuplicateGroup(Base):
         return '<DismissedDuplicateGroup %d: user=%d hash=%s>' % (self.id, self.user_id, self.group_hash)
 
 
+class MyLibraryAdminIntro(Base):
+    """Server-wide state for the admin "Try My Library" intro card.
+
+    Single-row table (id is always 1): the card's state is shared by every
+    administrator and must survive sessions, so it lives in app.db rather than
+    per-user rows or browser storage. ``snapshot_json`` holds the pre-enable
+    restore point — {user_id: {"browse_global": bool, "has_own_library": bool}}
+    for every account the enable action touched — so Undo is a true restore
+    rather than a re-derivation. Membership rows and the seed-once fence are
+    deliberately NOT part of the snapshot: undo leaves each selection dormant
+    (the keep-dormant guarantee), exactly like a per-user mode switch back to
+    the global library.
+    """
+    __tablename__ = 'my_library_admin_intro'
+
+    STATUS_NOT_ENABLED = 'not_enabled'
+    STATUS_ENABLED = 'enabled'
+
+    id = Column(Integer, primary_key=True)
+    status = Column(String(16), nullable=False, default=STATUS_NOT_ENABLED)
+    dismissed = Column(Boolean, nullable=False, default=False)
+    snapshot_json = Column(Text, nullable=True)
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    def __repr__(self):
+        return '<MyLibraryAdminIntro status=%s dismissed=%s>' % (self.status, self.dismissed)
+
+
 # Baseclass representing Relationship between books and Shelfs in Calibre-Web in app.db (N:M)
 class BookShelf(Base):
     __tablename__ = 'book_shelf_link'
@@ -722,6 +752,7 @@ class Bookmark(Base):
     book_id = Column(Integer)
     format = Column(String(collation='NOCASE'))
     bookmark_key = Column(String)
+    updated_at = Column(DateTime)
 
 
 class ReaderBookmark(Base):
@@ -972,6 +1003,22 @@ class UserLibraryBook(Base):
     )
 
 
+class UserBookCover(Base):
+    """One viewer's cover choice for one global Calibre book.
+
+    Image bytes live below CONFIG_DIR, never in the shared Calibre library.
+    ``book_id`` cannot be a foreign key because metadata.db and app.db are
+    separate databases.
+    """
+    __tablename__ = 'user_book_cover'
+
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'),
+                     primary_key=True)
+    book_id = Column(Integer, primary_key=True)
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+
 class KoboSyncedBooks(Base):
     __tablename__ = 'kobo_synced_books'
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -1030,8 +1077,9 @@ class KoboDeviceDeletedEntitlement(Base):
 
     Hard-deleted books no longer have a calibre ``book_id``.  Keep their UUID
     replay state separate from the live-book ledger so a stale archive cursor
-    cannot re-offer the same ``IsRemoved`` entitlement forever, while another
-    device and a tokenless factory-reset sync can still receive it.
+    cannot re-offer the same ``IsRemoved`` entitlement forever. Another device
+    still has its own ledger, and an explicit Full Sync clears this row before
+    requesting deliberate re-delivery.
     """
     __tablename__ = 'kobo_device_deleted_entitlement'
 
@@ -1071,6 +1119,35 @@ class KoboDeviceEntitlementSeed(Base):
         Integer, ForeignKey('device.id', ondelete='CASCADE'), primary_key=True,
     )
     seeded_at = Column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+    )
+    # Version 1 means the per-device rows were audited against the legacy
+    # New/Changed classifier.  Version 0 rows predate #1735 and may include
+    # fingerprints for ChangedEntitlements a device could not apply.
+    classification_version = Column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+
+
+class KoboDevicePendingSyncPage(Base):
+    """One unacknowledged Kobo sync response per physical device.
+
+    The response body and wire headers are retained verbatim so a retry with
+    the same incoming token can be replayed without consulting mutable library
+    state.  ``confirmation_json`` contains only the bounded page state that is
+    promoted after the device presents ``outgoing_token``.
+    """
+    __tablename__ = 'kobo_device_pending_sync_page'
+
+    device_id = Column(
+        Integer, ForeignKey('device.id', ondelete='CASCADE'), primary_key=True,
+    )
+    incoming_token_hash = Column(String(64), nullable=False, index=True)
+    outgoing_token = Column(Text, nullable=False)
+    response_body = Column(Text, nullable=False)
+    response_headers_json = Column(Text, nullable=False, default="{}")
+    confirmation_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
     )
 
@@ -2255,6 +2332,12 @@ class HardcoverBookBlacklist(Base):
 class HardcoverMatchQueue(Base):
     """Queue for ambiguous Hardcover metadata matches requiring manual review."""
     __tablename__ = 'hardcover_match_queue'
+    __table_args__ = (
+        Index(
+            'ix_hardcover_match_queue_review_state_book',
+            'reviewed', 'review_action', 'book_id',
+        ),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     book_id = Column(Integer, nullable=False)
@@ -2457,6 +2540,7 @@ def add_missing_tables(engine, _session):
         ("kobo_annotation_backup", KoboAnnotationBackup.__table__),
         ("favorite_book", FavoriteBook.__table__),
         ("user_library_book", UserLibraryBook.__table__),
+        ("user_book_cover", UserBookCover.__table__),
         ("device_inventory_report", DeviceInventoryReport.__table__),
         ("device_inventory_item", DeviceInventoryItem.__table__),
         ("device_book_delivery", DeviceBookDelivery.__table__),
@@ -2468,6 +2552,7 @@ def add_missing_tables(engine, _session):
         ("kobo_device_book_entitlement", KoboDeviceBookEntitlement.__table__),
         ("kobo_device_deleted_entitlement", KoboDeviceDeletedEntitlement.__table__),
         ("kobo_device_entitlement_seed", KoboDeviceEntitlementSeed.__table__),
+        ("kobo_device_pending_sync_page", KoboDevicePendingSyncPage.__table__),
     )
     for table_name, table in tables + kobo_entitlement_tables:
         # Explicit transaction control means even schema inspection begins a
@@ -2504,6 +2589,12 @@ def migrate_kobo_entitlement_ledger_columns(engine, _session):
             "change_basis",
             "change_basis TEXT",
         )
+    _add_column_if_missing(
+        engine,
+        "kobo_device_entitlement_seed",
+        "classification_version",
+        "classification_version INTEGER NOT NULL DEFAULT 0",
+    )
 
 # migrate all settings missing in registration table
 def migrate_registration_table(engine, _session):
@@ -3272,21 +3363,24 @@ def _merge_kobo_bookmark(_session, winner, loser):
         winner.current_bookmark = loser.current_bookmark
         loser.current_bookmark = None
         return
-    w, l = winner.current_bookmark, loser.current_bookmark
-    if l.created_at and (not w.created_at or l.created_at < w.created_at):
-        w.created_at = l.created_at
-    if _loser_wins_lm(l, w):
+    winning, losing = winner.current_bookmark, loser.current_bookmark
+    if (losing.created_at
+            and (not winning.created_at
+                 or losing.created_at < winning.created_at)):
+        winning.created_at = losing.created_at
+    if _loser_wins_lm(losing, winning):
         for attr in ("location_source", "location_type", "location_value",
                      "progress_percent", "content_source_progress_percent",
                      "last_modified"):
-            setattr(w, attr, getattr(l, attr))
+            setattr(winning, attr, getattr(losing, attr))
     else:
         # Even if winner's bookmark is newer overall, prefer non-null
         # losing fields if the winner has nulls there (defensive).
         for attr in ("location_source", "location_type", "location_value",
                      "progress_percent", "content_source_progress_percent"):
-            if getattr(w, attr) is None and getattr(l, attr) is not None:
-                setattr(w, attr, getattr(l, attr))
+            if (getattr(winning, attr) is None
+                    and getattr(losing, attr) is not None):
+                setattr(winning, attr, getattr(losing, attr))
 
 
 def _merge_kobo_statistics(_session, winner, loser):
@@ -3297,15 +3391,16 @@ def _merge_kobo_statistics(_session, winner, loser):
         winner.statistics = loser.statistics
         loser.statistics = None
         return
-    w, l = winner.statistics, loser.statistics
-    if _loser_wins_lm(l, w):
+    winning, losing = winner.statistics, loser.statistics
+    if _loser_wins_lm(losing, winning):
         for attr in ("remaining_time_minutes", "spent_reading_minutes",
                      "last_modified"):
-            setattr(w, attr, getattr(l, attr))
+            setattr(winning, attr, getattr(losing, attr))
     else:
         for attr in ("remaining_time_minutes", "spent_reading_minutes"):
-            if getattr(w, attr) is None and getattr(l, attr) is not None:
-                setattr(w, attr, getattr(l, attr))
+            if (getattr(winning, attr) is None
+                    and getattr(losing, attr) is not None):
+                setattr(winning, attr, getattr(losing, attr))
 
 
 def _dedupe_book_read_link(_session):
@@ -3620,6 +3715,69 @@ def migrate_dismissed_duplicate_groups_table(engine, _session):
         print(f"[dup-dismiss-migration] Failed to add duplicate_key column: {e}", flush=True)
 
 
+def migrate_hardcover_match_queue_dedup(engine, _session):
+    """Keep only the newest pending Hardcover review row for each book.
+
+    Reviewed history is never selected by the DELETE. The set-based aggregate
+    is bounded by the queue table rather than issuing one query per book, and
+    the indexes make both runtime exclusion and pending-row upserts efficient.
+    Re-running performs no deletes and both index statements are no-ops.
+    """
+    with engine.begin() as connection:
+        table_exists = connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'hardcover_match_queue'"
+        )).first()
+        if not table_exists:
+            return
+        deleted = connection.execute(text("""
+            DELETE FROM hardcover_match_queue
+            WHERE reviewed = 0
+              AND id NOT IN (
+                  SELECT MAX(queue.id)
+                  FROM hardcover_match_queue AS queue
+                  JOIN (
+                      SELECT book_id, MAX(created_at) AS newest_created_at
+                      FROM hardcover_match_queue
+                      WHERE reviewed = 0
+                      GROUP BY book_id
+                  ) AS newest
+                    ON newest.book_id = queue.book_id
+                   AND newest.newest_created_at = queue.created_at
+                  WHERE queue.reviewed = 0
+                  GROUP BY queue.book_id
+              )
+        """)).rowcount
+
+    _run_ddl_with_retry(engine, (
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_hardcover_match_queue_review_state_book "
+        "ON hardcover_match_queue(reviewed, review_action, book_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS "
+        "uq_hardcover_match_queue_pending_book "
+        "ON hardcover_match_queue(book_id) WHERE reviewed = 0",
+    ))
+    if deleted:
+        log.info(
+            "[hardcover-match-queue-migration] removed %d duplicate pending row(s)",
+            deleted,
+        )
+
+
+def migrate_my_library_admin_intro_table(engine, _session):
+    """Create the single-row my_library_admin_intro table idempotently.
+
+    Fresh installs get it from Base.metadata.create_all; this covers upgraded
+    databases. checkfirst=True makes the call a no-op once the table exists.
+    """
+    try:
+        Base.metadata.create_all(
+            engine, tables=[MyLibraryAdminIntro.__table__], checkfirst=True,
+        )
+    except Exception as e:
+        print(f"[my-library-intro-migration] Failed to create table: {e}", flush=True)
+
+
 def migrate_book_cover_preview_table(engine, _session):
     """Create the book_cover_preview table if it doesn't exist.
     Idempotent — `BookCoverPreview.__table__.create(engine, checkfirst=True)`
@@ -3641,6 +3799,13 @@ def migrate_book_cover_preview_table(engine, _session):
             )
         except Exception as e:
             print(f"[cover-preview-migration] Could not create idx_bcp_user_locked: {e}", flush=True)
+
+
+def migrate_user_book_cover_table(engine, _session):
+    """Create per-user cover metadata on upgraded app.db files."""
+    Base.metadata.create_all(
+        engine, tables=[UserBookCover.__table__], checkfirst=True,
+    )
 
 
 def migrate_notice_tables(engine, _session):
@@ -4894,6 +5059,19 @@ def migrate_kobo_bookmark_created_at(engine, _session):
             raise
 
 
+def migrate_bookmark_updated_at(engine, _session):
+    """Keep old CFI timestamps unknown; future saves record their own clock."""
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(bookmark)"))}
+    if not columns or "updated_at" in columns:
+        return
+    try:
+        _run_ddl_with_retry(engine, "ALTER TABLE bookmark ADD COLUMN updated_at DATETIME")
+    except exc.OperationalError as error:
+        if "duplicate column" not in str(error).lower():
+            raise
+
+
 def migrate_bookmark_format_lowercase(engine, _session):
     """Normalize legacy Bookmark formats and merge case-only duplicates.
 
@@ -4981,6 +5159,7 @@ def migrate_Database(_session):
     add_missing_tables(engine, _session)
     migrate_kobo_entitlement_ledger_columns(engine, _session)
     migrate_thumbnail_lookup_index(engine, _session)
+    migrate_hardcover_match_queue_dedup(engine, _session)
     migrate_registration_table(engine, _session)
     migrate_user_session_table(engine, _session)
     migrate_user_table(engine, _session)
@@ -4995,6 +5174,7 @@ def migrate_Database(_session):
     migrate_kobo_unique_constraints(engine, _session)
     migrate_kobo_deleted_book(engine, _session)
     migrate_kobo_bookmark_created_at(engine, _session)
+    migrate_bookmark_updated_at(engine, _session)
     migrate_bookmark_format_lowercase(engine, _session)
     # Must run before config_sql.load_configuration (it does — ub.init_db
     # precedes config load in cps/__init__.py) so the flipped value is live
@@ -5012,9 +5192,11 @@ def migrate_Database(_session):
     migrate_kobo_annotation_seed_pipeline(engine, _session)
     migrate_kobo_two_way_annotation_sync(engine, _session)
     migrate_book_cover_preview_table(engine, _session)
+    migrate_user_book_cover_table(engine, _session)
     migrate_notice_tables(engine, _session)
     migrate_kepub_package_repair_disposition(engine, _session)
     migrate_dismissed_duplicate_groups_table(engine, _session)
+    migrate_my_library_admin_intro_table(engine, _session)
     migrate_moonreader_progress_columns(engine, _session)
 
     # Ensure progress syncing tables in app.db (user-related tables).
@@ -5039,7 +5221,7 @@ def migrate_Database(_session):
             # Get all system shelves for this user
             user_system_shelves = _session.query(MagicShelf).filter(
                 MagicShelf.user_id == user.id,
-                MagicShelf.is_system == True
+                MagicShelf.is_system.is_(True)
             ).all()
             
             # Delete system shelves that don't match current templates
@@ -5070,7 +5252,7 @@ def migrate_Database(_session):
                 has_template = _session.query(MagicShelf).filter(
                     MagicShelf.user_id == user.id,
                     MagicShelf.name == template_data['name'],
-                    MagicShelf.is_system == True
+                    MagicShelf.is_system.is_(True)
                 ).first()
                 
                 if not has_template:
@@ -5325,6 +5507,7 @@ def init_db(app_db_path):
         clean_database(session)
     else:
         Base.metadata.create_all(engine)
+        migrate_hardcover_match_queue_dedup(engine, session)
         _ensure_kobo_opaque_present_guards(engine)
         create_admin_user(session)
         create_anonymous_user(session)

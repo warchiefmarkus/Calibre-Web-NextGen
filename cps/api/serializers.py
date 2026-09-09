@@ -4,7 +4,7 @@
 
 from datetime import date, datetime
 
-from .. import constants, deployment_profile
+from .. import constants, db, deployment_profile
 from ..clean_html import clean_string
 from ..cover_version import COVER_VERSION_ARG, cover_version_token
 from ..ui_themes import theme_slug
@@ -155,8 +155,11 @@ def _iso_datetime(value):
     return value.isoformat() if isinstance(value, (datetime, date)) else None
 
 
-def cover_url_for(book, resolution):
-    """Versioned cover URL; unversioned fallback remains safely no-cache."""
+def cover_url_for(book, resolution, cover_override=None):
+    """Versioned cover URL; personal override wins when one is selected."""
+    if cover_override is not None:
+        from ..services import user_cover
+        return user_cover.cover_url(cover_override)
     if not getattr(book, "has_cover", 0):
         return None
     url = f"/cover/{book.id}/{resolution}"
@@ -165,9 +168,8 @@ def cover_url_for(book, resolution):
 
 
 def serialize_book_list_item(book, read=False, archived=False, hidden=False,
-                             in_progress=False, external_rating=None,
-                             reading_progress=None):
-
+                             in_progress=False, cover_override=None,
+                             external_rating=None, reading_progress=None):
     series = book.series[0].name if getattr(book, "series", None) else None
     return {
         "id": book.id,
@@ -178,7 +180,7 @@ def serialize_book_list_item(book, read=False, archived=False, hidden=False,
         "authors": [a.name.replace("|", ",") for a in book.authors] if getattr(book, "authors", None) else [],
         "series": series,
         "series_index": book.series_index,
-        "cover_url": cover_url_for(book, "sm"),
+        "cover_url": cover_url_for(book, "sm", cover_override),
         "formats": [d.format for d in book.data] if getattr(book, "data", None) else [],
         # Tag names for the table view's Tags column (#725). Flat strings to match
         # the list-item's other flat arrays (authors/formats); the detail
@@ -229,7 +231,8 @@ def _serialize_custom_columns(book, definitions):
 
 def serialize_book_detail(book, read=False, archived=False, favorited=False, hidden=False,
                           in_progress=False, custom_column_definitions=None,
-                          original_filename=None):
+                          original_filename=None, annotation_count=0,
+                          cover_override=None):
     """Full detail serializer — pure, no Flask/DB imports.
 
     Callers must enrich each language object with a ``.language_name`` attribute
@@ -275,9 +278,10 @@ def serialize_book_detail(book, read=False, archived=False, favorited=False, hid
     # lg 800x1104 WebP / 83,102 B, md 608x840 WebP / 58,740 B.
     #
     # `og` remains a working route — this changes only what the page ASKS for.
-    cover_url = cover_url_for(book, "md")
+    library_cover_url = cover_url_for(book, "md")
+    cover_url = cover_url_for(book, "md", cover_override)
     cover_srcset = None
-    if cover_url:
+    if cover_url and cover_override is None:
         cover_1x = cover_url_for(book, "sm")
         cover_srcset = f"{cover_1x} 1x, {cover_url} 2x" if cover_1x else None
 
@@ -352,6 +356,8 @@ def serialize_book_detail(book, read=False, archived=False, favorited=False, hid
         "rating": rating,
         "cover_url": cover_url,
         "cover_srcset": cover_srcset,
+        "using_my_cover": cover_override is not None,
+        "library_cover_url": library_cover_url,
         "pubdate": pubdate_str,
         "date_added": _iso_datetime(getattr(book, "timestamp", None)),
         "last_modified": _iso_datetime(getattr(book, "last_modified", None)),
@@ -368,4 +374,5 @@ def serialize_book_detail(book, read=False, archived=False, favorited=False, hid
         "favorited": bool(favorited),
         "hidden": bool(hidden),
         "in_progress": bool(in_progress),
+        "annotation_count": int(annotation_count or 0),
     }

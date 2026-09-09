@@ -7,7 +7,7 @@
 
 The web reader keeps its exact position as an epub.js CFI in ``ub.Bookmark``.
 Nothing outside the readers reads that row — it is opaque, format-specific and
-carries no timestamp — so a browser reading session used to be invisible to the
+formerly carried no timestamp — so a browser reading session used to be invisible to the
 user's Kobo and to the book-detail progress display.
 
 The portable part of a position is the *percentage*, which the client already
@@ -132,32 +132,9 @@ def record_web_reader_progress(user, book_id: int, percentage: float,
         except Exception:
             log.warning("Best-effort web-reader device observation failed", exc_info=True)
 
-    # ``ub.session`` is a single long-lived Session shared across requests
-    # (``init_db`` builds it once), so a plain query can answer from the identity
-    # map rather than the row. ``populate_existing`` + ``refresh`` make this read
-    # authoritative *within this transaction* — cheap, and strictly better than
-    # comparing against whatever happens to be in memory.
-    #
-    # ``no_autoflush`` is load-bearing, not tidiness. Should a caller still have
-    # a pending write on this session, a bare query would autoflush it here, so
-    # a failure belonging to that REQUIRED write would surface inside this
-    # best-effort helper and be logged (and swallowed) by the routes as an
-    # optional progress-sharing failure. Reading without flushing keeps a read
-    # from being the thing that trips someone else's write.
-    #
-    # Honest limit: this is not cross-connection atomicity. The read-then-write
-    # below can still interleave with a writer on another connection, because
-    # acceptance is decided in Python rather than by the UPDATE itself. So the
-    # guarantee this gives is "never regresses a position it can observe", NOT
-    # an absolute no-regression guarantee: a device that commits a further
-    # position inside this window can still be rolled back to ours, and it only
-    # recovers if that device pushes again. That is a pre-existing property of
-    # this subsystem, not something introduced here — KOSync's own furthest-wins
-    # check (kosync.py:1106) has exactly the same shape. Closing it means one
-    # shared conditional-UPDATE primitive (accept in the WHERE clause, then
-    # check the affected-row count) used by BOTH writers, so the two cannot
-    # drift; that is tracked separately rather than half-done here.
-    stored = None
+    # Status remains an independent manual-intent guard. Position acceptance is
+    # deliberately absent from this read: the shared primitive decides that in
+    # its UPDATE WHERE clause after the caller's required write is settled.
     already_finished = False
     with ub.session.no_autoflush:
         read_row = (ub.session.query(ub.ReadBook)
@@ -167,15 +144,6 @@ def record_web_reader_progress(user, book_id: int, percentage: float,
                     .first())
         already_finished = (read_row is not None
                             and read_row.read_status == ub.ReadBook.STATUS_FINISHED)
-
-        state = (ub.session.query(ub.KoboReadingState)
-                 .populate_existing()
-                 .filter(ub.KoboReadingState.user_id == user_id,
-                         ub.KoboReadingState.book_id == book_id)
-                 .first())
-        if state is not None and state.current_bookmark is not None:
-            ub.session.refresh(state.current_bookmark)
-            stored = state.current_bookmark.progress_percent
 
     # The device journal records what this browser actually reported even when
     # its percentage loses the resolved furthest-wins comparison below. Its
@@ -237,12 +205,6 @@ def record_web_reader_progress(user, book_id: int, percentage: float,
                   user_id, book_id, percentage)
         return False
 
-    if stored is not None and percentage <= stored:
-        log.debug("Web reader position not advanced for user %s book %s: "
-                  "incoming %.2f%% <= stored %.2f%%",
-                  user_id, book_id, percentage, stored)
-        return False
-
     # Sharing a position must never cost the user their bookmark, so this write
     # goes in a SAVEPOINT: ``update_book_read_status`` creates ReadBook and
     # KoboReadingState rows carrying UNIQUE(user_id, book_id), and a first-ever
@@ -264,10 +226,29 @@ def record_web_reader_progress(user, book_id: int, percentage: float,
     # neither being updated, which is a state the next save corrects.
     try:
         with ub.begin_contained_nested(ub.session):
-            update_book_read_status(user, book_id, percentage)
-            record_percentage_only_progress(
-                user_id, book_id, percentage, device="Web reader",
+            bookmark_outcome = update_book_read_status(
+                user, book_id, percentage,
             )
+            if not bookmark_outcome.accepted:
+                log.debug(
+                    "Web reader position not advanced for user %s book %s: "
+                    "incoming %.2f%% <= accepted %.2f%%",
+                    user_id, book_id, percentage,
+                    bookmark_outcome.percentage,
+                )
+                return False
+            kosync_outcome = record_percentage_only_progress(
+                user_id, book_id, percentage, device="Web reader",
+                _return_outcome=True,
+            )
+            if not kosync_outcome.accepted:
+                # A device may have advanced the KOReader carrier between the
+                # two SQL verdicts. Resolve the derived status/bookmark from
+                # the value that actually survived that second verdict.
+                update_book_read_status(
+                    user, book_id, kosync_outcome.percentage,
+                )
+                return False
     except Exception as e:
         log.warning("Could not share web reader progress for user %s book %s: %s",
                     user_id, book_id, e)
@@ -276,3 +257,80 @@ def record_web_reader_progress(user, book_id: int, percentage: float,
     log.debug("Web reader advanced progress for user %s book %s to %.2f%%",
               user_id, book_id, percentage)
     return True
+
+
+def read_resume_position(engine, user_id, book_id, fmt="epub"):
+    """Keep the app session's CFI availability; read remote progress best-effort.
+
+    The mandatory local lookup retains the app connection's normal busy timeout.
+    Only the optional carrier uses a separate read-only, zero-timeout connection.
+    Neither read flushes pending changes. Unknown historical local clocks allow
+    an offer, but never an automatic replacement of the saved CFI.
+    """
+    import sqlite3
+    from pathlib import Path
+
+    with ub.session.no_autoflush:
+        local = ub.session.query(ub.Bookmark).filter(
+            ub.Bookmark.user_id == user_id,
+            ub.Bookmark.book_id == book_id,
+            ub.Bookmark.format == fmt,
+        ).first()
+        bookmark = local.bookmark_key if local else None
+        local_updated_at = local.updated_at if local else None
+    result = {"bookmark": bookmark, "resume": None}
+    connection = None
+    try:
+        database = engine.url.database
+        if not database or database == ":memory:":
+            return result
+        connection = sqlite3.connect(
+            Path(database).resolve().as_uri() + "?mode=ro", uri=True, timeout=0,
+        )
+        connection.execute("BEGIN")
+        if fmt != "epub":
+            return result
+        remote = connection.execute(
+            "SELECT b.progress_percent, b.last_modified FROM kobo_bookmark b "
+            "JOIN kobo_reading_state s ON s.id=b.kobo_reading_state_id "
+            "WHERE s.user_id=? AND s.book_id=? LIMIT 1", (user_id, book_id),
+        ).fetchone()
+        if not remote:
+            return result
+        percentage = coerce_percentage(remote[0])
+        if percentage is None or not remote[1]:
+            return result
+        def utc(raw):
+            value = raw if isinstance(raw, datetime) else datetime.fromisoformat(raw)
+            return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        synced_at = utc(remote[1])
+        if bookmark and local_updated_at is not None and synced_at <= utc(local_updated_at):
+            return result
+        result["resume"] = {"percentage": percentage,
+                            "synced_at": synced_at.isoformat(),
+                            "mode": "offer" if result["bookmark"] else "automatic"}
+        # Keep the original percentage query/response independent of optional
+        # location fields (including older or partially migrated databases).
+        try:
+            location = connection.execute(
+                "SELECT b.location_source, b.location_type, b.location_value "
+                "FROM kobo_bookmark b JOIN kobo_reading_state s "
+                "ON s.id=b.kobo_reading_state_id WHERE s.user_id=? AND s.book_id=? LIMIT 1",
+                (user_id, book_id),
+            ).fetchone()
+            # Release the read snapshot before any optional EPUB work.
+            connection.close()
+            connection = None
+            if location and location[1] == "KoboSpan" and location[0] and location[2]:
+                from .kobo_resume import exact_resume
+                exact = exact_resume(book_id, *location)
+                if exact:
+                    result["resume"].update(exact)
+        except Exception:
+            log.debug("Could not load exact reader resume for book %s", book_id, exc_info=True)
+    except Exception:
+        log.debug("Could not load reader resume position for book %s", book_id, exc_info=True)
+    finally:
+        if connection is not None:
+            connection.close()
+    return result

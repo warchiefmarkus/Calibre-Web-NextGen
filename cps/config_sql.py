@@ -129,6 +129,9 @@ class _Settings(_Base):
     # to that locale unless the client overrides via ?lang= or Accept-Language.
     config_opds_default_locale = Column(String(8), default="")
     config_columns_to_ignore = Column(String)
+    # Comma-separated Calibre custom-column IDs selected by an administrator.
+    # Request-time use is revalidated against the live Calibre schema.
+    config_sortable_custom_columns = Column(String, default="")
 
     config_denied_tags = Column(String, default="")
     config_allowed_tags = Column(String, default="")
@@ -160,9 +163,10 @@ class _Settings(_Base):
     config_kobo_cover_padding_fill_mode = Column(String, default="edge_mirror")
     config_kobo_cover_padding_color = Column(String, default="")
     config_kobo_prefer_kepub = Column(Boolean, default=True)
-    # Issue #1925 replay protection. Clara hardware proved byte-stable payloads
-    # alone still de-download books after a sync hiccup, so suppression is the
-    # safe default; tokenless/factory-reset requests remain an explicit escape.
+    # Issue #1925 replay protection. Hardware proved byte-stable payloads alone
+    # still de-download books after a sync hiccup or USB eject, so suppression
+    # is the safe default for every token shape. Full Sync/resend deliberately
+    # clear the target device ledger when re-delivery is required.
     config_kobo_suppress_replayed_entitlements = Column(
         Boolean, nullable=False, default=True, server_default=text("1"),
     )

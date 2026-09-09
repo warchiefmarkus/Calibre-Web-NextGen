@@ -7,6 +7,7 @@ In ``mcp-managed-library`` it preserves the same SPA contract while storing the
 CFI and normalized progress in Calibre's native ``last_read_positions`` table
 through the private CalibreMCP REST adapter.
 """
+from datetime import datetime, timezone
 import uuid
 
 from flask import g, jsonify, request
@@ -112,6 +113,7 @@ def get_bookmark(book_id):
             fraction = native_fraction if native_fraction > 0 else summary_fraction
             return jsonify({
                 "bookmark": native.get("cfi") if native and fmt == "pdf" else None,
+                "resume": None,
                 "position_fraction": fraction,
                 "position_source": "moonreader",
                 "position_anchor": anchor.get("text") if anchor else None,
@@ -127,11 +129,14 @@ def get_bookmark(book_id):
             return _err("reader_backend_error", str(native_error), native_error.status_code)
         return jsonify({
             "bookmark": native.get("cfi") if native else None,
+            "resume": None,
             "position_fraction": float(native.get("pos_frac") or 0) if native else 0,
             "position_source": "calibre_web" if native else None,
         })
-    row = ub.session.query(ub.Bookmark).filter(_bookmark_filter(book_id, fmt)).first()
-    return jsonify({"bookmark": row.bookmark_key if row else None})
+
+    return jsonify(reading_position.read_resume_position(
+        ub.session.get_bind(), int(current_user.id), book_id, fmt,
+    ))
 
 
 @api_v1.route("/books/<int:book_id>/bookmark", methods=["POST"])
@@ -208,7 +213,7 @@ def save_bookmark(book_id):
     # Replace-on-write: one bookmark per (user, book, format), like the legacy route.
     ub.session.query(ub.Bookmark).filter(_bookmark_filter(book_id, fmt)).delete()
     if bookmark_key:
-        ub.session.merge(ub.Bookmark(
+        row = ub.session.merge(ub.Bookmark(
             user_id=current_user.id,
             book_id=book_id,
             format=fmt,
@@ -236,6 +241,9 @@ def save_bookmark(book_id):
             except Exception as e:
                 # Position sharing must never cost the user their bookmark.
                 log.warning("Could not share web reader progress for book %s: %s", book_id, e)
+
+        # Stamp after sharing: our own mirror must never supersede this CFI.
+        row.updated_at = datetime.now(timezone.utc)
 
     # The SPA debounces one of these every 800ms; answering 204 on a rolled-back
     # write drops the position silently and tells the client not to retry.

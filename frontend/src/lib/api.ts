@@ -269,6 +269,10 @@ export interface BookDetail {
   /** Density candidates for the detail cover (`sm` 1x, `md` 2x). Absent on
    *  older servers — fall back to `cover_url` alone. */
   cover_srcset?: string | null;
+  /** True when cover_url points at this viewer's private override. */
+  using_my_cover?: boolean;
+  /** The authoritative shared-library cover, unaffected by a private override. */
+  library_cover_url?: string | null;
   pubdate: string | null;
   date_added: string | null;
   last_modified: string | null;
@@ -286,6 +290,8 @@ export interface BookDetail {
   archived: boolean;
   favorited: boolean;
   hidden: boolean;
+  /** Current user's visible highlights/notes for this book. Older servers omit it. */
+  annotation_count?: number;
   /** Membership for personal-library detail deep links. Older servers omit it,
    *  which preserves the historical whole-library behavior. */
   in_my_library?: boolean;
@@ -302,8 +308,9 @@ export interface BookDetail {
    *  ISO date, or null when not synced or for progress that predates
    *  this field. */
   kosync_progress_created_at: string | null;
-  /** Newest reading position after comparing Moon+ .po and database timestamps. */
-  reading_progress: ReadingProgressSummary | null;
+  /** Newest reading position after comparing Moon+ .po and database timestamps.
+   * Optional for compatibility with older API payloads and static test fixtures. */
+  reading_progress?: ReadingProgressSummary | null;
   /** Allowed conversion source/target formats for this book, derived from the
    *  configured converters and formats already present (mirror of the legacy
    *  edit page). Absent on older servers → no conversion UI. */
@@ -591,6 +598,15 @@ export interface Account {
   library_mode_managed: boolean;
 }
 
+/** Stock-Kobo credential plus the non-secret server address KOReader expects. */
+export interface KoboSyncToken {
+  user_id: number;
+  configured: boolean;
+  sync_url: string | null;
+  server_url: string;
+  is_localhost: boolean;
+}
+
 export interface MoonReaderSyncSummary {
   cache_path: string | null;
   cache_found: boolean;
@@ -782,6 +798,14 @@ export interface LibraryModePayload {
   show_my_library_intro: boolean;
   can_switch_library_mode: boolean;
   library_mode_managed: boolean;
+}
+
+/** Server-wide state of the admin "Try My Library" intro card — shared by all
+ *  administrators and persisted in app.db, so it survives sessions and browsers. */
+export interface MyLibraryIntroState {
+  status: 'not_enabled' | 'enabled';
+  dismissed: boolean;
+  snapshot_accounts: number;
 }
 
 export interface GlobalLibraryPage extends BooksPage {

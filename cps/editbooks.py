@@ -18,7 +18,7 @@ from flask import Blueprint, request, flash, redirect, url_for, abort, Response,
 from flask_babel import gettext as _
 from flask_babel import lazy_gettext as N_
 from flask_babel import get_locale
-from .cw_login import current_user, login_required
+from .cw_login import current_user
 from sqlalchemy.exc import OperationalError, IntegrityError, InterfaceError, InvalidRequestError
 from sqlalchemy.orm.exc import StaleDataError
 from sqlalchemy.sql.expression import func
@@ -263,6 +263,8 @@ def edit_selected_books():
     checkA = d.get('checkA')
 
     if len(selections) != 0:
+        successful_books = []
+        failed_books = []
         for book_id in selections:
             vals = {
                 "pk": book_id,
@@ -271,7 +273,13 @@ def edit_selected_books():
             }
             book = calibre_db.get_book(book_id)
             if not book:
+                failed_books.append({
+                    'book_id': book_id,
+                    'stage': 'lookup',
+                    'files_may_be_inconsistent': False,
+                })
                 continue
+            resolved_book_id = book.id
 
             # Collect all changes
             changes = {key: d.get(key) for key in ['title', 'title_sort', 'author_sort', 'authors', 'categories', 'series', 'languages', 'publishers', 'comments'] if d.get(key)}
@@ -340,11 +348,16 @@ def edit_selected_books():
 
             # Update directory structure once if title or authors changed
             if title_changed or authors_changed:
-                rename_error = helper.update_dir_structure(book.id, config.get_book_path(), input_authors[0])
+                rename_error = helper.update_dir_structure(resolved_book_id, config.get_book_path(), input_authors[0])
                 if rename_error:
-                    # Handle error appropriately, maybe flash a message
                     calibre_db.session.rollback()
-                    continue # or return an error response
+                    log.error("Bulk edit failed to rename book %s: %s", resolved_book_id, rename_error)
+                    failed_books.append({
+                        'book_id': resolved_book_id,
+                        'stage': 'rename',
+                        'files_may_be_inconsistent': True,
+                    })
+                    continue
 
             helper.mark_book_modified(book, set_dirty=metadata_changed)
             try:
@@ -352,9 +365,14 @@ def edit_selected_books():
             except (OperationalError, IntegrityError, StaleDataError) as e:
                 calibre_db.session.rollback()
                 log.error_or_exception("Database error: {}".format(e))
-                # Handle error appropriately
+                failed_books.append({
+                    'book_id': resolved_book_id,
+                    'stage': 'commit',
+                    'files_may_be_inconsistent': title_changed or authors_changed,
+                })
                 continue
 
+            successful_books.append(resolved_book_id)
             if metadata_changed and log_payload:
                 try:
                     log_payload.setdefault('title', book.title)
@@ -370,13 +388,39 @@ def edit_selected_books():
                     os.makedirs(constants.CWA_METADATA_CHANGE_LOGS_DIR, exist_ok=True)
                     log_path = os.path.join(
                         constants.CWA_METADATA_CHANGE_LOGS_DIR,
-                        f'{now.strftime("%Y%m%d%H%M%S")}-{book.id}.json')
+                        f'{now.strftime("%Y%m%d%H%M%S")}-{resolved_book_id}.json')
                     with open(log_path, 'w', encoding='utf-8') as f:
                         json.dump(log_payload, f, indent=4, ensure_ascii=False)
-                    log.debug(f"Created metadata change log for book {book.id} with changes: {list(log_payload.keys())}")
+                    log.debug(f"Created metadata change log for book {resolved_book_id} with changes: {list(log_payload.keys())}")
                 except Exception as e:
-                    log.error_or_exception(f"Failed to write metadata change log for book {book.id}: {e}")
+                    log.error_or_exception(f"Failed to write metadata change log for book {resolved_book_id}: {e}")
 
+        if failed_books:
+            failed_ids = ", ".join(
+                str(failure['book_id'])
+                for failure in failed_books
+                if isinstance(failure['book_id'], int)
+                and not isinstance(failure['book_id'], bool)
+            )
+            failed_ids_message = _(
+                " (book IDs: %(failed_ids)s)", failed_ids=failed_ids,
+            ) if failed_ids else ""
+            message = _(
+                "Bulk edit completed with errors: %(success_count)s succeeded and "
+                "%(failure_count)s failed%(failed_ids_message)s. One or more "
+                "failed books may have had files renamed before the database update "
+                "failed; their files and database entries may now be inconsistent.",
+                success_count=len(successful_books),
+                failure_count=len(failed_books),
+                failed_ids_message=failed_ids_message,
+            )
+            return json.dumps({
+                'success': False,
+                'partial': bool(successful_books),
+                'successful_books': successful_books,
+                'failed_books': failed_books,
+                'message': message,
+            })
         return json.dumps({'success': True})
     return ""
 
@@ -827,14 +871,11 @@ def read_selected_books():
     if vals:
         try:
             for book_id in vals:
-                ret = helper.edit_book_read_status(book_id, markAsRead)
+                helper.edit_book_read_status(book_id, markAsRead)
 
         except (OperationalError, IntegrityError, StaleDataError) as e:
             calibre_db.session.rollback()
             log.error_or_exception("Database error: {}".format(e))
-            ret = Response(json.dumps({'success': False,
-                    'msg': 'Database error: {}'.format(e.orig if hasattr(e, "orig") else e)}),
-                    mimetype='application/json')
 
         return json.dumps({'success': True})
     return ""
@@ -941,7 +982,7 @@ def table_xchange_author_title():
 
             if edited_books_id:
                 # toDo: Handle error
-                edit_error = helper.update_dir_structure(edited_books_id, config.get_book_path(), input_authors[0])
+                helper.update_dir_structure(edited_books_id, config.get_book_path(), input_authors[0])
             if modify_date:
                 helper.mark_book_modified(book)
             try:
@@ -963,6 +1004,7 @@ def do_edit_book(book_id, upload_formats=None):
     modify_date = False
     edit_error = False
     refresh_cover_thumbnail_after_commit = False
+    cover_stage = None
 
     # allow_show_hidden=True: the metadata-save POST must succeed against
     # a user's own hidden book — droM4X reported the metadata icon on
@@ -974,6 +1016,8 @@ def do_edit_book(book_id, upload_formats=None):
         flash(_("Oops! Selected book is unavailable. File does not exist or is not accessible"),
               category="error")
         return redirect(url_for("web.index"))
+
+    previous_cover_metadata = (book.has_cover, book.last_modified)
 
     to_save = request.form.to_dict()
 
@@ -1005,6 +1049,7 @@ def do_edit_book(book_id, upload_formats=None):
 
         cover_upload_success = upload_cover(request, book)
         if cover_upload_success or to_save.get("format_cover"):
+            cover_stage = cover_upload_success or cover_stage
             book.has_cover = 1
             modify_date = True
 
@@ -1037,10 +1082,12 @@ def do_edit_book(book_id, upload_formats=None):
                 result, error = parallel.run_blocking(copy_current_request_context(partial(
                     helper.save_cover_from_url, to_save["cover_url"].strip(), book.path)))
                 if result:
+                    if cover_stage is not None:
+                        cover_stage.discard()
+                    cover_stage = result
                     book.has_cover = 1
                     modify_date = True
-                    refresh_cover_thumbnail_after_commit = True
-                    log.debug("[edit_book] cover saved book_id=%s duration=%.3fs", book.id, time.monotonic() - cover_start)
+                    log.debug("[edit_book] cover staged book_id=%s duration=%.3fs", book.id, time.monotonic() - cover_start)
                 else:
                     log.warning("[edit_book] cover save failed book_id=%s duration=%.3fs error=%s", book.id, time.monotonic() - cover_start, error)
                     edit_error = True
@@ -1091,7 +1138,7 @@ def do_edit_book(book_id, upload_formats=None):
 
         # Stage 3: Commit all changes to the database.
         if modify_date:
-            helper.mark_book_modified(book, unsync=True)
+            helper.mark_book_modified(book)
 
         # Hold the process-shared metadata.db write lock for the
         # duration of the commit. Coordinates with the ingest_processor
@@ -1121,12 +1168,49 @@ def do_edit_book(book_id, upload_formats=None):
                 calibre_db.session.commit()
             log.debug("[edit_book] db commit retry ok book_id=%s duration=%.3fs", book.id, time.monotonic() - request_start)
 
+        if cover_stage is not None:
+            published, publish_error = cover_stage.publish()
+            if not published:
+                cover_stage.discard()
+                cover_stage = None
+                book.has_cover, book.last_modified = previous_cover_metadata
+                try:
+                    with metadata_db_write_lock():
+                        calibre_db.session.merge(book)
+                        calibre_db.session.commit()
+                except Exception as compensation_error:
+                    log.error_or_exception(
+                        "Cover metadata compensation failed for book %s after "
+                        "publish failure %s: %s",
+                        book.id,
+                        publish_error,
+                        compensation_error,
+                    )
+                    try:
+                        calibre_db.session.rollback()
+                    except Exception:
+                        pass
+                flash(_("Cover-file is not a valid image file, or could not be stored"), category="error")
+                return redirect(url_for('web.show_book', book_id=book.id))
+            cover_stage = None
+            refresh_cover_thumbnail_after_commit = True
+
         if refresh_cover_thumbnail_after_commit:
-            helper.replace_cover_thumbnail_cache(
-                book.id,
-                book_path=book.path,
-                last_modified=book.last_modified,
-            )
+            try:
+                from . import kobo_sync_status
+                kobo_sync_status.remove_synced_book(book.id, all=True)
+            except Exception as ex:
+                log.error_or_exception("Failed to invalidate Kobo cover state for book %s: %s",
+                                       book.id, ex)
+            try:
+                helper.replace_cover_thumbnail_cache(
+                    book.id,
+                    book_path=book.path,
+                    last_modified=book.last_modified,
+                )
+            except Exception as ex:
+                log.error_or_exception("Failed to replace cover thumbnail cache for book %s: %s",
+                                       book.id, ex)
 
         # CWA: Export of changed Metadata after commit, to avoid race conditions with folder renames
         # Only create log if there were actual meaningful metadata changes
@@ -1202,11 +1286,17 @@ def do_edit_book(book_id, upload_formats=None):
     except (ValueError, OperationalError, IntegrityError, StaleDataError, InterfaceError, InvalidRequestError) as e:
         log.error_or_exception("Database or Value error: {}".format(e))
         calibre_db.session.rollback()
+        if cover_stage is not None:
+            cover_stage.discard()
+            book.has_cover, book.last_modified = previous_cover_metadata
         flash(_("Oops! Database Error: %(error)s.", error=e.orig if hasattr(e, "orig") else e), category="error")
         return redirect(url_for('web.show_book', book_id=book.id))
     except Exception as ex:
         log.error_or_exception(ex)
         calibre_db.session.rollback()
+        if cover_stage is not None:
+            cover_stage.discard()
+            book.has_cover, book.last_modified = previous_cover_metadata
         flash(_("Error editing book: {}".format(ex)), category="error")
         return redirect(url_for('web.show_book', book_id=book.id))
 
@@ -1595,126 +1685,246 @@ def render_delete_book_result(book_format, json_response, warning, book_id, loca
             return redirect(get_redirect_location(location, "web.index"))
 
 
-def delete_book_from_table(book_id, book_format, json_response, location="", skip_cache_invalidation=False):
+def get_visible_book_for_delete(book_id):
+    """Resolve a delete target through the caller's canonical library policy.
+
+    Both Classic and API deletion routes delegate to ``delete_book_from_table``,
+    so keeping the object-level authorization lookup here makes it impossible
+    for either surface (or a future caller) to fall back to the raw Books table.
+    """
+    book = calibre_db.get_filtered_book(
+        book_id,
+        allow_show_archived=True,
+        allow_show_hidden=True,
+        # Global metadata and deletion are library-wide operations. This only
+        # bypasses personal membership; common visibility filters still apply.
+        allow_show_global=bool(current_user.role_edit()),
+    )
+    if not book:
+        abort(404)
+    return book
+
+
+def delete_book_from_table(
+    book_id, book_format, json_response, location="", skip_cache_invalidation=False
+):
     warning = {}
     if current_user.role_delete_books():
-        book = calibre_db.get_book(book_id)
-        if book:
-            try:
-                if not book_format:
-                    # Whole-book delete — data-safety (D3-sibling): commit the DB deletes
-                    # FIRST, remove files LAST. The old order deleted the files
-                    # (helper.delete_book) before delete_whole_book + commit, so a DB failure
-                    # left the files gone but the Books row surviving — a phantom book that
-                    # still shows in the library and 404s when opened, unrecoverable. DB-first
-                    # leaves the book fully intact on a DB failure (the except below rolls back);
-                    # a file-cleanup failure after the DB is consistent is recoverable (rows
-                    # already gone, orphaned files reclaimable) and is logged + warned, not raised.
-                    deleted_book_id = book.id
-                    deleted_book_path = book.path
-                    delete_whole_book(deleted_book_id, book)
-                    calibre_db.session.commit()
-                    # Files last: a plain stand-in, never the now-detached ORM book
-                    # (delete_whole_book's intermediate commits expire/detach it; a whole-book
-                    # cleanup reads only .id and .path).
-                    result, error = helper.delete_book(
-                        _DeletedBookFileRef(deleted_book_id, deleted_book_path),
-                        config.get_book_path(), book_format="")
-                    if not result:
-                        log.warning("[delete-book] Book %s removed from the database but file "
-                                    "cleanup failed: %s (files remain on disk)", deleted_book_id, error)
-                    if error:
-                        if json_response:
-                            warning = {"location": url_for("edit-book.show_edit_book", book_id=book_id),
-                                       "type": "warning",
-                                       "format": "",
-                                       "message": error}
-                        else:
-                            flash(error, category="warning")
-                else:
-                    # Single-format delete: remove the format file, then its Data row. Kept
-                    # files-first — a failure here orphans at most one format's row (not the
-                    # whole book), and the format's on-disk path is resolved from that Data row,
-                    # which a files-last order would have already removed.
-                    result, error = helper.delete_book(book, config.get_book_path(), book_format=book_format.upper())
-                    if not result:
-                        if json_response:
-                            return json.dumps([{"location": url_for("edit-book.show_edit_book", book_id=book_id),
-                                                "type": "danger",
-                                                "format": "",
-                                                "message": error}])
-                        else:
-                            flash(error, category="error")
-                            return redirect(url_for('edit-book.show_edit_book', book_id=book_id))
-                    if error:
-                        if json_response:
-                            warning = {"location": url_for("edit-book.show_edit_book", book_id=book_id),
-                                       "type": "warning",
-                                       "format": "",
-                                       "message": error}
-                        else:
-                            flash(error, category="warning")
-                    calibre_db.session.query(db.Data).filter(db.Data.book == book.id).\
-                        filter(db.Data.format == book_format).delete()
-                    if book_format.upper() in ['KEPUB', 'EPUB', 'EPUB3']:
-                        kobo_sync_status.remove_synced_book(book.id, True)
-                    calibre_db.session.commit()
-
-                refreshed_duplicate_cache = False
-                if not book_format:
-                    try:
-                        from cps.duplicate_index import (
-                            _current_max_book_id,
-                            delete_book_keys,
-                            get_duplicate_groups_from_index,
+        book = get_visible_book_for_delete(book_id)
+        format_delete = None
+        format_commit_succeeded = False
+        try:
+            if not book_format:
+                # Whole-book delete — data-safety (D3-sibling): commit the DB deletes
+                # FIRST, remove files LAST. The old order deleted the files
+                # (helper.delete_book) before delete_whole_book + commit, so a DB failure
+                # left the files gone but the Books row surviving — a phantom book that
+                # still shows in the library and 404s when opened, unrecoverable. DB-first
+                # leaves the book fully intact on a DB failure (the except below rolls back);
+                # a file-cleanup failure after the DB is consistent is recoverable (rows
+                # already gone, orphaned files reclaimable) and is logged + warned, not raised.
+                deleted_book_id = book.id
+                deleted_book_path = book.path
+                delete_whole_book(deleted_book_id, book)
+                calibre_db.session.commit()
+                # Files last: a plain stand-in, never the now-detached ORM book
+                # (delete_whole_book's intermediate commits expire/detach it; a whole-book
+                # cleanup reads only .id and .path).
+                result, error = helper.delete_book(
+                    _DeletedBookFileRef(deleted_book_id, deleted_book_path),
+                    config.get_book_path(),
+                    book_format="",
+                )
+                if not result:
+                    log.warning(
+                        "[delete-book] Book %s removed from the database but file "
+                        "cleanup failed: %s (files remain on disk)",
+                        deleted_book_id,
+                        error,
+                    )
+                if error:
+                    if json_response:
+                        warning = {
+                            "location": url_for(
+                                "edit-book.show_edit_book", book_id=book_id
+                            ),
+                            "type": "warning",
+                            "format": "",
+                            "message": error,
+                        }
+                    else:
+                        flash(error, category="warning")
+            else:
+                # Single-format delete: hide the bytes behind a reversible,
+                # same-filesystem (or compensating Google Drive) rename. The
+                # Data row can then be committed without creating a window in
+                # which SQL rollback advertises bytes already destroyed.
+                format_delete, error = helper.stage_book_format_delete(
+                    book, config.get_book_path(), book_format.upper()
+                )
+                if format_delete is None:
+                    if json_response:
+                        return json.dumps(
+                            [
+                                {
+                                    "location": url_for(
+                                        "edit-book.show_edit_book", book_id=book_id
+                                    ),
+                                    "type": "danger",
+                                    "format": "",
+                                    "message": error,
+                                }
+                            ]
                         )
-                        from cps.cwa_db_loader import load_cwa_db
-                        CWA_DB = load_cwa_db().CWA_DB
+                    else:
+                        flash(error, category="error")
+                        return redirect(
+                            url_for("edit-book.show_edit_book", book_id=book_id)
+                        )
+                if error:
+                    if json_response:
+                        warning = {
+                            "location": url_for(
+                                "edit-book.show_edit_book", book_id=book_id
+                            ),
+                            "type": "warning",
+                            "format": "",
+                            "message": error,
+                        }
+                    else:
+                        flash(error, category="warning")
+                calibre_db.session.query(db.Data).filter(
+                    db.Data.book == book.id
+                ).filter(db.Data.format == book_format).delete()
+                calibre_db.session.commit()
+                format_commit_succeeded = True
 
-                        delete_book_keys([book_id])
-                        cwa_db = CWA_DB()
-                        duplicate_groups = get_duplicate_groups_from_index(cwa_db.cwa_settings, include_dismissed=True)
-                        cwa_db.update_duplicate_cache(duplicate_groups, len(duplicate_groups), _current_max_book_id())
-                        refreshed_duplicate_cache = True
-                    except Exception as e:
-                        log.warning("Failed to refresh duplicate index/cache after deleting book %s: %s", book_id, str(e))
-                
-                # Skip cache invalidation when batching, or when the indexed refresh
-                # above already handled it; otherwise mark the cache as stale.
-                if not skip_cache_invalidation and not refreshed_duplicate_cache:
+                cleanup_succeeded, cleanup_error = format_delete.finalize()
+                if not cleanup_succeeded:
+                    log.warning(
+                        "[delete-format] Book %s format %s was removed from the database "
+                        "but quarantine cleanup failed; bytes remain recoverable: %s",
+                        book.id,
+                        book_format,
+                        cleanup_error,
+                    )
+                    error = _(
+                        "Format metadata was deleted, but file cleanup was incomplete; "
+                        "an administrator can recover the quarantined file."
+                    )
+                if error:
+                    if json_response:
+                        warning = {
+                            "location": url_for(
+                                "edit-book.show_edit_book", book_id=book_id
+                            ),
+                            "type": "warning",
+                            "format": "",
+                            "message": error,
+                        }
+                    else:
+                        flash(error, category="warning")
+                if book_format.upper() in ["KEPUB", "EPUB", "EPUB3"]:
                     try:
-                        from cps.cwa_db_loader import load_cwa_db
-                        CWA_DB = load_cwa_db().CWA_DB
-                        cwa_db = CWA_DB()
-                        cwa_db.invalidate_duplicate_cache()
-                    except Exception as e:
-                        log.error("Failed to invalidate duplicate cache after deletion: %s", str(e))
-                
-            except Exception as ex:
-                log.error_or_exception(ex)
-                calibre_db.session.rollback()
-                if json_response:
-                    return json.dumps([{"location": url_for("edit-book.show_edit_book", book_id=book_id),
-                                        "type": "danger",
-                                        "format": "",
-                                        "message": str(ex)}])
-                else:
-                    flash(str(ex), category="error")
-                    return redirect(url_for('edit-book.show_edit_book', book_id=book_id))
+                        kobo_sync_status.remove_synced_book(book.id, True)
+                    except Exception as ex:
+                        log.warning(
+                            "Failed to invalidate Kobo sync state after deleting book %s "
+                            "format %s: %s",
+                            book.id,
+                            book_format,
+                            ex,
+                        )
 
-        else:
-            # book not found
-            log.error('Book with id "%s" could not be deleted: not found', book_id)
-        return render_delete_book_result(book_format, json_response, warning, book_id, location)
+            refreshed_duplicate_cache = False
+            if not book_format:
+                try:
+                    from cps.duplicate_index import (
+                        _current_max_book_id,
+                        delete_book_keys,
+                        get_duplicate_groups_from_index,
+                    )
+                    from cps.cwa_db_loader import load_cwa_db
+
+                    CWA_DB = load_cwa_db().CWA_DB
+
+                    delete_book_keys([book_id])
+                    cwa_db = CWA_DB()
+                    duplicate_groups = get_duplicate_groups_from_index(
+                        cwa_db.cwa_settings, include_dismissed=True
+                    )
+                    cwa_db.update_duplicate_cache(
+                        duplicate_groups, len(duplicate_groups), _current_max_book_id()
+                    )
+                    refreshed_duplicate_cache = True
+                except Exception as e:
+                    log.warning(
+                        "Failed to refresh duplicate index/cache after deleting book %s: %s",
+                        book_id,
+                        str(e),
+                    )
+
+            # Skip cache invalidation when batching, or when the indexed refresh
+            # above already handled it; otherwise mark the cache as stale.
+            if not skip_cache_invalidation and not refreshed_duplicate_cache:
+                try:
+                    from cps.cwa_db_loader import load_cwa_db
+
+                    CWA_DB = load_cwa_db().CWA_DB
+                    cwa_db = CWA_DB()
+                    cwa_db.invalidate_duplicate_cache()
+                except Exception as e:
+                    log.error(
+                        "Failed to invalidate duplicate cache after deletion: %s",
+                        str(e),
+                    )
+
+        except Exception as ex:
+            log.error_or_exception(ex)
+            calibre_db.session.rollback()
+            if format_delete is not None and not format_commit_succeeded:
+                restored, restore_error = format_delete.restore()
+                if not restored:
+                    log.error(
+                        "[delete-format] Restoring book %s format %s after database "
+                        "failure also failed; quarantined bytes were retained: %s",
+                        book_id,
+                        book_format,
+                        restore_error,
+                    )
+            if json_response:
+                return json.dumps(
+                    [
+                        {
+                            "location": url_for(
+                                "edit-book.show_edit_book", book_id=book_id
+                            ),
+                            "type": "danger",
+                            "format": "",
+                            "message": str(ex),
+                        }
+                    ]
+                )
+            else:
+                flash(str(ex), category="error")
+                return redirect(url_for("edit-book.show_edit_book", book_id=book_id))
+
+        return render_delete_book_result(
+            book_format, json_response, warning, book_id, location
+        )
     message = _("You are missing permissions to delete books")
     if json_response:
-        return json.dumps({"location": url_for("edit-book.show_edit_book", book_id=book_id),
-                           "type": "danger",
-                           "format": "",
-                           "message": message})
+        return json.dumps(
+            {
+                "location": url_for("edit-book.show_edit_book", book_id=book_id),
+                "type": "danger",
+                "format": "",
+                "message": message,
+            }
+        )
     else:
         flash(message, category="error")
-        return redirect(url_for('edit-book.show_edit_book', book_id=book_id))
+        return redirect(url_for("edit-book.show_edit_book", book_id=book_id))
 
 
 def render_edit_book(book_id):
@@ -2217,11 +2427,9 @@ def upload_cover(cover_request, book):
             if not current_user.role_edit():
                 flash(_("User has no rights to upload cover"), category="error")
                 return False
-            ret, message = helper.save_cover_with_thumbnail_update(requested_file, book.path, book.id)
-            if ret is True:
-                # Note: save_cover_with_thumbnail_update already triggers thumbnail generation
-                # No need to call replace_cover_thumbnail_cache here (would create duplicate tasks)
-                return True
+            staged_cover, message = helper.save_cover(requested_file, book.path)
+            if staged_cover:
+                return staged_cover
             else:
                 flash(message, category="error")
                 return False
@@ -2409,13 +2617,17 @@ def modify_database_object(input_elements, db_book_object, db_object, db_session
 def modify_identifiers(input_identifiers, db_identifiers, db_session):
     """Modify Identifiers to match input information.
        input_identifiers is a list of read-to-persist Identifiers objects.
-       db_identifiers is a list of already persisted list of Identifiers objects."""
+       db_identifiers is a list of already persisted list of Identifiers objects.
+
+       Books.identifiers excludes reserved ingest state at the ORM boundary.
+       Still reject reserved input here so a crafted form/API payload cannot
+       create or replace an internal row."""
     changed = False
     error = False
     input_dict = {}
     for identifier in input_identifiers:
         identifier_type = (identifier.type or "").strip().lower()
-        if not identifier_type:
+        if not identifier_type or db.is_internal_identifier_type(identifier_type):
             continue
         if identifier_type in input_dict:
             error = True

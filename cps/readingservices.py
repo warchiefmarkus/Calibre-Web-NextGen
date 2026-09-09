@@ -22,6 +22,7 @@ import re
 from functools import wraps
 from typing import TypedDict, NotRequired
 from flask import Blueprint, request, make_response, jsonify, g, after_this_request
+from sqlalchemy import func
 from werkzeug.datastructures import Headers
 import requests
 from lxml import etree
@@ -65,6 +66,13 @@ def _is_annotation_path(path):
     )
 
 
+def _annotation_entitlement_argument(args, kwargs):
+    entitlement_id = kwargs.get("entitlement_id")
+    if entitlement_id is None and args:
+        entitlement_id = args[0]
+    return entitlement_id if isinstance(entitlement_id, str) else None
+
+
 def redact_headers(headers):
     """Redact sensitive headers from the headers dictionary.
     
@@ -79,8 +87,14 @@ def redact_headers(headers):
     return redacted
 
 
-def proxy_to_kobo_reading_services(data=None, capture_session=None):
-    """Proxy the request to Kobo's reading services API."""
+def proxy_to_kobo_reading_services(data=None, capture_session=None,
+                                   drop_request_headers=()):
+    """Proxy the request to Kobo's reading services API.
+
+    ``drop_request_headers`` withholds named request headers from the upstream
+    leg. It exists for conditional-request headers on a CWNG-owned book, where
+    a 304 from Kobo is destructive rather than merely uninformative.
+    """
     try:
         kobo_url = KOBO_READING_SERVICES_URL + request.path
         if request.query_string:
@@ -95,6 +109,8 @@ def proxy_to_kobo_reading_services(data=None, capture_session=None):
         outgoing_headers.remove("Host")
         # Remove CWA session cookie - Kobo doesn't need it and it causes issues
         outgoing_headers.pop("Cookie", None)
+        for header_name in drop_request_headers:
+            outgoing_headers.pop(header_name, None)
         if data is not None:
             # requests must calculate this again for a filtered request body.
             outgoing_headers.pop("Content-Length", None)
@@ -184,16 +200,35 @@ def requires_reading_services_auth_and_config(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         contains_check_for_changes = _is_check_for_changes_path(request.path)
+        contains_annotation_get = (
+            request.method == "GET" and _is_annotation_path(request.path)
+        )
         if not config.config_kobo_sync and not contains_check_for_changes:
+            if contains_annotation_get:
+                if current_user.is_authenticated:
+                    return f(*args, **kwargs)
+                entitlement_id = _annotation_entitlement_argument(args, kwargs)
+                if entitlement_id is None:
+                    return _annotation_get_temporarily_unavailable()
+                ownership = resolve_entitlement_ownership(entitlement_id)
+                return _annotation_get_without_live_authority(
+                    None, ownership, entitlement_id,
+                    authenticated_user_id=None,
+                )
             log.debug("Kobo sync disabled, proxying to Kobo")
             return proxy_to_kobo_reading_services()
         if current_user.is_authenticated:
             if config.config_kobo_sync:
                 try:
-                    from .services.device_registry import register_kobo_device_best_effort
+                    from .services.device_registry import (
+                        KoboDeviceLimitReached,
+                        register_kobo_device_best_effort,
+                    )
                     g.annotation_origin_device_id = register_kobo_device_best_effort(
                         user_id=current_user.id, headers=request.headers, return_internal=True,
                     )
+                except KoboDeviceLimitReached as error:
+                    return make_response(jsonify({"error": str(error)}), 409)
                 except Exception:
                     log.warning("Best-effort Kobo device observation failed", exc_info=True)
             return f(*args, **kwargs)
@@ -205,6 +240,18 @@ def requires_reading_services_auth_and_config(f):
                 "Refusing unauthenticated annotation PATCH so the device can retry"
             )
             return make_response(jsonify({"error": "Authentication required"}), 401)
+        if contains_annotation_get:
+            entitlement_id = _annotation_entitlement_argument(args, kwargs)
+            if entitlement_id is None:
+                log.error(
+                    "Refusing unauthenticated annotation GET without an "
+                    "addressable entitlement"
+                )
+                return _annotation_get_temporarily_unavailable()
+            ownership = resolve_entitlement_ownership(entitlement_id)
+            return _annotation_get_without_live_authority(
+                None, ownership, entitlement_id, authenticated_user_id=None,
+            )
         log.debug("Reading services request without auth, proxying to Kobo")
         return proxy_to_kobo_reading_services()
     return decorated_function
@@ -246,6 +293,185 @@ def resolve_entitlement_ownership(entitlement_id):
             entitlement_id,
         )
         return OWNERSHIP_UNKNOWN
+
+
+POSSIBLE_OWNERSHIP_LOOKUP_FAILED = object()
+
+
+def _normalized_annotation_entitlement_id(entitlement_id):
+    if not isinstance(entitlement_id, str):
+        return ""
+    return entitlement_id.strip().strip("{}").strip().casefold()
+
+
+def _possible_annotation_ownership(entitlement_id, *, user_id=None):
+    """Return durable app-DB evidence independent of live ``metadata.db``.
+
+    ``KoboAnnotationBookState`` is the primary ownership ledger and exact
+    snapshot owner. Older annotation rows also retain Kobo's entitlement as
+    the prefix of ``content_id``. Either signal means that a failed/negative
+    live lookup cannot prove this book has always been outside CWNG.
+
+    The result is a mapping from ``(user_id, book_id)`` to its ledger row (or
+    ``None`` for annotation-only evidence). A lookup error is deliberately a
+    separate sentinel: absence cannot be inferred from an unreadable app DB.
+    """
+    normalized_id = _normalized_annotation_entitlement_id(entitlement_id)
+    if not normalized_id:
+        return POSSIBLE_OWNERSHIP_LOOKUP_FAILED
+    try:
+        state_query = ub.session.query(ub.KoboAnnotationBookState).filter(
+            ub.KoboAnnotationBookState.content_id == normalized_id,
+        )
+        annotation_query = ub.session.query(
+            ub.Annotation.user_id, ub.Annotation.book_id,
+        ).filter(
+            func.lower(ub.Annotation.content_id).startswith(
+                normalized_id + "!!", autoescape=True,
+            ),
+        )
+        if user_id is not None:
+            state_query = state_query.filter(
+                ub.KoboAnnotationBookState.user_id == user_id,
+            )
+            annotation_query = annotation_query.filter(
+                ub.Annotation.user_id == user_id,
+            )
+
+        evidence = {
+            (state.user_id, state.book_id): state
+            for state in state_query.all()
+        }
+        for annotation_user_id, book_id in annotation_query.distinct().all():
+            evidence.setdefault((annotation_user_id, book_id), None)
+        return evidence
+    except Exception:
+        try:
+            ub.session.rollback()
+        except Exception:
+            pass
+        log.exception(
+            "Could not read durable Kobo annotation ownership evidence for "
+            "entitlement %s",
+            entitlement_id,
+        )
+        return POSSIBLE_OWNERSHIP_LOOKUP_FAILED
+
+
+def _annotation_get_temporarily_unavailable():
+    return make_response(jsonify({
+        "error": "Authoritative annotation set temporarily unavailable",
+    }), 503)
+
+
+def _annotation_snapshot_or_503(
+    *, user_id, book_id, capture_session, entitlement_id,
+):
+    try:
+        from cps.services.kobo_annotation_authority import (
+            load_last_served_complete_set,
+        )
+        rendered = load_last_served_complete_set(
+            user_id=user_id, book_id=book_id, log=log,
+        )
+    except Exception:
+        rendered = None
+        log.exception(
+            "Kobo annotation fail-closed snapshot lookup failed "
+            "user_id=%s book_id=%s",
+            user_id, book_id,
+        )
+    if rendered is None:
+        return _annotation_get_temporarily_unavailable()
+
+    body, etag = rendered
+    if capture_session is not None:
+        capture_session.add_decision(
+            stage="local_authority",
+            index=0,
+            content_id=entitlement_id,
+            ownership="possible_owned",
+            authority_status="ever_authoritative",
+            action="answered_from_snapshot",
+        )
+    response = make_response(body, 200)
+    response.headers["Content-Type"] = "application/json"
+    response.headers["Content-Length"] = str(len(body))
+    response.headers["ETag"] = etag
+    return response
+
+
+def _annotation_get_without_live_authority(
+    capture_session, ownership, entitlement_id, *, authenticated_user_id,
+):
+    """Resolve a GET after auth or live ownership ceased to be trustworthy.
+
+    Only an affirmative live ``None`` plus a readable, empty durable evidence
+    lookup proves that Kobo has always remained the wire authority. UNKNOWN,
+    an app-DB lookup error, a known-owned unauthenticated request, or any
+    ledger/annotation evidence fails closed. An authenticated exact current
+    snapshot is the sole safe 200 on that path.
+    """
+    global_evidence = _possible_annotation_ownership(entitlement_id)
+    scoped_evidence = global_evidence
+    if authenticated_user_id is not None and isinstance(global_evidence, dict):
+        scoped_evidence = {
+            key: state
+            for key, state in global_evidence.items()
+            if key[0] == authenticated_user_id
+        }
+
+    if (
+        authenticated_user_id is not None
+        and isinstance(scoped_evidence, dict)
+        and len(scoped_evidence) == 1
+    ):
+        ((evidence_user_id, book_id), state), = scoped_evidence.items()
+        if state is not None and (
+            bool(state.ever_authoritative)
+            or state.authority_status == "authoritative"
+        ):
+            return _annotation_snapshot_or_503(
+                user_id=evidence_user_id,
+                book_id=book_id,
+                capture_session=capture_session,
+                entitlement_id=entitlement_id,
+            )
+
+    evidence_failed = (
+        scoped_evidence is POSSIBLE_OWNERSHIP_LOOKUP_FAILED
+        or global_evidence is POSSIBLE_OWNERSHIP_LOOKUP_FAILED
+    )
+    has_evidence = (
+        isinstance(scoped_evidence, dict) and bool(scoped_evidence)
+    ) or (
+        isinstance(global_evidence, dict) and bool(global_evidence)
+    )
+    provably_never_owned = (
+        ownership is None and not evidence_failed and not has_evidence
+    )
+    if provably_never_owned:
+        return _proxy_annotation_request(
+            capture_session, ownership, entitlement_id,
+        )
+
+    log.warning(
+        "Refusing Kobo annotation GET because local authority cannot be "
+        "excluded entitlement=%s authenticated=%s live_ownership=%s",
+        entitlement_id,
+        authenticated_user_id is not None,
+        _capture_ownership_label(ownership),
+    )
+    if capture_session is not None:
+        capture_session.add_decision(
+            stage="local_authority",
+            index=0,
+            content_id=entitlement_id,
+            ownership=_capture_ownership_label(ownership),
+            authority_status="unknown",
+            action="refused_fail_closed",
+        )
+    return _annotation_get_temporarily_unavailable()
 
 
 def _parse_check_for_changes_request(raw_body):
@@ -427,13 +653,19 @@ def _record_annotation_decision(capture_session, ownership, action, entitlement_
     )
 
 
-def _proxy_annotation_request(capture_session, ownership, entitlement_id):
+def _proxy_annotation_request(capture_session, ownership, entitlement_id,
+                              drop_request_headers=()):
     _record_annotation_decision(
         capture_session, ownership, "proxied", entitlement_id,
     )
-    if capture_session is None:
-        return proxy_to_kobo_reading_services()
-    return proxy_to_kobo_reading_services(capture_session=capture_session)
+    # Keep the call shape byte-identical when there is nothing to withhold, so
+    # the unowned-book proxy contract is untouched by this option.
+    kwargs = {}
+    if capture_session is not None:
+        kwargs["capture_session"] = capture_session
+    if drop_request_headers:
+        kwargs["drop_request_headers"] = tuple(drop_request_headers)
+    return proxy_to_kobo_reading_services(**kwargs)
 
 
 def _owned_annotation_patch_ack(capture_session, ownership, entitlement_id):
@@ -514,6 +746,25 @@ def _owned_annotation_page_limit():
         return None
 
 
+# Preconditions that let Kobo answer a proxied owned GET without a usable body:
+# 304 from either cache validator, 412 from either precondition -- all bodyless.
+# Nickel repopulates a book's annotation rows from this response, so any of them
+# destroys the book's device annotations.  MEASURED 2026-09-06 across 52 captured
+# annotation exchanges with a Kobo Clara: If-None-Match appears in 49 of them and
+# none of the other four appears at all.  They are withheld anyway, so a firmware
+# that starts sending a date validator cannot reopen the same wipe -- and note
+# RFC 9110 has a server ignore If-Modified-Since while If-None-Match is present,
+# so dropping only the ETag validator would have UNMASKED the date one.  Range/If-Range
+# are deliberately absent: a range is a request for content, not a revalidation,
+# and withholding it would change the reply shape the device asked for.
+_OWNED_GET_WITHHELD_VALIDATORS = (
+    "If-None-Match",
+    "If-Modified-Since",
+    "If-Match",
+    "If-Unmodified-Since",
+)
+
+
 def _proxy_owned_annotation_get(capture_session, ownership, entitlement_id):
     """Proxy one owned GET and best-effort feed its response to M2 seeding."""
     seed_capture_id = None
@@ -537,8 +788,18 @@ def _proxy_owned_annotation_get(capture_session, ownership, entitlement_id):
             exc_info=True,
         )
 
+    # MEASURED 2026-09-06 on a Kobo Clara: forwarding the device's
+    # If-None-Match here made Kobo answer 304 with a zero-length body. Nickel
+    # empties a book's rows for the download and repopulates them from this
+    # response, so it lost all 8 of that book's device annotations; and seeding
+    # rejects a non-2xx status outright, so the capture failed
+    # seed_response_invalid, leaving the book unseeded and exposed to the very
+    # same wipe on the next re-download. A proxied owned GET is a request for
+    # content, not a cache revalidation: CWNG is this book's authority and the
+    # device's validators belong to Kobo, so they are not ours to forward.
     response = _proxy_annotation_request(
         capture_session, ownership, entitlement_id,
+        drop_request_headers=_OWNED_GET_WITHHELD_VALIDATORS,
     )
     if seed_capture_id is not None:
         try:
@@ -564,8 +825,14 @@ def _proxy_owned_annotation_get(capture_session, ownership, entitlement_id):
 
 
 def _owned_annotation_get_response(capture_session, ownership, entitlement_id):
-    """Return one complete eligible local page, otherwise proxy unchanged."""
+    """Return one complete eligible local page, otherwise proxy upstream.
+
+    The proxy leg is deliberately not byte-transparent: an owned book's GET
+    withholds the device's cache validators, because a bodyless Kobo reply
+    empties that book's annotations on the device.
+    """
     sticky = False
+    authority_history_known = False
     page_limit = _owned_annotation_page_limit()
     try:
         from cps.services.kobo_annotation_authority import (
@@ -588,9 +855,13 @@ def _owned_annotation_get_response(capture_session, ownership, entitlement_id):
                 current_user.id, ownership.id,
             )
         if history == AUTHORITY_LOOKUP_FAILED:
-            return _proxy_owned_annotation_get(
-                capture_session, ownership, entitlement_id,
+            return _annotation_snapshot_or_503(
+                user_id=current_user.id,
+                book_id=ownership.id,
+                capture_session=capture_session,
+                entitlement_id=entitlement_id,
             )
+        authority_history_known = True
         sticky = history == AUTHORITY_EVER
         has_cursor = request.args.get("pageOffsetToken") is not None
         if sticky:
@@ -724,6 +995,13 @@ def _owned_annotation_get_response(capture_session, ownership, entitlement_id):
             response.headers["Content-Length"] = str(len(body))
             response.headers["ETag"] = etag
             return response
+        if not authority_history_known:
+            return _annotation_snapshot_or_503(
+                user_id=current_user.id,
+                book_id=ownership.id,
+                capture_session=capture_session,
+                entitlement_id=entitlement_id,
+            )
         return _proxy_owned_annotation_get(
             capture_session, ownership, entitlement_id,
         )
@@ -1041,7 +1319,9 @@ def handle_annotations(entitlement_id):
     """Handle annotation requests for a specific book.
 
     GET: fully seeded owned books are answered from CWNG's complete visible
-    set; unseeded and unowned books retain the byte-transparent Kobo proxy.
+    set; unowned books retain the byte-transparent Kobo proxy.  An unseeded
+    owned book is proxied too, but without the device's cache validators: a
+    bodyless reply would empty that book's annotations on the device.
     PATCH: persist locally (source='kobo'), then dispatch through
     each registered + enabled annotation_sync handler (Hardcover today; future
     Readwise / Notion / etc.). All DB writes happen in the dispatcher; this
@@ -1058,10 +1338,9 @@ def handle_annotations(entitlement_id):
         # Reading the body used to sit inside the PATCH try-block, so a failed
         # read (oversized body, client disconnect) became the deliberate 503.
         # The capture needs the bytes earlier than that, so the guard has to
-        # move with it -- but it must NOT become a blanket 503: a 503 on the
-        # annotations GET is one of the three measured answers that makes Nickel
-        # empty the book's local annotation set. Refuse the PATCH, proxy the GET
-        # only when ownership is not known locally.
+        # move with it. GET must re-run the same durable-authority containment
+        # as its normal path: a current snapshot is the only safe failure-path
+        # 200, and Kobo may be contacted only after ownership is disproved.
         log.exception(
             "Could not read the annotation request body for entitlement %s",
             entitlement_id,
@@ -1073,7 +1352,12 @@ def handle_annotations(entitlement_id):
         ownership = resolve_entitlement_ownership(entitlement_id)
         if ownership is not None and ownership is not OWNERSHIP_UNKNOWN:
             return _owned_annotation_get_response(None, ownership, entitlement_id)
-        return proxy_to_kobo_reading_services()
+        return _annotation_get_without_live_authority(
+            None,
+            ownership,
+            entitlement_id,
+            authenticated_user_id=getattr(current_user, "id", None),
+        )
     capture_session = _begin_exchange_capture(
         "annotations_patch" if request.method == "PATCH" else "annotations_get",
         raw_body,
@@ -1086,7 +1370,12 @@ def handle_annotations(entitlement_id):
             return _owned_annotation_get_response(
                 capture_session, ownership, entitlement_id,
             )
-        return _proxy_annotation_request(capture_session, ownership, entitlement_id)
+        return _annotation_get_without_live_authority(
+            capture_session,
+            ownership,
+            entitlement_id,
+            authenticated_user_id=getattr(current_user, "id", None),
+        )
 
     book = None
     if request.method == "PATCH":

@@ -91,6 +91,7 @@ def test_custom_column_key_reaches_the_edit_core():
              patch.object(mod, "calibre_db", SimpleNamespace(
                  get_filtered_book=lambda *args, **kwargs: _book(custom_column_7=[]),
                  get_book=lambda _id: _book(custom_column_7=[]),
+
                  get_cc_columns=lambda *a, **k: [col])), \
              patch.object(mod, "edit_book_param", return_value=_SUCCESS) as core, \
              patch.object(mod, "get_locale", return_value="en"):
@@ -113,6 +114,7 @@ def test_unknown_custom_column_is_an_error_not_a_silent_success():
              patch.object(mod, "calibre_db", SimpleNamespace(
                  get_filtered_book=lambda *args, **kwargs: _book(),
                  get_book=lambda _id: _book(),
+
                  get_cc_columns=lambda *a, **k: [_column(7, "int")])), \
              patch.object(mod, "edit_book_param", return_value=_SUCCESS) as core, \
              patch.object(mod, "get_locale", return_value="en"):
@@ -132,6 +134,7 @@ def test_absent_custom_column_is_not_written():
              patch.object(mod, "calibre_db", SimpleNamespace(
                  get_filtered_book=lambda *args, **kwargs: _book(custom_column_7=[_row(120)]),
                  get_book=lambda _id: _book(custom_column_7=[_row(120)]),
+
                  get_cc_columns=lambda *a, **k: [_column(7, "int")])), \
              patch.object(mod, "edit_book_param", return_value=_SUCCESS) as core, \
              patch.object(mod, "get_locale", return_value="en"):
@@ -150,6 +153,7 @@ def test_custom_column_failure_is_surfaced_per_field():
              patch.object(mod, "calibre_db", SimpleNamespace(
                  get_filtered_book=lambda *args, **kwargs: _book(custom_column_7=[]),
                  get_book=lambda _id: _book(custom_column_7=[]),
+
                  get_cc_columns=lambda *a, **k: [_column(7, "int")])), \
              patch.object(mod, "edit_book_param", return_value=failure), \
              patch.object(mod, "get_locale", return_value="en"):
@@ -285,6 +289,7 @@ def test_invalid_value_never_reaches_the_write_core():
              patch.object(mod, "calibre_db", SimpleNamespace(
                  get_filtered_book=lambda *args, **kwargs: _book(),
                  get_book=lambda _id: _book(),
+
                  get_cc_columns=lambda *a, **k: [_column(6, "rating")])), \
              patch.object(mod, "edit_book_param", return_value=_SUCCESS) as core, \
              patch.object(mod, "get_locale", return_value="en"):

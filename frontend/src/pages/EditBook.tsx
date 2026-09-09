@@ -18,7 +18,7 @@ import { formatAuthors } from '../lib/authors';
 import { ApiError, resourceUrl } from '../lib/api';
 import { useT } from '../lib/i18n';
 import styles from './EditBook.module.css';
-import { canDownloadBooks, canUploadBooks } from '../lib/permissions';
+import { canDeleteBooks, canDownloadBooks, canUploadBooks } from '../lib/permissions';
 
 interface Ident { type: string; val: string }
 
@@ -247,7 +247,7 @@ export function EditBook({ id }: { id: string }) {
       </Link>
       <div className={styles.pageHeader}>
         <h1 className={styles.title}>{t('Edit metadata')}</h1>
-        {me?.role?.delete_books && (
+        {canDeleteBooks(me) && (
           <Button type="button" variant="danger" data-testid="edit-book-delete"
             aria-label={t('Delete book')} disabled={deleteBook.isPending} onClick={onDeleteBook}>
             <Trash2 size={16} aria-hidden="true" focusable={false} />
@@ -800,9 +800,7 @@ function FormatsManager({ id }: { id: string }) {
   const sources = (convertOptions?.sources.length ? convertOptions.sources : formats.map((f) => f.toLowerCase()));
   const targets = convertOptions?.targets ?? [];
   if (!book) return null;
-  const canDelete = !!me?.role?.delete_books;
-  const isLastFormat = book!.formats.length === 1;
-  const lastFormatReasonId = `last-format-delete-reason-${id}`;
+  const canDelete = canDeleteBooks(me);
   // #1288: "Add a format" POSTs to /api/v1/books/<id>/formats, which requires
   // role_upload and now honours the admin's "Enable Uploads" switch. Gate the
   // control on the same pair, or the switch turns a hidden button into a 403.
@@ -852,7 +850,7 @@ function FormatsManager({ id }: { id: string }) {
             {canDelete && (
               <button className={styles.formatDelete}
                 onClick={() => {
-                  if (window.confirm(t('Delete the {fmt} file? The book stays; only this format is removed.', { fmt: f.format }))) {
+                  if (window.confirm(t('Delete the {fmt} file? The book record, metadata, shelves, and reading state stay available.', { fmt: f.format }))) {
                     setMsg(null);
                     deleteFormat.mutate(f.format, {
                       onSuccess: (result) => setMsg(result?.warning
@@ -865,8 +863,7 @@ function FormatsManager({ id }: { id: string }) {
                     });
                   }
                 }}
-                disabled={deleteFormat.isPending || isLastFormat}
-                aria-describedby={isLastFormat ? lastFormatReasonId : undefined}
+                disabled={deleteFormat.isPending}
                 aria-label={t('Delete {fmt}', { fmt: f.format })}>
                 <Trash2 size={14} aria-hidden="true" focusable={false} />
               </button>
@@ -874,9 +871,9 @@ function FormatsManager({ id }: { id: string }) {
           </li>
         ))}
       </ul>
-      {canDelete && isLastFormat && (
-        <p id={lastFormatReasonId} className={styles.formatDeleteReason}>
-          {t('A book must keep at least one format.')}
+      {canDelete && book.formats.length > 0 && (
+        <p className={styles.formatDeleteReason}>
+          {t('The book record, metadata, shelves, and reading state stay available. If this is the last format, you can add a replacement later.')}
         </p>
       )}
 

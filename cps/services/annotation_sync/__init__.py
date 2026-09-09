@@ -152,34 +152,41 @@ def _book_uuid(book):
 
 
 def _kobo_payload_matches_row(annotation, payload, span, normalized_content_id):
-    """True only when applying the payload would leave every stored field unchanged."""
+    """Whether the payload agrees with the row's known content.
+
+    A legacy NULL type or highlighted text is absence, not a competing claim.
+    Reconciliation separately stores the captured values. Callers that need a
+    strict write no-op must also check for type and text enrichment.
+    """
     def supplied(mapping, key, current):
         return mapping.get(key) if key in mapping else current
 
+    local_type = getattr(annotation, "annotation_type", None)
+    incoming_type = to_storage_type(supplied(payload, "type", local_type))
+    local_text = annotation.highlighted_text
+    incoming_text = supplied(payload, "highlightedText", local_text)
     chapter_progress = span.get("chapterProgress")
     next_context = annotation.context_string
     if "contextString" in span or "context" in span:
         next_context = span.get("contextString") or span.get("context")
     current = (
-        annotation.highlighted_text, annotation.note_text,
+        incoming_text if local_text is None else local_text, annotation.note_text,
         to_storage_color(annotation.highlight_color),
-        to_storage_type(getattr(annotation, "annotation_type", None)),
+        incoming_type if local_type is None else to_storage_type(local_type),
         annotation.chapter_progress, annotation.content_id,
         annotation.start_container_path, annotation.end_container_path,
         annotation.start_offset, annotation.end_offset,
         annotation.context_string, bool(annotation.hidden),
     )
     incoming = (
-        supplied(payload, "highlightedText", annotation.highlighted_text),
+        incoming_text,
         supplied(payload, "noteText", annotation.note_text),
         # Both sides through the same normaliser: the device's hex and a
         # legacy row's colour NAME are the same colour, and a PATCH that
         # changes nothing must not be counted as a change just because the
         # stored spelling is older than the wire one.
         to_storage_color(supplied(payload, "highlightColor", annotation.highlight_color)),
-        to_storage_type(supplied(
-            payload, "type", getattr(annotation, "annotation_type", None),
-        )),
+        incoming_type,
         chapter_progress if chapter_progress is not None else annotation.chapter_progress,
         normalized_content_id or annotation.content_id,
         supplied(span, "startPath", annotation.start_container_path),
@@ -319,7 +326,18 @@ def _upsert_annotation(
             # no-op, but a real edit can share the same second and must not be
             # eaten merely because its clock ties. Equal-clock divergent
             # payloads therefore use arrival order as the deterministic tie.
-            if _kobo_payload_matches_row(ann, payload, span, normalized_content_id):
+            # Compatibility permits an unknown local type or text, but a live
+            # PATCH can still supply either. Preserve that write (and its raw
+            # sidecar) rather than dropping enrichment as a retry.
+            stored_type = to_storage_type(getattr(ann, "annotation_type", None))
+            payload_type = to_storage_type(payload.get("type", stored_type))
+            if (
+                stored_type == payload_type
+                and ann.highlighted_text == payload.get(
+                    "highlightedText", ann.highlighted_text,
+                )
+                and _kobo_payload_matches_row(ann, payload, span, normalized_content_id)
+            ):
                 return None
     created = ann is None
     if created:

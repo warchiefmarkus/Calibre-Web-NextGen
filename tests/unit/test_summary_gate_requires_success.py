@@ -18,11 +18,14 @@ executes it under substituted job results.
 Includes a POSITIVE CONTROL (all-success must exit 0). Without one, a harness
 that rejects everything would look like a perfect gate.
 """
+import json
+import os
 import re
 import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 # Same convention as test_workflow_safety_invariants.py.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -46,17 +49,26 @@ def _summary_shell():
 
 def _render(shell, *, event, ref, fast, build, integration, e2e,
             is_frontend_pr="false", is_tier2="false", is_build_pr="false",
-            is_concurrency_pr="false", changed_paths="success"):
+            is_concurrency_pr="false", changed_paths="success", impact_map="success"):
     subs = {
         "needs.fast-tests.result": fast,
         "needs.frontend-build.result": build,
         "needs.integration-tests.result": integration,
         "needs.e2e-tests.result": e2e,
         "needs.changed_paths.result": changed_paths,
+        "needs.impact-map.result": impact_map,
         "github.event_name": event,
         "github.ref": ref,
     }
+    # GitHub only exposes results for jobs declared in this job's needs.
+    # Executing with that context makes the positive control catch a missing
+    # dependency even if the shell's success predicate itself is correct.
+    dependencies = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["test-summary"]["needs"]
+    if isinstance(dependencies, str):
+        dependencies = [dependencies]
     for key, value in subs.items():
+        if key.startswith("needs.") and key.split(".")[1] not in dependencies:
+            value = ""
         shell = shell.replace("${{ " + key + " }}", value)
     # Any residual GitHub expression is a boolean we are not exercising.
     shell = re.sub(r"\$\{\{[^}]*\}\}", "false", shell)
@@ -78,6 +90,65 @@ def _run(**kwargs):
 
 
 MAIN_PUSH = dict(event="push", ref="refs/heads/main")
+
+
+@pytest.mark.parametrize("summary_failed", [False, True])
+def test_impact_map_failure_never_authorizes_auto_revert(tmp_path, summary_failed):
+    """Intent: an impact-map failure and its propagated summary failure cannot revert an innocent commit."""
+    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/auto-revert.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["revert-on-red"]["steps"]
+    triage = next(step["run"] for step in steps if step.get("id") == "triage")
+    suite = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    jobs = [{"name": job["name"], "conclusion": "success"}
+            for job in suite["jobs"].values() if "name" in job]
+    impact_name = suite["jobs"]["impact-map"]["name"]
+    for job in jobs:
+        if job["name"] == impact_name or (summary_failed and job["name"] == "Test Suite Summary"):
+            job["conclusion"] = "failure"
+
+    def decide(job_list):
+        output = tmp_path / "github-output"
+        output.write_text("", encoding="utf-8")
+        # Execute the entire triage shell and real jq; only external reads are stubbed.
+        stubs = 'git() { printf "%s\\n" "cps/annotations.py"; }\ngh() { printf "%s\\n" "$JOBS_JSON"; }\n'
+        result = subprocess.run(
+            ["bash", "-c", stubs + triage], capture_output=True, text=True,
+            env={**os.environ, "JOBS_JSON": json.dumps({"jobs": job_list}),
+                 "GITHUB_OUTPUT": str(output), "RUN_ID": "1", "HEAD_SHA": "fixture",
+                 "GITHUB_REPOSITORY": "fixture/project"},
+        )
+        assert result.returncode == 0, result.stderr
+        return output.read_text(encoding="utf-8").strip(), result.stdout
+
+    decision, out = decide(jobs)
+    assert decision == "revert=false", out
+    # Preserve the existing SPA exclusion and real product-failure signals.
+    decision, out = decide([*jobs, {"name": "E2E Tests (SPA)", "conclusion": "failure"}])
+    assert decision == "revert=false", out
+    for job_id in ("fast-tests", "frontend-build", "integration-tests"):
+        name = suite["jobs"][job_id]["name"]
+        decision, out = decide([*jobs, {"name": name, "conclusion": "failure"}])
+        assert decision == "revert=true", out
+
+
+@pytest.mark.parametrize("event,ref", [
+    ("pull_request", "refs/pull/1/merge"),
+    ("push", "refs/heads/main"),
+    ("push", "refs/heads/dev"),
+    ("push", "refs/tags/v1.0.0"),
+    ("workflow_dispatch", "refs/heads/main"),
+])
+@pytest.mark.parametrize("result", ["success", "failure", "skipped", "cancelled"])
+def test_summary_requires_impact_map_success_on_every_trigger(event, ref, result):
+    """Intent: real generation errors block the required gate; successful advisory staleness can pass."""
+    rc, out = _run(
+        event=event, ref=ref, fast="success", build="success",
+        integration="success", e2e="success", impact_map=result,
+    )
+    expected = 0 if result == "success" else 1
+    assert rc == expected, f"{event} with impact-map={result}: expected exit {expected}, got {rc}\n{out}"
+    if result != "success":
+        assert "Impact map" in out and result in out
 
 
 def test_positive_control_all_success_passes():

@@ -9,7 +9,7 @@ import threading
 from types import SimpleNamespace
 
 import pytest
-from flask import Flask
+from flask import Flask, g
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import scoped_session, sessionmaker
 
@@ -119,6 +119,19 @@ def test_two_users_are_scoped_and_default_off_is_unchanged(
     monkeypatch.setattr(db, "current_user", legacy)
     assert [b.id for b in calibre_session.query(db.Books)
             .filter(cdb.common_filters()).order_by(db.Books.id)] == [1, 2, 3]
+
+
+def test_empty_personal_library_never_falls_back_to_global_catalogue(
+        app_session, calibre_session, monkeypatch):
+    empty = _user(app_session, "empty-personal-library", True)
+    monkeypatch.setattr(db.ub, "session", app_session)
+    monkeypatch.setattr(db, "current_user", empty)
+
+    visible = (calibre_session.query(db.Books.id)
+               .filter(_cdb(calibre_session).common_filters())
+               .order_by(db.Books.id).all())
+
+    assert visible == []
 
 
 def test_explicit_user_filter_delegates_and_duplicate_scan_stays_global(
@@ -1528,10 +1541,19 @@ def test_personal_library_removal_archives_book_in_kobo_shelf_sync(
     )
     session.add(user)
     session.flush()
+    device = ub.Device(
+        user_id=user.id,
+        kind="kobo",
+        display_name="Shelf-sync Kobo",
+        model="Kobo",
+        active=True,
+        created_by="auto",
+    )
     shelf = ub.Shelf(
         name="Kobo shelf", user_id=user.id, is_public=0, kobo_sync=True,
     )
     session.add_all([
+        device,
         shelf,
         ub.UserLibraryBook(user_id=user.id, book_id=book.id),
         ub.KoboSyncedBooks(
@@ -1612,6 +1634,7 @@ def test_personal_library_removal_archives_book_in_kobo_shelf_sync(
                 kobo_module.SyncToken.SyncToken.SYNC_TOKEN_HEADER: token,
             },
         ):
+            g.annotation_origin_device_id = device.id
             response = kobo_module.HandleSyncRequest.__wrapped__()
 
         removals = [
@@ -1622,6 +1645,24 @@ def test_personal_library_removal_archives_book_in_kobo_shelf_sync(
             .get("IsRemoved") is True
         ]
         assert removals == [{"Id": str(book.id), "IsRemoved": True}]
+        # Constructing the archive page is not delivery evidence.  Its
+        # bookkeeping is promoted only when Kobo acknowledges the page by
+        # presenting the returned token on its next request.
+        assert session.query(ub.KoboSyncedBooks).filter_by(
+            user_id=user.id, book_id=book.id
+        ).count() == 1
+        acknowledged_token = response.headers[
+            kobo_module.SyncToken.SyncToken.SYNC_TOKEN_HEADER
+        ]
+        with app.test_request_context(
+            "/v1/library/sync",
+            headers={
+                kobo_module.SyncToken.SyncToken.SYNC_TOKEN_HEADER:
+                    acknowledged_token,
+            },
+        ):
+            g.annotation_origin_device_id = device.id
+            kobo_module.HandleSyncRequest.__wrapped__()
         assert session.query(ub.KoboSyncedBooks).filter_by(
             user_id=user.id, book_id=book.id
         ).count() == 0
@@ -1866,6 +1907,7 @@ def _exercise_seed_on_enable_kobo_sync(monkeypatch, *, wire_contract):
     cdb.session = session
     cdb.config = SimpleNamespace(config_restricted_column=0)
     cdb.reconnect_db = lambda *_args, **_kwargs: None
+    cdb.refresh_for_new_data = lambda: None
     monkeypatch.setattr(db.ub, "session", session)
     monkeypatch.setattr(db, "current_user", user)
     monkeypatch.setattr(ub, "session", session)

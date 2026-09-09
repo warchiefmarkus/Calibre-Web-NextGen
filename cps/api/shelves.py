@@ -19,6 +19,7 @@ from .serializers import serialize_shelf
 from .books import _rows_to_items
 from .. import calibre_db, config, db, deployment_profile, ub, user_library
 from ..cw_login import current_user
+from ..sort_orders import BOOK_SORT_ORDERS
 from ..usermanagement import login_required_if_no_ano
 from ..shelf import (
     check_shelf_view_permissions,
@@ -27,6 +28,7 @@ from ..shelf import (
     delete_shelf_helper,
     add_book_to_shelf,
     prepare_user_shelf_add,
+    revert_prepared_user_shelf_add,
     remove_book_from_shelf,
     compute_shelf_positions,
     queue_hardcover_sync,
@@ -37,6 +39,7 @@ from ..shelf import (
     SHELF_INVALID_BOOK,
     SHELF_NOT_IN_LIBRARY,
     SHELF_MANAGED_MEMBERSHIP_REFUSAL,
+    SHELF_ADD_REFUSAL_INVALID_OWNER,
     SHELF_NOT_PRESENT,
 )
 
@@ -48,6 +51,16 @@ def _uid():
 
 def _err(code, message, status):
     return jsonify({"error": {"code": code, "message": message}}), status
+
+
+def _shelf_add_refusal(ex):
+    message = str(ex) or SHELF_MANAGED_MEMBERSHIP_REFUSAL
+    code = (
+        "invalid_shelf_owner"
+        if getattr(ex, "reason", None) == SHELF_ADD_REFUSAL_INVALID_OWNER
+        else "library_membership_rejected"
+    )
+    return _err(code, message, 403)
 
 
 # ── List ─────────────────────────────────────────────────────────────────────
@@ -86,14 +99,35 @@ def shelf_detail(shelf_id):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", config.config_books_per_page, type=int)
 
-    # Same fetch the HTML shelf view uses: ordered by the shelf's stored order,
-    # ACL- and archive-filtered via common_filters, with read/archived joined.
+    # Shelf sorting is view-only: "stored", an unknown value, and the two
+    # app-DB download-count sorts all retain the manual BookShelf order. Every
+    # metadata sort comes from the shared ORDER BY map used by the catalog.
+    sort = request.args.get("sort", "stored")
+    order = BOOK_SORT_ORDERS.get(sort)
+    if order is None or sort in ("hotdesc", "hotasc"):
+        order = [ub.BookShelf.order.asc()]
+
+    # Author sorting uses Series as a deterministic tiebreaker. fill_indexpage
+    # greedily consumes join varargs 3, then 2, then 1 from the front, so this
+    # three-argument group must precede the two-argument BookShelf group.
+    joins = []
+    if sort in ("authaz", "authza"):
+        joins.extend((
+            db.books_series_link,
+            db.Books.id == db.books_series_link.c.book,
+            db.Series,
+        ))
+    joins.extend((ub.BookShelf, ub.BookShelf.book_id == db.Books.id))
+
+    # Same ACL/archive-filtered fetch as the HTML shelf view, with read/archived
+    # joined. Unlike the classic sort action, this never rewrites BookShelf.
     entries, _random, pagination = calibre_db.fill_indexpage(
         page, per_page, db.Books,
         ub.BookShelf.shelf == shelf_id,
-        [ub.BookShelf.order.asc()],
+        order,
         True, config.config_read_column,
-        ub.BookShelf, ub.BookShelf.book_id == db.Books.id,
+        *joins,
+        allow_public_shelf_books=bool(shelf.is_public),
     )
 
     body = serialize_shelf(shelf, pagination.total_count, is_owner=(shelf.user_id == _uid()))
@@ -222,10 +256,11 @@ def delete_shelf_api(shelf_id):
     shelf = ub.session.query(ub.Shelf).filter(ub.Shelf.id == shelf_id).first()
     if shelf is None:
         return _err("not_found", "Shelf not found", 404)
-    # delete_shelf_helper re-checks edit permission and returns False if denied.
+    if not check_shelf_edit_permissions(shelf):
+        return _err("forbidden", "You are not allowed to delete this shelf", 403)
     try:
         if not delete_shelf_helper(shelf):
-            return _err("forbidden", "You are not allowed to delete this shelf", 403)
+            return _err("db_error", "Could not delete shelf", 500)
     except InvalidRequestError as e:
         ub.session.rollback()
         return _err("db_error", "Could not delete shelf: %s" % getattr(e, "orig", e), 500)
@@ -243,22 +278,31 @@ def add_book_to_shelf_api(shelf_id, book_id):
     if not check_shelf_edit_permissions(shelf):
         return _err("forbidden", "You are not allowed to add to this shelf", 403)
 
+    book_was_on_shelf = (ub.session.query(ub.BookShelf)
+                         .filter(ub.BookShelf.shelf == shelf.id,
+                                 ub.BookShelf.book_id == book_id)
+                         .first()) is not None
+    prepared_owner_id = None
     try:
-        prepare_user_shelf_add(book_id)
+        prepared_owner_id = prepare_user_shelf_add(shelf, book_id)
     except user_library.UserLibraryBookNotFound as ex:
         return _err("not_found", str(ex), 404)
-    except user_library.UserLibraryError:
-        return _err(
-            "library_membership_rejected",
-            SHELF_MANAGED_MEMBERSHIP_REFUSAL,
-            403,
-        )
+    except user_library.UserLibraryError as ex:
+        return _shelf_add_refusal(ex)
 
     try:
         status, message = add_book_to_shelf(shelf, book_id)
+    except user_library.UserLibraryError as ex:
+        revert_prepared_user_shelf_add(prepared_owner_id, book_id)
+        return _shelf_add_refusal(ex)
     except (OperationalError, InvalidRequestError) as e:
         ub.session.rollback()
+        revert_prepared_user_shelf_add(prepared_owner_id, book_id)
         return _err("db_error", "Database error: %s" % getattr(e, "orig", e), 500)
+
+    if status != SHELF_OK and (
+            status != SHELF_ALREADY_PRESENT or book_was_on_shelf):
+        revert_prepared_user_shelf_add(prepared_owner_id, book_id)
 
     if status == SHELF_INVALID_BOOK:
         return _err("not_found", message, 404)

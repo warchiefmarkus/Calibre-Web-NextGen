@@ -38,6 +38,41 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Regenerate on PRs and after every merge. Drift is visible in the summary
+  # and downloadable artifacts, without requiring contributors to commit JSON.
+  impact-map:
+    name: Impact Map (regeneration + currency)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code and recall history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Regenerate impact map and report currency
+        run: |
+          python3 scripts/impact_map.py refresh \
+            --output-dir "$RUNNER_TEMP/impact-map" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload regenerated map, recall, and currency
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: impact-map-${{ github.sha }}
+          path: ${{ runner.temp }}/impact-map/
+          if-no-files-found: error
+          retention-days: 14
+
   # ============================================================================
   # JOB 1: Fast Tests (Smoke + Unit)
   # Runs on: Every push, every PR
@@ -89,7 +124,7 @@ jobs:
 
       - name: Install frontend dependencies (npm ci)
         working-directory: frontend
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund --loglevel=error
 
       - name: Install system dependencies
         run: |
@@ -143,6 +178,7 @@ jobs:
             --dist=loadfile \
             --maxfail=3 \
             -v \
+            -rs \
             --tb=short \
             --timeout=120 \
             --timeout-method=thread \
@@ -167,6 +203,7 @@ jobs:
         run: |
           pytest tests/unit -m "integration" \
             -v \
+            -rs \
             --tb=short \
             --timeout=120 \
             --timeout-method=thread
@@ -216,7 +253,7 @@ jobs:
 
       - name: Install dependencies (npm ci)
         working-directory: frontend
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund --loglevel=error
 
       - name: Build SPA (tsc -b && vite build)
         working-directory: frontend
@@ -358,6 +395,7 @@ jobs:
           # CRITICAL: No -n flag! Docker tests must run sequentially
           pytest tests/docker/ tests/integration/ \
             -v \
+            -rs \
             --tb=long \
             --durations=10 \
             --junitxml=integration-results.xml
@@ -438,14 +476,15 @@ jobs:
           # tree. The introducing PR has no trusted base implementation, so it
           # fails closed into every expensive gate instead of self-certifying.
           classifier_ref="$BASE_SHA"
-          if ! git cat-file -e "$classifier_ref:scripts/ci_path_classification.py"; then
-            echo "::warning::Base has no path classifier; enabling every path-derived gate"
+          if ! git cat-file -e "$classifier_ref:scripts/ci_path_classification.py" \
+            || ! git cat-file -e "$classifier_ref:.dockerignore"; then
+            echo "::warning::Base has no trusted classifier policy; enabling every path-derived gate"
             printf 'frontend=true\nbuild=true\nconcurrency=true\nimage=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           classifier_root="$RUNNER_TEMP/base-path-classifier"
           mkdir -p "$classifier_root"
-          git archive "$classifier_ref" cps scripts/ci_path_classification.py \
+          git archive "$classifier_ref" cps .dockerignore scripts/ci_path_classification.py \
             | tar -x -C "$classifier_root"
           printf '%s\n' "$files" \
             | python3 "$classifier_root/scripts/ci_path_classification.py" \
@@ -504,11 +543,11 @@ jobs:
         (needs.changed_paths.outputs.concurrency == 'true' && github.event.pull_request.head.repo.fork != true)
       ))
       )
-    # Awaited builds may consume their full 15m mirror + 60m architecture +
-    # 15m manifest budgets. Main image runs also serialize, so a neutral commit
-    # can wait behind the relevant build whose manifest it will honestly alias.
-    # Leave 60m after the 120m resolver budget for setup and Playwright's two
-    # retries of a roughly 15m suite.
+    # Main/PR dev-image producers may consume their full 5m classify + 15m
+    # mirror + 60m architecture + 15m manifest budgets. Their resolver is
+    # bounded to those 95m and exits as soon as the exact run/job fails. Release
+    # tags retain their independent 120m artifact wait. Leave at least 60m for
+    # setup and Playwright's two retries of a roughly 15m suite.
     #
     # Advisory ONLY for fork PRs now. A fork's runner gets no repo secrets, and
     # the resolve/pull/overlay path above has never been exercised from one —
@@ -521,6 +560,7 @@ jobs:
     continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true }}
     timeout-minutes: 180
     permissions:
+      actions: read    # inspect the exact Build & Push producer before another poll
       contents: read
       packages: read   # pull the private pbs-cache mirror images the Dockerfile COPYs from
     steps:
@@ -583,9 +623,11 @@ jobs:
       - name: Resolve image to test
         id: img
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           image="ghcr.io/new-usemame/calibre-web-nextgen"
+          producer_args=()
           if [[ "${{ github.event_name }}" == "pull_request" \
                   && "${{ needs.changed_paths.outputs.build }}" == "true" \
                   && "${{ needs.changed_paths.outputs.concurrency }}" != "true" ]]; then
@@ -612,12 +654,20 @@ jobs:
             attempts=1
           else
             # Main pushes and concurrency-shaped same-repo PRs are paired with
-            # docker-image-build-dev.yml. Wait for this exact commit tag. No
-            # :dev fallback is allowed: an absent subject cannot earn a verdict.
+            # docker-image-build-dev.yml. Wait only while that exact run is
+            # live, and no longer than its 95-minute job budget. No :dev
+            # fallback is allowed: an absent subject cannot earn a verdict.
             tag="sha-$SUBJECT_SHA"
-            attempts=240
+            attempts=191
+            producer_args=(
+              "${{ github.repository }}"
+              "$SUBJECT_SHA"
+              "${{ github.event_name }}"
+              "${{ github.api_url }}"
+            )
           fi
-          resolved="$(bash scripts/resolve-e2e-image.sh "$image" "$tag" "$attempts" 30)"
+          resolved="$(bash scripts/resolve-e2e-image.sh \
+            "$image" "$tag" "$attempts" 30 "${producer_args[@]}")"
           echo "image=$resolved" >> "$GITHUB_OUTPUT"
 
       - name: Start container (SPA enabled)
@@ -897,11 +947,33 @@ jobs:
           python3 -c 'import json,sys; d=json.load(open("/tmp/ml.json")); sys.exit(0 if d.get("verify_url") else 1)' \
             || { echo "::error::magic-link/start returned 200 with no verify_url"; cat /tmp/ml.json; exit 1; }
 
-      - name: Install Playwright
+      - name: Resolve Playwright browser version
+        id: playwright-version
         working-directory: frontend
         run: |
-          npm ci
-          npx playwright install --with-deps chromium webkit
+          version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      # Same-lockfile green run 33833541562 measured 56s total: the npm/browser
+      # medians were 35s/21s. Run 33848680049 twice saw npm ci alone stall for
+      # 193s (>3m) with both caches warm. Ten minutes per step gives >17x/28x
+      # median headroom and >3x that observed stall floor, while still failing
+      # a real setup hang far before the job's 180m guard.
+      - name: Install frontend dependencies (npm ci)
+        timeout-minutes: 10
+        working-directory: frontend
+        run: npm ci --prefer-offline --no-audit --no-fund --loglevel=error
+
+      - name: Install Playwright browsers
+        timeout-minutes: 10
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium webkit
 
       # Frontend-only PRs intentionally reuse a digest-pinned :dev backend to
       # avoid a full multi-arch build for a static-bundle change. Overlay their
@@ -915,7 +987,6 @@ jobs:
           needs.changed_paths.outputs.concurrency != 'true'
         working-directory: frontend
         run: |
-          npm ci
           npm run build          # writes ../cps/static/app
           docker cp ../cps/static/app/. cwn-e2e:/app/calibre-web-automated/cps/static/app/
           # Jinja templates too. Not every user-facing surface is React: the PDF
@@ -941,6 +1012,18 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: http://localhost:8083
         run: npm run test:e2e
+
+      # Server-state specs (e.g. the My Library admin intro card) flip settings
+      # for EVERY account at once, so they cannot interleave with the parallel
+      # lanes above — the broad projects always testIgnore them. This separate
+      # invocation is what serializes them after the main run.
+      - name: Run server-state e2e lane
+        working-directory: frontend
+        env:
+          CI: 'true'
+          E2E_BASE_URL: http://localhost:8083
+          E2E_SERVER_STATE: '1'
+        run: npx playwright test --project=server-state-chromium
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v7
@@ -990,13 +1073,13 @@ jobs:
         run: docker rm -f cwn-e2e || true
 
   # ============================================================================
-  # Summary Job (Optional)
-  # Shows overall status in GitHub UI
+  # Required Summary Job
+  # Enforces the completed hard gates for branch protection
   # ============================================================================
   test-summary:
     name: Test Suite Summary
     runs-on: ubuntu-latest
-    needs: [fast-tests, frontend-build, integration-tests, e2e-tests, changed_paths]
+    needs: [fast-tests, frontend-build, impact-map, integration-tests, e2e-tests, changed_paths]
     if: always()
 
     # The unified gate that branch protection requires. auto-merge.yml
@@ -1030,6 +1113,7 @@ jobs:
         run: |
           echo "Fast Tests:        ${{ needs.fast-tests.result }}"
           echo "Frontend Build:    ${{ needs.frontend-build.result }}"
+          echo "Impact map:        ${{ needs.impact-map.result }}"
           echo "Integration Tests: ${{ needs.integration-tests.result }}"
           echo "E2E Tests:         ${{ needs.e2e-tests.result }}"
           echo "Is tier-2 PR:      $IS_TIER2_PR"
@@ -1043,7 +1127,7 @@ jobs:
           # later broken job condition silently turns coverage off while this
           # required check stays green.
           #
-          # `fast-tests` and `frontend-build` carry no `if:`, so they run on
+          # `fast-tests`, `frontend-build`, and `impact-map` carry no `if:`, so they run on
           # EVERY trigger of this workflow. Any result other than success means
           # the lane vouched for nothing, and neither can this summary.
           #
@@ -1067,6 +1151,14 @@ jobs:
           if [[ "${{ needs.frontend-build.result }}" != "success" ]]; then
             echo "❌ Frontend build did not succeed"
             echo "   Actual result: ${{ needs.frontend-build.result }}"
+            exit 1
+          fi
+
+          # Staleness is a successful refresh. Generation/evidence errors,
+          # cancellation, or a skipped job cannot vouch for a usable map.
+          if [[ "${{ needs.impact-map.result }}" != "success" ]]; then
+            echo "❌ Impact map did not succeed"
+            echo "   Actual result: ${{ needs.impact-map.result }}"
             exit 1
           fi
 

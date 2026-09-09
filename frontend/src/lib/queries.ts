@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import type { ReaderBookmark as SyncedReaderBookmark } from './readerResume';
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import {
@@ -7,6 +8,7 @@ import {
   getMetadataProviders, setMetadataProviderActive,
 } from './api';
 import { removeBookFromCache, applyBookEditToCache } from './scrollCache';
+import { replaceCachedIdentity } from './identityCache';
 import { settleByBatch, settleById, type BulkFailureDetail } from './bulkResults';
 import { createEntityListQueryOptions } from './entityListQueryOptions';
 import { dismissNoticeIdsInBatches } from './noticeDismissal';
@@ -19,7 +21,8 @@ import type {
   ExternalBookRatingsResponse, MoonReaderDiscoveryResult, MoonReaderSettings, MoonReaderSettingsUpdate,
   NoticeInbox, KoboTwoWaySettings, KoboTwoWayBookState, KoboTwoWayUpdate,
   GlobalLibraryPage, LibraryModePayload, LibraryRemovalImpact, DeliveryDevice,
-  DeviceDeliveryResult,
+  DeviceDeliveryResult, MyLibraryIntroState,
+  KoboSyncToken,
 } from './api';
 
 /** Entity kinds the catalog can be filtered by. Singular here; the browse-list
@@ -129,47 +132,22 @@ export function useUpdateNamedPreferences() {
   });
 }
 
-/** Queries whose response body depends on *who* is asking, and so must not
- *  survive an identity change that happens without a page load. Today that is
- *  /about, which withholds component versions from non-admins (#1287).
- *
- *  Cancel first, then remove: an in-flight request issued under the previous
- *  identity would otherwise land after the switch and repopulate the cache with
- *  the wrong identity's answer. */
-async function dropIdentityScopedQueries(queryClient: QueryClient) {
-  for (const key of ['about', 'books', 'book', 'global-library', 'account', 'shelves', 'shelf']) {
-    await queryClient.cancelQueries({ queryKey: [key] });
-    queryClient.removeQueries({ queryKey: [key] });
-  }
-}
-
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: { username: string; password: string; remember?: boolean }) =>
       apiPost<Me>('/api/v1/auth/login', vars, { auth: 'public' }),
-    onSuccess: (data) => {
-      // Seeding the me-cache flips the app to the authenticated tree straight
-      // away, so protected calls can fire before the invalidation below has
-      // refetched /auth/me. Note the identity from the payload we are seeding
-      // with, or a session that dies inside that window looks to the classifier
-      // like a guest who was never signed in and escapes the expiry path
-      // (#824/#1067) that #1074 narrowed.
+    onSuccess: async (data) => {
+      // Note the identity from the login response before publishing it. If the
+      // session dies during the cache transition, the expiry classifier must
+      // still know a real session was acquired (#824/#1067/#1074).
       noteSessionIdentity(!!data.role?.anonymous);
-      queryClient.setQueryData(['me'], data);
+      // Keep /me null until all outgoing-account queries and the separate
+      // catalogue scroll cache are gone. Publishing the incoming user first
+      // let the authenticated tree render old, unscoped My Library data while
+      // an unawaited root-by-root purge caught up.
+      await replaceCachedIdentity(queryClient, data);
       void queryClient.invalidateQueries({ queryKey: ['me'] });
-      // Signing in here does not reload the page, so anything cached under the
-      // previous identity survives. /about is one of those now — the server
-      // withholds versions from non-admins (#1287), so a guest's empty map
-      // would otherwise stick for staleTime and hide the section from the admin
-      // who just signed in. Logging out is a full navigation, so that direction
-      // clears itself.
-      //
-      // Cancel before dropping, rather than invalidating: invalidation only
-      // refetches *active* queries, so a guest request still in flight when
-      // login lands would resolve afterwards, write its empty map and clear the
-      // stale flag — leaving the admin with a fresh-looking wrong answer.
-      void dropIdentityScopedQueries(queryClient);
     },
   });
 }
@@ -202,15 +180,12 @@ export function useMagicLinkPoll() {
   return useMutation({
     mutationFn: (token: string) =>
       apiPost<MagicLinkPoll>('/api/v1/auth/magic-link/poll', { token }, { auth: 'public' }),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.status === 'success') {
-        // Same seeding window as useLogin above — record the identity we are
-        // seeding with so an expiry during it is still classified as a loss.
+        // Same ordered identity boundary as password login.
         noteSessionIdentity(!!data.user.role?.anonymous);
-        queryClient.setQueryData(['me'], data.user);
+        await replaceCachedIdentity(queryClient, data.user);
         void queryClient.invalidateQueries({ queryKey: ['me'] });
-        // Same in-place identity switch as useLogin — drop the guest's /about.
-        void dropIdentityScopedQueries(queryClient);
       }
     },
   });
@@ -399,6 +374,19 @@ export function useRemoveFromMyLibrary() {
       void qc.invalidateQueries({ queryKey: ['global-library'] });
       void qc.invalidateQueries({ queryKey: ['shelves'] });
       void qc.invalidateQueries({ queryKey: ['shelf'] });
+    },
+  });
+}
+
+export function useClearMyCover(bookId: string | number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiDelete(`/api/v1/books/${bookId}/my-cover`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['book', String(bookId)] });
+      void qc.invalidateQueries({ queryKey: ['books'] });
+      void qc.invalidateQueries({ queryKey: ['global-library'] });
+      void qc.invalidateQueries({ queryKey: ['cover-state', String(bookId)] });
     },
   });
 }
@@ -633,32 +621,44 @@ export function useQueueDeviceDelivery(id: string | number) {
 
 // ── Shelves ──────────────────────────────────────────────────────────────────
 
-export function useShelves() {
+export function useShelves(options?: { enabled?: boolean }) {
   return useQuery<{ items: Shelf[] }>({
     queryKey: ['shelves'],
     queryFn: () => apiGet<{ items: Shelf[] }>('/api/v1/shelves'),
     staleTime: 30000,
+    enabled: options?.enabled ?? true,
   });
 }
 
-export function useShelf(id: string | number | undefined, page = 1) {
+export function useShelf(id: string | number | undefined, page = 1, sort = 'stored') {
   return useQuery<ShelfDetail>({
-    queryKey: ['shelf', String(id), page],
-    queryFn: () => apiGet<ShelfDetail>(`/api/v1/shelves/${id}?page=${page}&per_page=24`),
+    queryKey: ['shelf', String(id), sort, page],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        per_page: '24',
+        sort,
+      });
+      return apiGet<ShelfDetail>(`/api/v1/shelves/${id}?${params.toString()}`);
+    },
     enabled: id !== undefined && id !== '',
-    // Keep the previous page's rows only while paging within the SAME shelf —
-    // never carry one shelf's rows across an id change, where they'd render
-    // under the next shelf's key and mix both shelves' books (#612).
+    // Keep the previous page's rows only while paging within the SAME shelf and
+    // sort. Never carry rows across either identity change (#612/#2059).
     placeholderData: (prev, prevQuery) =>
-      prevQuery && String(prevQuery.queryKey[1]) === String(id) ? prev : undefined,
+      prevQuery
+      && String(prevQuery.queryKey[1]) === String(id)
+      && prevQuery.queryKey[2] === sort
+        ? prev
+        : undefined,
   });
 }
 
 /** Shelf ids (among the user's visible shelves) that currently contain a book. */
-export function useBookShelves(bookId: string | number) {
+export function useBookShelves(bookId: string | number, options?: { enabled?: boolean }) {
   return useQuery<{ shelf_ids: number[] }>({
     queryKey: ['book-shelves', String(bookId)],
     queryFn: () => apiGet<{ shelf_ids: number[] }>(`/api/v1/books/${bookId}/shelves`),
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -903,6 +903,60 @@ export function useMigrateMyLibrary() {
   });
 }
 
+// ── Admin "Try My Library" intro card (server-wide state) ───────────────────
+
+export function useMyLibraryIntro() {
+  return useQuery<MyLibraryIntroState>({
+    queryKey: ['admin-my-library-intro'],
+    queryFn: () => apiGet<MyLibraryIntroState>('/api/v1/admin/my-library/intro'),
+  });
+}
+
+function useIntroMutation<TExtra extends object>(path: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<MyLibraryIntroState & TExtra>(path, {}),
+    onSuccess: (data) => {
+      // Store only the state shape; the action summaries (results, counts)
+      // travel to the caller through the mutation's own onSuccess data.
+      qc.setQueryData<MyLibraryIntroState>(['admin-my-library-intro'], {
+        status: data.status,
+        dismissed: data.dismissed,
+        snapshot_accounts: data.snapshot_accounts,
+      });
+      // Enable/undo change every account's roles + mode; the user cards and
+      // the caller's own mode (sidebar My Library/Global Library split) move.
+      void qc.invalidateQueries({ queryKey: ['admin-users'] });
+      void qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+}
+
+export interface IntroEnableResult extends MyLibraryIntroState {
+  results: MyLibraryMigrationRow[];
+  accounts: number;
+  seeded_books: number;
+  errors: number;
+}
+
+export function useEnableMyLibraryIntro() {
+  return useIntroMutation<Pick<IntroEnableResult, 'results' | 'accounts' | 'seeded_books' | 'errors'>>(
+    '/api/v1/admin/my-library/intro/enable',
+  );
+}
+
+export function useUndoMyLibraryIntro() {
+  return useIntroMutation<{ restored_accounts: number }>(
+    '/api/v1/admin/my-library/intro/undo',
+  );
+}
+
+export function useDismissMyLibraryAdminIntro() {
+  return useIntroMutation<Record<string, never>>(
+    '/api/v1/admin/my-library/intro/dismiss',
+  );
+}
+
 export function useAdminAddBookToLibrary() {
   const qc = useQueryClient();
   return useMutation({
@@ -950,11 +1004,21 @@ export function useBulkActions() {
     onSuccess: refresh,
   });
   const deleteBooks = useMutation({
-    mutationFn: (ids: number[]) => settleById(ids, (id) => apiPost(`/api/v1/books/${id}/delete`)),
-    onSuccess: ({ succeededIds }) => {
+    mutationFn: (ids: number[]) => settleById(
+      ids,
+      (id) => apiPost<DeleteResult | undefined>(`/api/v1/books/${id}/delete`),
+      {
+        warningFor: (id, result) => result?.warning
+          ? { id, ...result.warning }
+          : undefined,
+      },
+    ),
+    onSuccess: ({ succeededIds, warningIds }) => {
       // Evict deleted books from every cached catalog snapshot so a later
-      // scroll-restore can't resurrect them as ghost cards (#578).
-      succeededIds.forEach(removeBookFromCache);
+      // scroll-restore can't resurrect them as ghost cards (#578). A cleanup
+      // warning still confirms that the database row is gone; only the files
+      // need administrator attention, so those ids leave the catalog too.
+      [...succeededIds, ...warningIds].forEach(removeBookFromCache);
       refresh();
     },
   });
@@ -1096,6 +1160,7 @@ export function useUpdateMetadata(id: string | number) {
  *  away from the now-deleted book's detail page on success. */
 export interface DeleteResult {
   deleted: true;
+  status?: 'warning';
   warning?: { code: string; message: string };
 }
 
@@ -1524,8 +1589,7 @@ export function translateReaderPage(
   );
 }
 
-export type ReaderPosition = {
-  bookmark: string | null;
+export type ReaderPosition = SyncedReaderBookmark & {
   position_fraction?: number;
   position_source?: 'moonreader' | 'calibre_web' | null;
   position_anchor?: string | null;
@@ -1719,6 +1783,37 @@ export function useRevokeAppPassword() {
   });
 }
 
+// ── Kobo / KOReader pairing ─────────────────────────────────────────────────
+
+const KOBO_SYNC_TOKEN_KEY = ['kobo-sync-token'] as const;
+
+export function useKoboSyncToken(enabled = true) {
+  return useQuery<KoboSyncToken>({
+    queryKey: KOBO_SYNC_TOKEN_KEY,
+    queryFn: () => apiGet<KoboSyncToken>('/api/v1/account/kobo-sync-token'),
+    enabled,
+    retry: false,
+  });
+}
+
+export function useCreateKoboSyncToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<KoboSyncToken>('/api/v1/account/kobo-sync-token'),
+    onSuccess: (data) => qc.setQueryData(KOBO_SYNC_TOKEN_KEY, data),
+  });
+}
+
+export function useDeleteKoboSyncToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiDelete('/api/v1/account/kobo-sync-token'),
+    onSuccess: () => qc.setQueryData<KoboSyncToken>(KOBO_SYNC_TOKEN_KEY, (old) => (
+      old ? { ...old, configured: false, sync_url: null } : old
+    )),
+  });
+}
+
 // ── AI / RAG search ─────────────────────────────────────────────────────────
 
 export function useRagStatus(enabled = true) {
@@ -1756,8 +1851,7 @@ export function useUpdateRagOcrConfig() {
 
 export function useRagSearch() {
   return useMutation({
-    mutationFn: (vars: RagSearchRequest) =>
-      apiPost<RagSearchResponse>('/api/v1/rag/search', vars),
+    mutationFn: (vars: RagSearchRequest) => apiPost<RagSearchResponse>('/api/v1/rag/search', vars),
   });
 }
 
@@ -1765,9 +1859,8 @@ export function useBookOcrStatus(bookId: string, enabled = true) {
   return useQuery<BookOcrResponse | null>({
     queryKey: ['book-ocr', bookId],
     queryFn: async () => {
-      try {
-        return await apiGet<BookOcrResponse>(`/api/v1/books/${bookId}/ocr`);
-      } catch (err) {
+      try { return await apiGet<BookOcrResponse>(`/api/v1/books/${bookId}/ocr`); }
+      catch (err) {
         if (err instanceof ApiError && err.status === 404) return null;
         throw err;
       }
@@ -1788,9 +1881,7 @@ export function useStartBookOcr(bookId: string) {
       apiPost<BookOcrResponse>(`/api/v1/books/${bookId}/ocr`, vars),
     onSuccess: (data) => {
       queryClient.setQueryData<BookOcrResponse | null>(['book-ocr', bookId], data);
-      if (data.accepted) {
-        void queryClient.invalidateQueries({ queryKey: ['book-ocr', bookId] });
-      }
+      if (data.accepted) void queryClient.invalidateQueries({ queryKey: ['book-ocr', bookId] });
     },
   });
 }
@@ -1985,14 +2076,28 @@ export function useMagicShelves() {
   });
 }
 
-export function useMagicShelfBooks(id: string | number, page = 1) {
-  return useQuery<MagicShelfItem & BooksPage>({
-    queryKey: ['magicshelf', String(id), page],
-    queryFn: () => apiGet(`/api/v1/magicshelf/${id}?page=${page}`),
+export interface MagicShelfSortOption {
+  value: string;
+  label: string;
+}
+
+export function useMagicShelfBooks(id: string | number, page = 1, sort = 'new') {
+  return useQuery<MagicShelfItem & BooksPage & {
+    sort: string;
+    sort_persistable?: boolean;
+    custom_sort_options?: MagicShelfSortOption[];
+  }>({
+    queryKey: ['magicshelf', String(id), page, sort],
+    queryFn: () => apiGet(
+      `/api/v1/magicshelf/${id}?page=${page}&sort=${encodeURIComponent(sort)}`,
+    ),
     enabled: String(id).length > 0,
-    // Same-shelf paging only — see useShelf (#612).
+    // Same-shelf, same-order paging only — see useShelf (#612).
     placeholderData: (prev, prevQuery) =>
-      prevQuery && String(prevQuery.queryKey[1]) === String(id) ? prev : undefined,
+      prevQuery
+        && String(prevQuery.queryKey[1]) === String(id)
+        && prevQuery.queryKey[3] === sort
+        ? prev : undefined,
   });
 }
 

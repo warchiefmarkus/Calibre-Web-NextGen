@@ -11,6 +11,7 @@ import {
 } from '../lib/queries';
 import { useT } from '../lib/i18n';
 import { formatReadingProgress, parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
+import { resumeForArchive } from '../lib/readerResume';
 import styles from './Reader.module.css';
 
 // Foliate-specific engine details live behind the reader module boundary.
@@ -58,6 +59,14 @@ const READER_WHEEL_IDLE_RESET_MS = 160;
 const READER_TOUCH_SELECTION_HOLD_MS = 450;
 const READER_TOUCH_MOVE_THRESHOLD_PX = 10;
 const READER_TOUCH_SELECTION_SUPPRESS_MS = 220;
+
+type SyncedResume = {
+  percentage: number;
+  synced_at: string;
+  mode: 'automatic' | 'offer';
+  cfi?: string;
+  epub_sha256?: string;
+};
 
 function chatGptSelectedTextUrl(text: string): string {
   return `https://chatgpt.com/?q=${encodeURIComponent(text.trim())}`;
@@ -138,6 +147,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [toc, setToc] = useState<Array<TocItem & { depth: number }>>([]);
   const [sectionFractions, setSectionFractions] = useState<number[]>([]);
   const [location, setLocation] = useState<FoliateLocation>({ fraction: 0 });
+  const [remoteResume, setRemoteResume] = useState<SyncedResume | null>(null);
   const [settings, setSettings] = useState<ReaderSettings | null>(null);
   const [searchText, setSearchText] = useState('');
   const [searching, setSearching] = useState(false);
@@ -1008,6 +1018,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setError(null);
     setBookLanguage('');
     setBookRtl(false);
+    setRemoteResume(null);
     const initialSettings: ReaderSettings = {
       ...settingsQuery.data.reader,
       translationEnabled: bookStateQuery.data.translationEnabled,
@@ -1216,6 +1227,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         const savedFoliateCfi = savedLocator?.startsWith('epubcfi(') ? savedLocator : undefined;
         const fallbackLocation = savedFoliateCfi
           ?? (savedFraction > 0 ? { fraction: Math.min(1, Math.max(0, savedFraction)) } : undefined);
+        // Upstream #2167/#2176: a newer Kobo/KOReader carrier can resume the
+        // web reader. Exact CFI is admitted only when its EPUB fingerprint still
+        // matches this archive; otherwise the portable percentage remains.
+        const syncedResume = await resumeForArchive(positionQuery.data?.resume ?? null, data);
+        if (cancelled) return;
+        const syncedFraction = syncedResume && Number.isFinite(syncedResume.percentage)
+          ? Math.min(1, Math.max(0, syncedResume.percentage / 100))
+          : null;
 
         if (moonAnchor) {
           // Moon's percentage and Foliate's section-size fraction are different
@@ -1231,8 +1250,27 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           if (moonCfi) await view.goTo(moonCfi);
           else if (savedFraction > 0) await view.goToFraction(Math.min(1, Math.max(0, savedFraction)));
           else if (savedLocator) await view.goTo(savedLocator);
+        } else if (!savedLocator && syncedResume?.mode === 'automatic' && syncedFraction !== null) {
+          // No local position: adopt the newer synced position automatically.
+          // Programmatic restore stays behind restoringInitialPosition, so the
+          // resulting relocate cannot immediately echo the carrier back.
+          await view.init({ showTextStart: true });
+          let exactApplied = false;
+          if (syncedResume.cfi) {
+            try {
+              await view.goTo(syncedResume.cfi);
+              exactApplied = true;
+            } catch { /* Fall back to the portable percentage below. */ }
+          }
+          if (!exactApplied) await view.goToFraction(syncedFraction);
         } else {
           await view.init({ lastLocation: fallbackLocation, showTextStart: true });
+          // A local position wins initial display, but if the server proved a
+          // newer device position exists, offer it without overwriting local
+          // progress until the reader explicitly accepts it.
+          if (savedLocator && syncedResume?.mode === 'offer' && syncedFraction !== null) {
+            setRemoteResume(syncedResume as SyncedResume);
+          }
         }
         if (cancelled) return;
         restoringInitialPosition = false;
@@ -1282,7 +1320,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, [applySettings, bookQuery.data?.title, fmt, id, positionQuery.data?.bookmark,
     positionQuery.data?.position_fraction, positionQuery.data?.position_source,
     positionQuery.data?.position_anchor, positionQuery.data?.position_chapter,
-    positionQuery.data?.position_section,
+    positionQuery.data?.position_section, positionQuery.data?.resume,
     positionQuery.isFetched, selectedFormat,
     settingsQuery.data, bookStateQuery.data, bookStateQuery.isFetching,
     schedulePosition, dismissSelection, handleReaderWheel,
@@ -1591,6 +1629,35 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         translationLoading={translationLoading} translationPreloading={translationPreloading}
         fullscreenSupported={fullscreenSupported} isFullscreen={isFullscreen} toggleFullscreen={toggleFullscreen}
       />
+
+      {remoteResume && (
+        <div className={styles.resumeNotice} role="status">
+          <button type="button" onClick={() => {
+            const resume = remoteResume;
+            const view = viewRef.current;
+            setRemoteResume(null);
+            if (!view) return;
+            // Accepting the offer is a restore/jump, not evidence that the
+            // reader has read onward. The next explicit navigation re-arms saves.
+            resetReadingMovement();
+            restoreInlineTranslations();
+            dismissSelection();
+            const fraction = Math.min(1, Math.max(0, resume.percentage / 100));
+            void (async () => {
+              if (resume.cfi) {
+                try { await view.goTo(resume.cfi); return; }
+                catch { /* Use portable percentage. */ }
+              }
+              await view.goToFraction(fraction);
+            })();
+          }}>
+            {t('Resume at {percent} from another device', {
+              percent: `${formatReadingProgress(remoteResume.percentage)}%`,
+            })}
+          </button>
+          <button type="button" onClick={() => setRemoteResume(null)} aria-label={t('Dismiss')}>×</button>
+        </div>
+      )}
 
       {pendingSelection && <SelectionActions
         text={pendingSelection.text} openHighlight={openCreateHighlight}

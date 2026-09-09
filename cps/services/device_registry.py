@@ -24,6 +24,26 @@ LAST_SEEN_WRITE_INTERVAL = timedelta(minutes=5)
 # must not turn a client-controlled header into unbounded persistent rows.
 MAX_WEBREADER_DEVICES_PER_USER = 20
 _webreader_cap_logged_users = set()
+# Kobo hardware identifiers are client-controlled too. Count every retained
+# identity, including retired devices, so identity rotation cannot grow the
+# device, delivery-ledger, and pending-response tables without bound.
+MAX_KOBO_DEVICES_PER_USER = MAX_WEBREADER_DEVICES_PER_USER
+KOBO_DEVICE_LIMIT_MESSAGE = (
+    "Kobo device limit reached; use an already registered device"
+)
+_kobo_cap_logged_users = set()
+# KOReader's device_id is client-controlled in the same way as the browser
+# installation id and Kobo headers. Retained identities, including retired
+# devices, are the durable unit that must stay bounded.
+MAX_KOREADER_DEVICES_PER_USER = MAX_WEBREADER_DEVICES_PER_USER
+KOREADER_DEVICE_LIMIT_MESSAGE = (
+    "KOReader device limit reached; ignoring new device identity"
+)
+_koreader_cap_logged_users = set()
+
+
+class KoboDeviceLimitReached(RuntimeError):
+    """A new hardware identity would exceed the user's durable Kobo bound."""
 
 
 def _bounded_header(value, limit):
@@ -98,6 +118,52 @@ def _webreader_identity_count(session, ub, *, user_id):
     )
 
 
+def _kobo_identity_count(session, ub, *, user_id):
+    """Count all Kobo identities, active or retired, to bound stored rows."""
+    return (
+        session.query(ub.Device.id)
+        .join(ub.DeviceIdentity, ub.DeviceIdentity.device_id == ub.Device.id)
+        .filter(
+            ub.Device.user_id == user_id,
+            ub.Device.kind == "kobo",
+            ub.DeviceIdentity.scheme == SCHEME,
+        )
+        .distinct()
+        .count()
+    )
+
+
+def _koreader_identity_count(session, ub, *, user_id):
+    """Count all KOReader identities, active or retired, to bound rows."""
+    return (
+        session.query(ub.Device.id)
+        .join(ub.DeviceIdentity, ub.DeviceIdentity.device_id == ub.Device.id)
+        .filter(
+            ub.Device.user_id == user_id,
+            ub.Device.kind == "koreader",
+            ub.DeviceIdentity.scheme == KOREADER_SCHEME,
+        )
+        .distinct()
+        .count()
+    )
+
+
+def _log_kobo_cap_once(user_id):
+    """Emit one privacy-safe process-lifetime diagnostic for each capped user."""
+    if user_id in _kobo_cap_logged_users:
+        return
+    _kobo_cap_logged_users.add(user_id)
+    log.warning(KOBO_DEVICE_LIMIT_MESSAGE)
+
+
+def _log_koreader_cap_once(user_id):
+    """Emit one privacy-safe process-lifetime diagnostic for each capped user."""
+    if user_id in _koreader_cap_logged_users:
+        return
+    _koreader_cap_logged_users.add(user_id)
+    log.warning(KOREADER_DEVICE_LIMIT_MESSAGE)
+
+
 def _ensure_legacy_webreader_device(session, ub, *, user_id, seen_at=None):
     """Return the bounded historical fallback, reactivating it if retired."""
     device = (
@@ -160,6 +226,9 @@ def upsert_kobo_device(session, *, user_id, headers, secret_key, seen_at=None):
     model = _bounded_header(headers.get("x-kobo-devicemodel"), 160)
     firmware = _bounded_header(headers.get("x-kobo-appversion"), 64)
     if identity is None:
+        if _kobo_identity_count(session, ub, user_id=user_id) >= MAX_KOBO_DEVICES_PER_USER:
+            _log_kobo_cap_once(user_id)
+            raise KoboDeviceLimitReached(KOBO_DEVICE_LIMIT_MESSAGE)
         # User-editable labels are capped at 60 by the API. Keep generated
         # labels inside the same contract without silently truncating a
         # suspiciously long client-controlled model header.
@@ -205,7 +274,7 @@ def upsert_kobo_device(session, *, user_id, headers, secret_key, seen_at=None):
 
 
 def register_kobo_device_best_effort(*, user_id, headers, secret_key=None, return_internal=False):
-    """Observe in an isolated transaction; every failure is swallowed."""
+    """Observe in an isolated transaction; surface only the intentional cap."""
     owned = None
     try:
         from flask import current_app
@@ -215,6 +284,13 @@ def register_kobo_device_best_effort(*, user_id, headers, secret_key=None, retur
         device = upsert_kobo_device(owned, user_id=user_id, headers=headers, secret_key=key)
         owned.commit()
         return (device.id if return_internal else device.public_id) if device else None
+    except KoboDeviceLimitReached:
+        if owned is not None:
+            try:
+                owned.rollback()
+            except Exception:
+                pass
+        raise
     except Exception:
         if owned is not None:
             try:
@@ -390,12 +466,20 @@ def register_koreader_device_best_effort(*, user_id, device_id, device_name=None
             log.warning("Ignoring KOReader device identity already bound to another user")
             return None
         now = datetime.now(timezone.utc)
-        label_base = _bounded_header(device_name, 55) or "KOReader"
+        label_base = _bounded_header(device_name, 55)
+        model = _bounded_header(device_name, 160)
+        write_needed = False
         if identity is None:
+            if (_koreader_identity_count(owned, ub, user_id=user_id)
+                    >= MAX_KOREADER_DEVICES_PER_USER):
+                _log_koreader_cap_once(user_id)
+                return None
             device = ub.Device(
                 user_id=user_id, kind="koreader",
-                display_name=_deduplicated_label(owned, ub, user_id=user_id, base=label_base),
-                model=_bounded_header(device_name, 160), platform="koreader",
+                display_name=_deduplicated_label(
+                    owned, ub, user_id=user_id, base=label_base or "KOReader",
+                ),
+                model=model, platform="koreader",
                 first_seen_at=now, last_seen_at=now, last_metadata_at=now,
                 active=True, created_by="auto",
             )
@@ -404,11 +488,32 @@ def register_koreader_device_best_effort(*, user_id, device_id, device_name=None
                 fingerprint=fingerprint, first_seen_at=now, last_seen_at=now,
             )
             owned.add(device)
+            write_needed = True
         else:
             device = identity.device
-            device.last_seen_at = now
-            identity.last_seen_at = now
-        owned.commit()
+            observed_is_newer = (
+                device.last_seen_at is None
+                or now >= device.last_seen_at.replace(tzinfo=now.tzinfo)
+            )
+            metadata_changed = bool(model and model != device.model)
+            last_seen_due = (
+                device.last_seen_at is None
+                or now - device.last_seen_at.replace(tzinfo=now.tzinfo)
+                >= LAST_SEEN_WRITE_INTERVAL
+            )
+            # Progress pushes are the hottest authenticated KOReader path.
+            # Keep ordinary observations read-only until the shared coarse
+            # heartbeat is due, while persisting changed client model metadata
+            # now. display_name is mutable user data and creation-only here.
+            if observed_is_newer and (last_seen_due or metadata_changed):
+                device.last_seen_at = now
+                identity.last_seen_at = now
+                if model:
+                    device.model = model
+                device.last_metadata_at = now
+                write_needed = True
+        if write_needed:
+            owned.commit()
         return device.id
     except Exception:
         if owned is not None:

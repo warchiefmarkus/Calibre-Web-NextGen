@@ -10,7 +10,7 @@ import {
   useRefreshExternalBookRatings, useStartBookMoonReaderSync,
   useBookShelves, useShelves, useKoboTwoWayAnnotations, selectKoboTwoWayBook,
   useAddToMyLibrary, useMyLibraryRemovalImpact, useRemoveFromMyLibrary,
-  useActiveDeliveryDevices, useQueueDeviceDelivery,
+  useActiveDeliveryDevices, useQueueDeviceDelivery, useClearMyCover,
 } from '../lib/queries';
 import { authorityLabel, opaqueLabel } from '../lib/koboTwoWay';
 import { MetadataTypeahead } from '../components/MetadataTypeahead';
@@ -28,7 +28,7 @@ import { getPrimaryReadTarget } from '../lib/readerTarget';
 import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
 import { CoverProgressBadge } from '../components/CoverProgressBadge';
 import { formatReadingProgress } from '../lib/readerProgress';
-import { canDownloadBooks, canReadBooks } from '../lib/permissions';
+import { canDeleteBooks, canDownloadBooks, canReadBooks } from '../lib/permissions';
 import styles from './BookDetail.module.css';
 import { useCardActionsHidden } from '../lib/useCardActionsHidden';
 import { BookUserNotices } from '../components/UserNotices';
@@ -38,6 +38,7 @@ import { useMediaQuery } from '../lib/useMediaQuery';
 
 type LowercaseFetchPriority = { fetchpriority: 'high' | 'low' | 'auto' };
 const COVER_PRIORITY: LowercaseFetchPriority = { fetchpriority: 'high' };
+const BOOK_DETAIL_NARROW_QUERY = '(max-width: 700px)';
 
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -277,8 +278,10 @@ function TagEditor({ bookId, tags, canEdit }:
   const [adding, setAdding] = useState(false);
   const [input, setInput] = useState('');
   const [expanded, setExpanded] = useState(false);
-  const visibleTags = expanded ? tags : tags.slice(0, 8);
-  const hasMore = tags.length > 8;
+  const narrowLayout = useMediaQuery(BOOK_DETAIL_NARROW_QUERY);
+  const collapsedTagLimit = narrowLayout ? 8 : 20;
+  const hasMore = tags.length - collapsedTagLimit >= 3;
+  const visibleTags = expanded || !hasMore ? tags : tags.slice(0, collapsedTagLimit);
 
   const names = tags.map((tg) => tg.name);
   const apply = (next: string[]) => update.mutate({ tags: next.join(', ') });
@@ -385,6 +388,9 @@ export function BookDetail() {
   const id = params.id;
 
   const { data: book, isLoading, error } = useBook(id);
+  const me = useMe().data;
+  const selectionMode = me?.library_mode === 'personal_library';
+  const inLibrary = !!book && (!selectionMode || book.in_my_library !== false);
   const toggleRead = useToggleRead(id);
   const toggleFavorite = useToggleFavorite(id);
   const toggleArchived = useToggleArchived(id);
@@ -397,20 +403,20 @@ export function BookDetail() {
   const addToLibrary = useAddToMyLibrary();
   const removalImpact = useMyLibraryRemovalImpact();
   const removeFromLibrary = useRemoveFromMyLibrary();
+  const clearMyCover = useClearMyCover(id);
   const [location, navigate] = useLocation();
-  const me = useMe().data;
   const deliveryDevices = useActiveDeliveryDevices(
-    !!me && !me.role?.anonymous && !!me.role?.download,
+    inLibrary && !!me && !me.role?.anonymous && !!me.role?.download,
   );
   /* Stage 0 two-way sync state chip (read-only; manage it on Account). */
   const twoWay = useKoboTwoWayAnnotations({
-    enabled: !!me && !me.role?.anonymous && !!me.features?.kobo_two_way_annotations,
+    enabled: inLibrary && !!me && !me.role?.anonymous && !!me.features?.kobo_two_way_annotations,
   });
   const bookBackTarget = backTarget(location);
   // The send-to-e-reader button only renders when mail is configured + the user
   // can download, so defer the account fetch (which carries the saved e-reader
   // address used to prefill the recipient field, #715) until that's possible.
-  const canSend = !!me?.features?.mail_configured && !!me?.role?.download;
+  const canSend = inLibrary && !!me?.features?.mail_configured && !!me?.role?.download;
   const savedEreader = useAccount({ enabled: canSend }).data?.kindle_mail ?? '';
   const [sendOpen, setSendOpen] = useState(false);
   const [sendBanner, setSendBanner] = useState<{ ok: boolean; text: string } | null>(null);
@@ -425,13 +431,13 @@ export function BookDetail() {
   );
   const ocrStatus = useBookOcrStatus(id, canRunOcr);
   const startOcr = useStartBookOcr(id);
-  /* Keep the destructive action mutually exclusive between narrow and wide layouts. */
-  const narrowLayout = useMediaQuery('(max-width: 700px)');
+  /* #1828: destructive controls are conditionally rendered, never merely hidden. */
+  const narrowLayout = useMediaQuery(BOOK_DETAIL_NARROW_QUERY);
   // Shelf membership for the metadata list (#1254). Both queries are already
   // in flight for the always-rendered AddToShelf popover below and share its
   // cache keys, so reading them here costs no extra request.
-  const shelfMembership = useBookShelves(id).data;
-  const visibleShelves = useShelves().data;
+  const shelfMembership = useBookShelves(id, { enabled: inLibrary }).data;
+  const visibleShelves = useShelves({ enabled: inLibrary }).data;
 
   if (isLoading) return <SpinnerCentered size={40} />;
   if (error || !book) {
@@ -450,6 +456,7 @@ export function BookDetail() {
     book.formats.map((f) => f.format),
     canReadBooks(me),
   );
+  const canDelete = canDeleteBooks(me);
   const unifiedProgress = book.reading_progress && Number.isFinite(book.reading_progress.percentage)
     ? Math.max(0, Math.min(100, book.reading_progress.percentage))
     : book.kosync_progress != null && Number.isFinite(book.kosync_progress)
@@ -463,30 +470,21 @@ export function BookDetail() {
     : book.reading_progress?.updated_at ?? null;
   const currentOcr = ocrStatus.data;
   const ocrBusy = startOcr.isPending || (
-    !!currentOcr && !currentOcr.terminal &&
-    ['pending', 'running', 'indexing'].includes(currentOcr.status)
+    !!currentOcr && !currentOcr.terminal && ['pending', 'running', 'indexing'].includes(currentOcr.status)
   );
   const runOcr = (force = false) => {
     setOcrMessage('');
-    startOcr.mutate(
-      { force },
-      {
-        onSuccess: (result) => {
-          if (result.accepted) {
-            setOcrDeferred(null);
-            setOcrMessage(t('OCR job queued. You can leave this page; processing continues in the background.'));
-          } else if (result.status === 'ocr_deferred') {
-            setOcrDeferred(result);
-            setOcrMessage('');
-          } else {
-            setOcrMessage(result.error || t('OCR was not started.'));
-          }
-        },
-        onError: (err) => setOcrMessage(
-          err instanceof ApiError ? err.message : t('Could not start OCR.'),
-        ),
+    startOcr.mutate({ force }, {
+      onSuccess: (result) => {
+        if (result.accepted) {
+          setOcrDeferred(null);
+          setOcrMessage(t('OCR job queued. You can leave this page; processing continues in the background.'));
+        } else if (result.status === 'ocr_deferred') {
+          setOcrDeferred(result); setOcrMessage('');
+        } else setOcrMessage(result.error || t('OCR was not started.'));
       },
-    );
+      onError: (err) => setOcrMessage(err instanceof ApiError ? err.message : t('Could not start OCR.')),
+    });
   };
 
   // The membership endpoint returns ids only, and both it and the shelf list
@@ -494,8 +492,6 @@ export function BookDetail() {
   // so every id here resolves to a name the caller is allowed to see.
   const onShelfIds = new Set(shelfMembership?.shelf_ids ?? []);
   const bookShelves = (visibleShelves?.items ?? []).filter((s) => onShelfIds.has(s.id));
-  const selectionMode = me?.library_mode === 'personal_library';
-  const inLibrary = !selectionMode || book.in_my_library !== false;
 
   const requestDeleteBook = () => {
     if (deleteBook.isPending) return;
@@ -531,6 +527,29 @@ export function BookDetail() {
       onError: () => announce(t('Could not remove the book. Please try again.'), { assertive: true }),
     });
   };
+
+  const coverPreferences = !me?.role?.anonymous ? (
+    <div className={styles.coverPreferences} data-testid="book-cover-preferences">
+      <p>{t('Your own cover is private to you and your e-reader deliveries. The library cover stays unchanged for everyone else.')}</p>
+      <div className={styles.coverPreferenceActions}>
+        <Link href={`/book/${book.id}/cover?personal=1`}>
+          <ImageIcon size={15} aria-hidden="true" focusable={false} />
+          {book.using_my_cover ? t('Change my cover') : t('Use my own cover')}
+        </Link>
+        {book.using_my_cover && (
+          <button type="button" disabled={clearMyCover.isPending}
+            onClick={() => clearMyCover.mutate()}>
+            {clearMyCover.isPending ? t('Restoring…') : t('Use the library cover')}
+          </button>
+        )}
+        {me?.role?.edit && (
+          <Link href={`/book/${book.id}/cover`}>
+            {t('Change library cover')}
+          </Link>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <main className={styles.container}>
@@ -579,6 +598,12 @@ export function BookDetail() {
               </Link>
             )}
           </div>
+          {/* Keep cover choices under the artwork on wide layouts. On narrow
+              layouts this block follows the ordinary action row instead: when
+              it lived in the cover grid cell, its prose and two 44px controls
+              made that first row tall enough to push #1828's delete target
+              below the viewport even though the button remained rendered. */}
+          {!narrowLayout && coverPreferences}
         </div>
 
         {/* RIGHT: info */}
@@ -615,9 +640,8 @@ export function BookDetail() {
                 <StarRating rating={book.rating} size={16} />
               </div>
             )}
-            {/* Keep the original NextGen progress presentation, but feed it the
-                newest unified Moon+/Calibre-Web progress carrier. */}
-            {(unifiedProgress != null || book.in_progress) && (
+            {/* Unified synced progress is meaningful only for a book in this user's library. */}
+            {inLibrary && (unifiedProgress != null || book.in_progress) && (
               <div className={styles.readProgressWrap}>
                 <p className={styles.currentlyReading}>
                   {unifiedProgress != null
@@ -725,7 +749,7 @@ export function BookDetail() {
               </button>
             )}
 
-            {(inLibrary || me?.role?.browse_global) && (
+            {inLibrary && (
               <AddToShelf bookId={book.id} inLibrary={inLibrary} />
             )}
 
@@ -792,7 +816,7 @@ export function BookDetail() {
               </button>
             )}
 
-            {inLibrary && me?.role?.download && (deliveryDevices.data?.devices.length ?? 0) > 0 && (
+            {inLibrary && me?.role?.download && book.formats.length > 0 && (deliveryDevices.data?.devices.length ?? 0) > 0 && (
               <button type="button" className={styles.downloadBtn}
                 aria-expanded={deviceSendOpen} aria-controls="device-send-panel"
                 onClick={() => { setDeviceSendOpen((value) => !value); setDeviceSendBanner(null); }}>
@@ -851,9 +875,17 @@ export function BookDetail() {
             {/* Highlights/annotations — view + export + import (Kobo). Opens the
                 server annotations page; in-reader highlight creation is the
                 flagship reader phase-2 (tracked separately). */}
-            {inLibrary && <Link href={`/book/${book.id}/annotations`} className={styles.downloadBtn}>
+            {inLibrary && <Link href={`/book/${book.id}/annotations`} className={styles.downloadBtn}
+              aria-label={(book.annotation_count ?? 0) > 0
+                ? t('Highlights, {count} saved annotations', { count: book.annotation_count ?? 0 })
+                : undefined}>
               <Highlighter size={14} aria-hidden="true" focusable={false} />
               {t('Highlights')}
+              {(book.annotation_count ?? 0) > 0 && (
+                <span className={styles.highlightCount} data-testid="highlight-count" aria-hidden="true">
+                  {book.annotation_count}
+                </span>
+              )}
             </Link>}
 
             {/* Stage 0 per-book two-way state, when the user opted in and the
@@ -896,7 +928,7 @@ export function BookDetail() {
                 separated region below renders instead (both share
                 requestDeleteBook, so behaviour is identical). Placed last so
                 the primary actions keep their positions. */}
-            {narrowLayout && me?.role?.delete_books && me?.role?.edit && (
+            {narrowLayout && canDelete && (
               <button
                 type="button"
                 data-testid="book-delete-icon"
@@ -976,7 +1008,7 @@ export function BookDetail() {
 
           {/* Whole-book deletion stays separate on wide layouts and uses the
               same delete-and-edit policy as the server. */}
-          {!narrowLayout && me?.role?.delete_books && me?.role?.edit && (
+          {!narrowLayout && canDelete && (
             <section className={styles.dangerZone} data-testid="book-destructive-actions"
               aria-label={t('Delete from the global library')}>
               <button
@@ -1048,6 +1080,7 @@ export function BookDetail() {
                 <dd className={styles.metaValue}>{book.original_filename}</dd>
               </>
             )}
+
             {book.pubdate && (
               <>
                 <dt className={styles.metaLabel}>{t('Published')}</dt>
@@ -1092,7 +1125,7 @@ export function BookDetail() {
                 </dd>
               </>
             )}
-            {bookShelves.length > 0 && (
+            {inLibrary && bookShelves.length > 0 && (
               <>
                 {/* Always the plural msgid: "Shelf" is translated in no locale
                     today, so a count-switched label would render English for a

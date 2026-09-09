@@ -45,6 +45,10 @@ from .helper import check_valid_domain, check_email, check_username, \
     edit_book_read_status, valid_password, get_kosync_progress_display
 from .pagination import Pagination
 from .sort_orders import BOOK_SORT_ORDERS, book_sort_order
+from .custom_column_sort import (
+    load_configured_columns,
+    resolve_magic_shelf_sort,
+)
 from .redirect import get_redirect_location
 from .cw_babel import get_available_locale, get_available_translations, sanitize_locale_for_write
 from .usermanagement import login_required_if_no_ano
@@ -123,7 +127,6 @@ sqlalchemy_version2 = ([int(x) for x in sql_version.split('.')] >= [2, 0, 0])
 
 _start_time = time.time()
 
-@app.after_request
 def add_security_headers(resp):
     # The SPA reader (spa.spa_shell serves /app/*) renders publications with foliate-js,
     # which loads in-book images and CSS as blob: URLs inside an iframe — the
@@ -166,7 +169,7 @@ def add_security_headers(resp):
         csp += " blob: ; style-src-elem 'self' blob: 'unsafe-inline'"
         csp += "; frame-src 'self' blob: data:"
         csp += "; worker-src 'self' blob:"
-    # #60: the "Back to the classic view" feedback popup (layout.html) POSTs to our
+    # #60: the switched-back-to-Classic feedback popup (layout.html) POSTs to our
     # first-party feedback endpoint (a Cloudflare Worker on a different origin).
     # Without an explicit connect-src, fetch()/XHR fall back to default-src 'self'
     # and the browser blocks the cross-origin POST, so feedback never leaves the
@@ -232,13 +235,28 @@ def is_immutable_static_asset(path):
     return '/' not in name and bool(_HASHED_ASSET_RE.search(name))
 
 
-@app.after_request
 def add_static_asset_cache_headers(resp):
     if (request.endpoint == 'static'
             and resp.status_code in _CACHEABLE_ASSET_STATUSES
             and is_immutable_static_asset(request.path)):
         resp.headers['Cache-Control'] = IMMUTABLE_ASSET_CACHE_CONTROL
     return resp
+
+
+_APP_HOOKS_MARKER = "cps_web_after_request_registered"
+
+
+def register_app_hooks(application):
+    """Attach web's app-wide response hooks once to ``application``."""
+    if application.extensions.get(_APP_HOOKS_MARKER):
+        return
+    application.after_request(add_security_headers)
+    application.after_request(add_static_asset_cache_headers)
+    application.extensions[_APP_HOOKS_MARKER] = True
+
+
+# Preserve the historical import-time binding for the compatibility singleton.
+register_app_hooks(app)
 
 
 web = Blueprint('web', __name__)
@@ -308,7 +326,7 @@ def set_bookmark(book_id, book_format):
                              book_id=book_id,
                              format=book_format,
                              bookmark_key=bookmark_key)
-    ub.session.merge(l_bookmark)
+    l_bookmark = ub.session.merge(l_bookmark)
 
     # #1318: settle the user's own write here, before the optional one below.
     # This flush IS the bookmark; performed inside the progress helper it landed
@@ -337,6 +355,8 @@ def set_bookmark(book_id, book_format):
         except Exception as e:
             # Position sharing must never cost the user their bookmark.
             log.warning("Could not share web reader progress for book %s: %s", book_id, e)
+
+    l_bookmark.updated_at = datetime.now(timezone.utc)
 
     # The classic reader posts on every page turn, so a client told 201 after a
     # rolled-back write simply loses the position with no reason to retry.
@@ -1247,8 +1267,18 @@ def render_magic_shelf(shelf_id, sort_param, page):
         log.warning(f"User {current_user.id} attempted to access private magic shelf {shelf_id} owned by {shelf.user_id}")
         abort(403)
     
-    # Get sort order using the same function as other book lists
-    order = get_sort_function(sort_param, "magicshelf")
+    custom_sort_columns = load_configured_columns(config)
+    requested_sort = (
+        current_user.get_view_property("magicshelf", "stored")
+        if sort_param == "stored"
+        else sort_param
+    )
+    resolved_sort = resolve_magic_shelf_sort(
+        requested_sort, config, custom_sort_columns
+    )
+    if sort_param != "stored" and resolved_sort.persistable:
+        current_user.set_view_property("magicshelf", "stored", resolved_sort.key)
+    order = (list(resolved_sort.order_by), resolved_sort.key)
     
     # Get pagination settings\
     per_page = config.config_books_per_page or 20
@@ -1266,7 +1296,8 @@ def render_magic_shelf(shelf_id, sort_param, page):
             page=page, 
             page_size=per_page,
             sort_order=sort_order,
-            sort_param=sort_param,
+            sort_param=resolved_sort.key,
+            sort_join=resolved_sort.join,
             bypass_cache=bypass_cache
         )
         log.debug(f"Magic shelf {shelf_id} returned {len(books)} books out of {total_count} total")
@@ -1319,7 +1350,8 @@ def render_magic_shelf(shelf_id, sort_param, page):
                                  shelf=shelf,
                                  is_hidden_shelf=is_hidden,
                                  id=shelf_id, 
-                                 order=order[1])
+                                 order=order[1],
+                                 custom_sort_columns=custom_sort_columns)
 
 
 # ################################### Health Check ##################################################################
@@ -1586,13 +1618,13 @@ def index(page):
         if arch_warning:
             flash(arch_warning, category="cwa_arch_warning")
 
-    # The SPA's "Back to classic view" nav lands here with a one-shot feedback
-    # marker. Persist the explicit Classic opt-out and clear the legacy SPA
-    # cookie (downgrade compatibility). Only the web index does this; books_list,
-    # authors, OPDS, Kobo and the API never touch either cookie.
+    # The SPA shell's no-JS/nomodule fallback lands here with a one-shot feedback
+    # marker. Enable Classic only for this browser session and clear the legacy
+    # SPA cookie for downgrade compatibility. Only the web index does this;
+    # books_list, authors, OPDS, Kobo and the API never mutate UI selection.
     if request.args.get('cwng_feedback'):
         response = make_response(render_books_list("root", sort_param, 1, page))
-        spa.stamp_prefer_classic_cookie(response)
+        spa.prefer_classic_for_session()
         spa.clear_prefer_spa_cookie(response)
         return response
 
@@ -2947,7 +2979,7 @@ def login():
             and feature_support['oauth']):
         oauth_endpoint, next_url = oauth_auto_redirect.auto_redirect_decision(
             request.args,
-            oauth_bb.oauthblueprints,
+            oauth_bb.get_oauth_blueprints(),
             flask_session,
         )
         if oauth_endpoint:
@@ -2970,16 +3002,13 @@ def login():
     # accepts only our prefix-scoped marker and never redirects to ``next``.
     if spa.classic_fallback_requested_from_next(request.args.get("next")):
         response = make_response(render_login())
-        spa.stamp_prefer_classic_cookie(response)
+        spa.prefer_classic_for_session()
         spa.clear_prefer_spa_cookie(response)
         return response
 
-    # #908: the UI preference is per-browser, not per-user, so it remains readable
-    # after logout. Route an anonymous browser into the SPA's logged-out tree by
-    # default only when that tree can authenticate the configured login mode; an
-    # explicit Classic opt-out still renders the Classic login.
-    if (spa.spa_login_default_supported()
-            and spa.preferred_spa_html_request()):
+    # Every configured login mode has an SPA authentication path. Only the
+    # transient Classic escape hatch keeps this browser session on Classic login.
+    if spa.preferred_spa_html_request():
         # The destination is fixed and app-owned. spa_shell_url() preserves a
         # valid reverse-proxy subpath while rejecting hostile forwarded prefixes;
         # ``next`` is carried only as encoded data for the SPA's strict

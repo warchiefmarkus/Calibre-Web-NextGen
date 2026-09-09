@@ -203,6 +203,22 @@ def _device_kind_label(kind):
     }.get(kind, "E-reader")
 
 
+def _device_timestamp_json(value):
+    """Serialize database datetimes as unambiguous UTC API instants.
+
+    SQLite returns naive values for these columns. They represent UTC, so
+    attaching UTC here prevents JavaScript from interpreting them in the
+    browser's local timezone. Aware values are normalized to the same contract.
+    """
+    if value is None or not isinstance(value, datetime):
+        return value
+    if value.tzinfo is None or value.utcoffset() is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat()
+
+
 def _empty_authority_rollup():
     return {**{status: 0 for status in AUTHORITY_STATUSES}, "books_partially_seeded": 0}
 
@@ -220,8 +236,8 @@ def _device_json(device, annotation_count=0, inventory_report=None, storage_snap
         "kind_label": _device_kind_label(device.kind),
         "model": device.model,
         "firmware": device.firmware_version,
-        "first_seen": device.first_seen_at.isoformat() if device.first_seen_at else None,
-        "last_seen": device.last_seen_at.isoformat() if device.last_seen_at else None,
+        "first_seen": _device_timestamp_json(device.first_seen_at),
+        "last_seen": _device_timestamp_json(device.last_seen_at),
         "annotation_count": int(annotation_count),
         "highlights": int(annotation_counts.get("highlight", 0)),
         "notes": int(annotation_counts.get("note", 0)),
@@ -230,23 +246,18 @@ def _device_json(device, annotation_count=0, inventory_report=None, storage_snap
             inventory_count if inventory_count is not None
             else inventory_report.item_count if inventory_report else 0
         ),
-        "inventory_observed": (
-            inventory_report.observed_at.isoformat()
-            if inventory_report and inventory_report.observed_at else None
+        "inventory_observed": _device_timestamp_json(
+            inventory_report.observed_at if inventory_report else None
         ),
         "storage_free": storage_snapshot.free_bytes if storage_snapshot else None,
         "storage_total": storage_snapshot.total_bytes if storage_snapshot else None,
-        "storage_observed": (
-            storage_snapshot.observed_at.isoformat()
-            if storage_snapshot and storage_snapshot.observed_at else None
+        "storage_observed": _device_timestamp_json(
+            storage_snapshot.observed_at if storage_snapshot else None
         ),
         "seeded_books": int(seeded_books),
         "unseeded_books": int(unseeded_books),
         "books_with_position": int(books_with_position),
-        "last_position_at": (
-            last_position_at.isoformat()
-            if hasattr(last_position_at, "isoformat") else last_position_at
-        ),
+        "last_position_at": _device_timestamp_json(last_position_at),
         "authority": authority_rollup or _empty_authority_rollup(),
         "can_receive_books": device.kind in ("kobo", "koreader"),
         "active": bool(device.active),
@@ -258,13 +269,20 @@ def _device_owner(device, session):
 
 
 def _visible_books_for_owner(owner, book_ids):
-    """Resolve a live, owner-filtered metadata view for a device-scoped read."""
+    """Resolve metadata for the owner's global annotation archive.
+
+    My Library membership is a catalogue curation boundary, not ownership of
+    reading data.  Keep every other live content restriction in force while
+    allowing annotations for a removed book to remain readable.
+    """
     if owner is None:
         log.error("annotations: device owner unavailable; filtered book view denied")
         raise FilteredBookVisibilityUnavailable("device owner unavailable")
     books = {}
     for book_id in sorted({int(value) for value in book_ids if value is not None}):
-        book = calibre_db.get_filtered_book(book_id, user=owner)
+        book = calibre_db.get_filtered_book(
+            book_id, allow_show_global=True, user=owner,
+        )
         if book is not None:
             books[book_id] = book
     return books
@@ -357,6 +375,7 @@ def _visible_book_scopes_for_owners(owners, session, candidates_by_owner):
     visibility_state = _owner_visibility_state(session, candidates_by_owner)
     resolved = calibre_db.get_filtered_book_ids_for_users(
         owners, visibility_state, candidates_by_owner,
+        allow_show_global=True,
     )
     return {
         int(owner.id): frozenset(resolved.get(int(owner.id), ()))
@@ -1558,13 +1577,30 @@ def _matching_container_child_index(value):
     the child-index fields, which stores as ``NULL``.  Both the position
     converter and the web-reader locator consume either spelling as "use the
     selector path", so the recovery comparator must not invent a content
-    conflict from that structural transport difference.
+    conflict from that structural transport difference.  See the measured wire
+    behavior documented in ``cps/services/kobo_position.py:153``.
     """
     from .services.kobo_position import KOBO_SELECTOR_SENTINEL
 
     if value is None or value == KOBO_SELECTOR_SENTINEL:
         return None
     return value
+
+
+def _imported_container_child_index(existing, imported):
+    """Keep the stored spelling when an imported child index is equivalent.
+
+    An authorised device edit may replace real content, but it should not turn
+    a wire-written ``NULL`` into the equivalent device sentinel ``-99`` as a
+    side effect.  A genuinely different child index still comes from the newer
+    device row.
+    """
+    if (
+        _matching_container_child_index(existing)
+        == _matching_container_child_index(imported)
+    ):
+        return existing
+    return imported
 
 
 def _matching_annotation_values(values):
@@ -1622,21 +1658,23 @@ def _bookmark_matches_annotation(bm, content_id, row) -> bool:
 def _apply_imported_bookmark(row, bm, content_id, *, device_modified_at,
                              origin_device_id):
     """Apply the content half of an already-authorised newer device edit."""
-    (
-        row.highlighted_text,
-        row.note_text,
-        row.highlight_color,
-        row.content_id,
-        row.start_container_path,
-        row.start_container_child_index,
-        row.start_offset,
-        row.end_container_path,
-        row.end_container_child_index,
-        row.end_offset,
-        row.context_string,
-        row.chapter_progress,
-        row.annotation_type,
-    ) = _bookmark_values(bm, content_id)
+    row.highlighted_text = bm.text
+    row.note_text = bm.annotation
+    row.highlight_color = bm.color
+    row.content_id = content_id
+    row.start_container_path = bm.start_container_path
+    row.start_container_child_index = _imported_container_child_index(
+        row.start_container_child_index, bm.start_container_child_index,
+    )
+    row.start_offset = bm.start_offset
+    row.end_container_path = bm.end_container_path
+    row.end_container_child_index = _imported_container_child_index(
+        row.end_container_child_index, bm.end_container_child_index,
+    )
+    row.end_offset = bm.end_offset
+    row.context_string = bm.context_string
+    row.chapter_progress = bm.chapter_progress
+    row.annotation_type = to_storage_type(bm.annotation_type)
     row.client_modified_at = device_modified_at
     row.server_modified_at = datetime.now(timezone.utc)
     row.last_synced = datetime.now(timezone.utc)
@@ -1847,34 +1885,10 @@ _EXPORT_FIELDS = (
 )
 
 
-def _cwng_user_name() -> str:
-    return str(getattr(current_user, "name", "") or "").strip()
-
-
-def _reader_annotation_format(payload=None) -> str:
-    """Resolve the exact book format for Calibre-native annotation storage.
-
-    Reader routes historically defaulted every web highlight to EPUB. Foliate
-    locators are format-specific, so FB2/MOBI/AZW/CBZ annotations must remain
-    in their matching Calibre ``annotations.format`` namespace.
-    """
-    value = None
-    if isinstance(payload, dict):
-        value = payload.get("format")
-    value = value or request.args.get("format") or "EPUB"
-    normalized = str(value).strip().upper()
-    supported = {"EPUB", "KEPUB", "FB2", "FBZ", "MOBI", "AZW", "AZW3", "CBZ", "PDF"}
-    if normalized not in supported:
-        raise ValueError(f"unsupported reader annotation format {normalized!r}")
-    return normalized
-
-
-def _load_user_annotations(user_id: int, book_id: int, fmt: str | None = None) -> list:
-    """Load live annotations, scoped to the reader's locator namespace."""
-    if deployment_profile.use_calibre_native_reader_data():
-        return calibre_annotations.list_annotations(_cwng_user_name(), book_id, fmt or "EPUB")
-    query = (
-        ub.session.query(ub.Annotation)
+def _visible_user_annotations_query(session, user_id: int, book_id: int):
+    """Canonical visible-set query for every per-user/per-book surface."""
+    return (
+        session.query(ub.Annotation)
         .filter(
             ub.Annotation.user_id == user_id,
             ub.Annotation.book_id == book_id,
@@ -1884,13 +1898,44 @@ def _load_user_annotations(user_id: int, book_id: int, fmt: str | None = None) -
             | (ub.Annotation.hidden == False)  # noqa: E712 — SQLA needs ==
         )
     )
+
+
+def _cwng_user_name() -> str:
+    return str(getattr(current_user, "name", "") or "").strip()
+
+
+def _reader_annotation_format(payload=None) -> str:
+    """Resolve the exact book format for Calibre-native annotation storage."""
+    value = payload.get("format") if isinstance(payload, dict) else None
+    value = value or request.args.get("format") or "EPUB"
+    normalized = str(value).strip().upper()
+    supported = {"EPUB", "KEPUB", "FB2", "FBZ", "MOBI", "AZW", "AZW3", "CBZ", "PDF"}
+    if normalized not in supported:
+        raise ValueError(f"unsupported reader annotation format {normalized!r}")
+    return normalized
+
+
+def count_user_annotations(user_id: int, book_id: int, session=None) -> int:
+    """Count exactly the live annotation rows shown on the linked page."""
+    app_session = session if session is not None else ub.session
+    count = (
+        _visible_user_annotations_query(app_session, user_id, book_id)
+        .with_entities(func.count(ub.Annotation.id))
+        .scalar()
+    )
+    return int(count or 0)
+
+
+def _load_user_annotations(user_id: int, book_id: int, fmt: str | None = None) -> list:
+    """Load live annotations, optionally scoped to the reader locator namespace."""
+    if deployment_profile.use_calibre_native_reader_data():
+        return calibre_annotations.list_annotations(_cwng_user_name(), book_id, fmt or "EPUB")
+    query = _visible_user_annotations_query(ub.session, user_id, book_id)
     if fmt:
         normalized = fmt.strip().upper()
         if normalized == "PDF":
             query = query.filter(ub.Annotation.position_type == "pdf_quad")
         else:
-            # Reflowable readers consume only CFI-compatible rows. Excluding
-            # PDF/comic locators prevents formats of the same book from mixing.
             query = query.filter(
                 (ub.Annotation.position_type.is_(None))
                 | (ub.Annotation.position_type == "cfi")
@@ -1993,9 +2038,13 @@ def _safe_filename_part(s: str, default: str = "book") -> str:
 
 
 def _resolve_book_or_404(book_id: int):
-    """Load the Book row + enforce visibility. Returns the Book."""
+    """Load an annotation archive book while enforcing content policy.
+
+    A personal-library membership removal must not make retained annotations
+    unreadable. Bypass only membership; all other content restrictions remain.
+    """
     book = calibre_db.get_filtered_book(
-        book_id, allow_show_archived=True, allow_show_hidden=True
+        book_id, allow_show_archived=True, allow_show_global=True,
     )
     if not book:
         abort(404)

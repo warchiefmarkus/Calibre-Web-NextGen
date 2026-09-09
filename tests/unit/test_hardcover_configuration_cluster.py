@@ -11,9 +11,15 @@ only for the DOM invariant that browsers enforce (unique IDs / form nesting).
 
 from __future__ import annotations
 
+import inspect
+import re
 from pathlib import Path
+from types import SimpleNamespace
 
+import flask
+import jinja2
 import pytest
+from lxml import html
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -599,3 +605,628 @@ def test_scheduler_logs_presence_and_source_without_token_value(monkeypatch, cap
     assert "Hardcover token is configured via HARDCOVER_TOKEN" in caplog.text
     assert token not in caplog.text
     assert len(jobs) == 1
+
+
+def _enabled_hardcover_config():
+    return SimpleNamespace(
+        config_hardcover_sync=True,
+        hardcover_sync_source=lambda: "database",
+        resolved_hardcover_token=lambda: "present-not-logged",
+        hardcover_token_source=lambda: "database",
+    )
+
+
+def test_never_refresh_removes_auto_fetch_without_disabling_sync_or_other_jobs(
+    monkeypatch, caplog
+):
+    import cps.schedule as schedule
+
+    unrelated = SimpleNamespace(id="duplicate-scan", name="duplicate scan")
+    old_hardcover = SimpleNamespace(
+        id="hardcover-old", name="hardcover auto-fetch"
+    )
+    jobs = [unrelated, old_hardcover]
+
+    class FakeScheduler:
+        def get_jobs(self):
+            return list(jobs)
+
+        def remove_job(self, job_id):
+            jobs[:] = [job for job in jobs if job.id != job_id]
+
+        def schedule_task(self, _task, **kwargs):
+            jobs.append(
+                SimpleNamespace(id="hardcover-new", name=kwargs["name"])
+            )
+
+    cfg = _enabled_hardcover_config()
+    monkeypatch.setattr(schedule, "config", cfg)
+    monkeypatch.setattr(schedule, "BackgroundScheduler", FakeScheduler)
+    monkeypatch.setattr(
+        schedule,
+        "reconcile_hardcover_configuration",
+        lambda: (
+            True,
+            {"hardcover_auto_fetch_schedule": "never"},
+        ),
+    )
+    caplog.set_level("INFO")
+
+    schedule.refresh_hardcover_auto_fetch()
+
+    assert cfg.config_hardcover_sync is True
+    assert [(job.id, job.name) for job in jobs] == [
+        ("duplicate-scan", "duplicate scan")
+    ]
+    assert "Hardcover auto-fetch is off by configuration" in caplog.text
+
+
+def test_unknown_auto_fetch_schedule_warns_and_falls_back_to_weekly(
+    monkeypatch, caplog
+):
+    import cps.schedule as schedule
+
+    cfg = _enabled_hardcover_config()
+    monkeypatch.setattr(schedule, "config", cfg)
+    jobs = []
+    scheduler = SimpleNamespace(
+        schedule_task=lambda *args, **kwargs: jobs.append((args, kwargs))
+    )
+
+    schedule._schedule_hardcover_auto_fetch(
+        scheduler,
+        None,
+        configuration=(
+            True,
+            {
+                "hardcover_auto_fetch_schedule": "fortnightly",
+                "hardcover_auto_fetch_schedule_day": "sunday",
+                "hardcover_auto_fetch_schedule_hour": 2,
+            },
+        ),
+    )
+
+    assert len(jobs) == 1
+    assert "fortnightly" in caplog.text
+    assert "weekly" in caplog.text
+    trigger = jobs[0][1]["trigger"]
+    assert str(trigger).startswith("cron[")
+    assert "day_of_week='sun'" in str(trigger)
+    assert "hour='2'" in str(trigger)
+
+
+def test_missing_auto_fetch_schedule_keeps_existing_weekly_default(monkeypatch):
+    import cps.schedule as schedule
+
+    assert schedule.DEFAULT_HARDCOVER_AUTO_FETCH_SCHEDULE == "weekly"
+    assert "weekly" in schedule.HARDCOVER_AUTO_FETCH_SCHEDULES
+
+    monkeypatch.setattr(schedule, "config", _enabled_hardcover_config())
+    jobs = []
+    scheduler = SimpleNamespace(
+        schedule_task=lambda *args, **kwargs: jobs.append((args, kwargs))
+    )
+
+    schedule._schedule_hardcover_auto_fetch(
+        scheduler,
+        None,
+        configuration=(True, {}),
+    )
+
+    assert len(jobs) == 1
+    trigger = jobs[0][1]["trigger"]
+    assert "day_of_week='sun'" in str(trigger)
+    assert "hour='2'" in str(trigger)
+
+
+class _ScheduleSettingsDB:
+    stored = {
+        "auto_convert_target_format": "epub",
+        "hardcover_auto_fetch_schedule": "daily",
+    }
+    updates = []
+
+    def __init__(self):
+        self.cwa_default_settings = dict(self.stored)
+        self.cwa_settings = dict(self.stored)
+
+    def update_cwa_settings(self, settings):
+        self.__class__.updates.append(dict(settings))
+        self.__class__.stored.update(settings)
+
+    def get_cwa_settings(self):
+        return dict(self.__class__.stored)
+
+
+@pytest.fixture
+def schedule_settings_client(monkeypatch):
+    from cps import cwa_functions, schedule
+
+    _ScheduleSettingsDB.stored = {
+        "auto_convert_target_format": "epub",
+        "hardcover_auto_fetch_schedule": "daily",
+    }
+    _ScheduleSettingsDB.updates = []
+    monkeypatch.setattr(cwa_functions, "CWA_DB", _ScheduleSettingsDB)
+    monkeypatch.setattr(cwa_functions, "INTEGER_SETTINGS", ())
+    monkeypatch.setattr(cwa_functions, "FLOAT_SETTINGS", ())
+    monkeypatch.setattr(cwa_functions, "JSON_SETTINGS", ())
+    monkeypatch.setattr(cwa_functions, "_", lambda text, **_kwargs: text)
+    monkeypatch.setattr(cwa_functions.config, "config_kobo_sync_magic_shelves", False, raising=False)
+    monkeypatch.setattr(cwa_functions.config, "config_hardcover_sync", True, raising=False)
+    monkeypatch.setattr(cwa_functions.config, "save", lambda: None)
+    monkeypatch.setattr(cwa_functions.config, "resolved_hardcover_token", lambda: None)
+    monkeypatch.setattr(schedule, "refresh_hardcover_auto_fetch", lambda: None)
+    monkeypatch.setattr(cwa_functions, "get_next_duplicate_scan_run", lambda _settings: None)
+    monkeypatch.setattr(
+        cwa_functions,
+        "render_title_template",
+        lambda _template, **context: {"settings": context["cwa_settings"]},
+    )
+
+    app = flask.Flask(__name__)
+    app.config.update(TESTING=True)
+    app.register_blueprint(cwa_functions.cwa_settings)
+    app.view_functions["cwa_settings.set_cwa_settings"] = inspect.unwrap(
+        cwa_functions.set_cwa_settings
+    )
+    return app.test_client(), _ScheduleSettingsDB
+
+
+def test_settings_writer_keeps_previous_schedule_for_invalid_post(
+    schedule_settings_client, caplog
+):
+    client, settings_db = schedule_settings_client
+
+    response = client.post(
+        "/cwa-settings",
+        data={
+            "settings_action": "save",
+            "auto_convert_target_format": "epub",
+            "hardcover_auto_fetch_schedule": "typo-value",
+        },
+    )
+
+    assert response.status_code == 200
+    assert settings_db.updates[-1]["hardcover_auto_fetch_schedule"] == "daily"
+    assert settings_db.stored["hardcover_auto_fetch_schedule"] == "daily"
+    assert "Ignoring unrecognized Hardcover auto-fetch schedule 'typo-value'" in caplog.text
+
+
+def test_settings_writer_silently_preserves_schedule_when_field_is_absent(
+    schedule_settings_client, caplog
+):
+    client, settings_db = schedule_settings_client
+
+    response = client.post(
+        "/cwa-settings",
+        data={
+            "settings_action": "save",
+            "auto_convert_target_format": "epub",
+        },
+    )
+
+    assert response.status_code == 200
+    assert settings_db.updates[-1]["hardcover_auto_fetch_schedule"] == "daily"
+    assert settings_db.stored["hardcover_auto_fetch_schedule"] == "daily"
+    assert "Ignoring unrecognized Hardcover auto-fetch schedule" not in caplog.text
+
+
+def _rendered_auto_fetch_schedule_value(cwa_settings):
+    template = (REPO_ROOT / "cps/templates/cwa_settings.html").read_text(
+        encoding="utf-8"
+    )
+    select_start = template.index(
+        '<select name="hardcover_auto_fetch_schedule"'
+    )
+    select_end = template.index("</select>", select_start) + len("</select>")
+    select_template = jinja2.Environment(autoescape=True).from_string(
+        template[select_start:select_end]
+    )
+    rendered = select_template.render(
+        _=lambda text: text,
+        cwa_settings=cwa_settings,
+        hardcover_token_available=True,
+    )
+    select = html.fromstring(rendered)
+    options = select.xpath(".//option")
+    explicitly_selected = select.xpath(".//option[@selected]")
+    effective_option = explicitly_selected[0] if explicitly_selected else options[0]
+    return (
+        [option.get("value") for option in explicitly_selected],
+        effective_option.get("value"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("stored_value", "remove_stored_key"),
+    [
+        pytest.param("fortnightly", False, id="unrecognized"),
+        pytest.param(None, True, id="missing"),
+    ],
+)
+def test_rendered_auto_fetch_schedule_matches_scheduler_fallback(
+    schedule_settings_client, stored_value, remove_stored_key
+):
+    from cps import schedule
+
+    client, settings_db = schedule_settings_client
+    if remove_stored_key:
+        settings_db.stored.pop("hardcover_auto_fetch_schedule")
+    else:
+        settings_db.stored["hardcover_auto_fetch_schedule"] = stored_value
+
+    response = client.get("/cwa-settings")
+
+    assert response.status_code == 200
+    rendered_settings = response.get_json()["settings"]
+    explicitly_selected, effective_value = _rendered_auto_fetch_schedule_value(
+        rendered_settings
+    )
+    assert effective_value == schedule.DEFAULT_HARDCOVER_AUTO_FETCH_SCHEDULE
+    assert effective_value == schedule.resolve_hardcover_auto_fetch_schedule(
+        stored_value
+    )
+    assert explicitly_selected == [effective_value]
+
+
+def test_auto_fetch_ui_has_first_off_option_and_truthful_status_combinations():
+    from cps import schedule
+
+    template = (REPO_ROOT / "cps/templates/cwa_settings.html").read_text(
+        encoding="utf-8"
+    )
+    select = template.split(
+        '<select name="hardcover_auto_fetch_schedule"', 1
+    )[1].split("</select>", 1)[0]
+    option_values = re.findall(r'<option value="([^"]+)"', select)
+    assert option_values[0] == "never"
+    assert frozenset(option_values) == schedule.HARDCOVER_AUTO_FETCH_SCHEDULES
+    assert "{{_('Never (auto-fetch off)')}}" in select
+
+    for schedule_value in ("weekly", "never"):
+        explicitly_selected, effective_value = _rendered_auto_fetch_schedule_value(
+            {"hardcover_auto_fetch_schedule": schedule_value}
+        )
+        assert effective_value == schedule_value
+        assert explicitly_selected == [schedule_value]
+
+    status_source = template.split(
+        '<p class="cwa-settings-tooltip" role="status">', 1
+    )[1].split("</p>", 1)[0]
+    environment = jinja2.Environment(autoescape=True)
+    status_template = environment.from_string(status_source)
+
+    expected = {
+        (True, "weekly"): (
+            "Hardcover sync is enabled. The schedule below controls automatic ID fetching."
+        ),
+        (True, "never"): (
+            "Hardcover auto-fetch is off. Reading-progress and annotation sync are unaffected."
+        ),
+        (False, "weekly"): (
+            "Hardcover sync is disabled, so auto-fetch, reading-progress sync, and annotation sync are off."
+        ),
+        (False, "never"): (
+            "Hardcover sync is disabled, and auto-fetch is off. Enable Hardcover sync separately in Basic Configuration when you want reading-progress or annotation sync."
+        ),
+    }
+    for (sync_enabled, schedule_value), message in expected.items():
+        rendered = status_template.render(
+            _=lambda text: text,
+            config=SimpleNamespace(
+                hardcover_sync_enabled=lambda enabled=sync_enabled: enabled
+            ),
+            cwa_settings={"hardcover_auto_fetch_schedule": schedule_value},
+        )
+        assert message in rendered
+
+
+def _ambiguous_hardcover_result(result_id):
+    return SimpleNamespace(
+        id=result_id,
+        title=f"Candidate {result_id}",
+        authors=["Author"],
+        url="",
+        cover="",
+        description="",
+        series="",
+        series_index=None,
+        publisher="",
+        publishedDate="",
+        identifiers={"hardcover-id": result_id},
+    )
+
+
+def _ambiguous_scored_results(result_id):
+    return [{
+        "result": _ambiguous_hardcover_result(result_id),
+        "score": 0.5,
+        "reason": f"ambiguous-{result_id}",
+    }]
+
+
+@pytest.fixture
+def hardcover_queue_runtime(monkeypatch):
+    from datetime import datetime, timezone
+
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from cps import db, ub
+    from cps.tasks import auto_hardcover_id as module
+    from cps.tasks.auto_hardcover_id import TaskAutoHardcoverID
+
+    app_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    ub.HardcoverMatchQueue.__table__.create(app_engine)
+    AppSession = sessionmaker(bind=app_engine)
+    monkeypatch.setattr(module.ub, "init_db_thread", AppSession)
+
+    calibre_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    event.listen(
+        calibre_engine,
+        "connect",
+        lambda connection, _record: connection.execute(
+            "ATTACH DATABASE ':memory:' AS calibre"
+        ),
+    )
+    db.Base.metadata.create_all(calibre_engine)
+    CalibreSession = sessionmaker(bind=calibre_engine)
+    calibre_session = CalibreSession()
+    book = db.Books(
+        "Ambiguous Book",
+        "Ambiguous Book",
+        "Author",
+        datetime.now(timezone.utc),
+        datetime.now(timezone.utc),
+        "1.0",
+        datetime.now(timezone.utc),
+        "ambiguous-book",
+        False,
+        [],
+        [],
+    )
+    calibre_session.add(book)
+    calibre_session.commit()
+    book_id = book.id
+    calibre_session.close()
+
+    monkeypatch.setattr(
+        module.db,
+        "CalibreDB",
+        lambda **_kwargs: SimpleNamespace(session=CalibreSession()),
+    )
+    monkeypatch.setattr(module.config, "hardcover_sync_enabled", lambda: True)
+    monkeypatch.setattr(module.config, "resolved_hardcover_token", lambda: "token")
+    monkeypatch.setattr(TaskAutoHardcoverID, "_save_stats", lambda self: None)
+
+    searches = []
+
+    class AmbiguousProvider:
+        def search(self, query):
+            searches.append(query)
+            return [_ambiguous_hardcover_result("candidate-1")]
+
+        @staticmethod
+        def calculate_confidence_score(**_kwargs):
+            return 0.5, "ambiguous"
+
+    monkeypatch.setattr(module, "Hardcover", AmbiguousProvider)
+
+    runtime = SimpleNamespace(
+        AppSession=AppSession,
+        book_id=book_id,
+        searches=searches,
+    )
+    try:
+        yield runtime
+    finally:
+        app_engine.dispose()
+        calibre_engine.dispose()
+
+
+def test_two_ambiguous_crawls_leave_one_pending_row(
+    hardcover_queue_runtime, caplog
+):
+    from cps import ub
+    from cps.tasks.auto_hardcover_id import TaskAutoHardcoverID
+
+    first = TaskAutoHardcoverID(batch_size=10, rate_limit_delay=0)
+    second = TaskAutoHardcoverID(batch_size=10, rate_limit_delay=0)
+
+    first.run(None)
+    second.run(None)
+
+    session = hardcover_queue_runtime.AppSession()
+    try:
+        pending = session.query(ub.HardcoverMatchQueue).filter_by(
+            book_id=hardcover_queue_runtime.book_id,
+            reviewed=0,
+        ).all()
+    finally:
+        session.close()
+
+    assert len(hardcover_queue_runtime.searches) == 1
+    assert len(pending) == 1
+    assert first.books_processed == 1
+    assert second.books_processed == 0
+    assert caplog.text.count(
+        "Found 1 eligible books without Hardcover IDs"
+    ) == 1
+    assert "No books eligible for Hardcover ID auto-fetch" in caplog.text
+
+
+def test_queue_for_review_refreshes_existing_pending_row(
+    monkeypatch, hardcover_queue_runtime
+):
+    from cps import ub
+    from cps.tasks import auto_hardcover_id as module
+    from cps.tasks.auto_hardcover_id import TaskAutoHardcoverID
+
+    timestamps = iter(("2026-08-01T00:00:00", "2026-09-01T00:00:00"))
+    monkeypatch.setattr(
+        module,
+        "datetime",
+        SimpleNamespace(
+            utcnow=lambda: SimpleNamespace(isoformat=lambda: next(timestamps))
+        ),
+    )
+    task = TaskAutoHardcoverID()
+
+    task._queue_for_review(
+        hardcover_queue_runtime.book_id,
+        "Original title",
+        "Original author",
+        "original query",
+        _ambiguous_scored_results("old-result"),
+    )
+    task._queue_for_review(
+        hardcover_queue_runtime.book_id,
+        "Updated title",
+        "Updated author",
+        "updated query",
+        _ambiguous_scored_results("new-result"),
+    )
+
+    session = hardcover_queue_runtime.AppSession()
+    try:
+        rows = session.query(ub.HardcoverMatchQueue).filter_by(
+            book_id=hardcover_queue_runtime.book_id,
+            reviewed=0,
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].book_title == "Updated title"
+        assert rows[0].search_query == "updated query"
+        assert rows[0].created_at == "2026-09-01T00:00:00"
+        assert "new-result" in rows[0].hardcover_results
+        assert "ambiguous-new-result" in rows[0].confidence_scores
+    finally:
+        session.close()
+
+
+def test_rejected_book_is_not_researched_or_requeued(hardcover_queue_runtime):
+    from cps import ub
+    from cps.tasks.auto_hardcover_id import TaskAutoHardcoverID
+
+    session = hardcover_queue_runtime.AppSession()
+    session.add(ub.HardcoverMatchQueue(
+        book_id=hardcover_queue_runtime.book_id,
+        book_title="Ambiguous Book",
+        book_authors="Author",
+        search_query="Ambiguous Book Author",
+        hardcover_results="[]",
+        confidence_scores="[]",
+        created_at="2026-08-01T00:00:00",
+        reviewed=1,
+        review_action="reject",
+        reviewed_at="2026-08-02T00:00:00",
+    ))
+    session.commit()
+    session.close()
+
+    task = TaskAutoHardcoverID(batch_size=10, rate_limit_delay=0)
+    task.run(None)
+
+    session = hardcover_queue_runtime.AppSession()
+    try:
+        rows = session.query(ub.HardcoverMatchQueue).filter_by(
+            book_id=hardcover_queue_runtime.book_id,
+        ).all()
+    finally:
+        session.close()
+
+    assert hardcover_queue_runtime.searches == []
+    assert len(rows) == 1
+    assert rows[0].reviewed == 1
+    assert rows[0].review_action == "reject"
+
+
+def test_pending_queue_cleanup_keeps_newest_and_all_reviewed_rows(tmp_path):
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    from cps import ub
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'app.db'}")
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE hardcover_match_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id INTEGER NOT NULL,
+                created_at VARCHAR NOT NULL,
+                reviewed INTEGER NOT NULL,
+                review_action VARCHAR
+            )
+        """))
+        connection.execute(text("""
+            INSERT INTO hardcover_match_queue
+                (book_id, created_at, reviewed, review_action)
+            VALUES
+                (1, '2026-07-01T00:00:00', 0, NULL),
+                (1, '2026-08-01T00:00:00', 0, NULL),
+                (1, '2026-06-01T00:00:00', 1, 'reject'),
+                (2, '2026-07-15T00:00:00', 0, NULL),
+                (2, '2026-07-15T00:00:00', 0, NULL),
+                (2, '2026-05-01T00:00:00', 1, 'skip')
+        """))
+        connection.execute(
+            text(
+                "INSERT INTO hardcover_match_queue "
+                "(book_id, created_at, reviewed, review_action) "
+                "VALUES (:book_id, :created_at, 0, NULL)"
+            ),
+            [
+                {
+                    "book_id": 100 + (index % 274),
+                    "created_at": f"2026-08-01T00:00:00.{index:06d}",
+                }
+                for index in range(30000)
+            ],
+        )
+    session = sessionmaker(bind=engine)()
+    try:
+        ub.migrate_hardcover_match_queue_dedup(engine, session)
+        ub.migrate_hardcover_match_queue_dedup(engine, session)
+    finally:
+        session.close()
+
+    with engine.connect() as connection:
+        pending = connection.execute(text(
+            "SELECT id, book_id, created_at FROM hardcover_match_queue "
+            "WHERE reviewed = 0 AND book_id IN (1, 2) ORDER BY book_id"
+        )).fetchall()
+        pending_count = connection.execute(text(
+            "SELECT COUNT(*) FROM hardcover_match_queue WHERE reviewed = 0"
+        )).scalar()
+        reviewed = connection.execute(text(
+            "SELECT id, book_id, review_action FROM hardcover_match_queue "
+            "WHERE reviewed = 1 ORDER BY id"
+        )).fetchall()
+        indexes = {
+            row[1]: row[2]
+            for row in connection.execute(text(
+                "PRAGMA index_list(hardcover_match_queue)"
+            )).fetchall()
+        }
+
+    assert [tuple(row) for row in pending] == [
+        (2, 1, "2026-08-01T00:00:00"),
+        (5, 2, "2026-07-15T00:00:00"),
+    ]
+    assert pending_count == 276
+    assert [tuple(row) for row in reviewed] == [
+        (3, 1, "reject"),
+        (6, 2, "skip"),
+    ]
+    assert indexes["uq_hardcover_match_queue_pending_book"] == 1
+    assert "ix_hardcover_match_queue_review_state_book" in indexes
+    engine.dispose()

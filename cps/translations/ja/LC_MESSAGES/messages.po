@@ -5,7 +5,7 @@
 # FIRST AUTHOR white<space_white@yahoo.com>, 2017.
 msgid ""
 msgstr ""
-"Project-Id-Version: Calibre-Web NextGen\n"
+"Project-Id-Version: Calibre-Web v4.1.43\n"
 "Report-Msgid-Bugs-To: https://github.com/crocodilestick/Calibre-Web-"
 "Automated\n"
 "POT-Creation-Date: 2026-07-17 21:21-0400\n"
@@ -1363,6 +1363,20 @@ msgid "There was an error converting this book: %(res)s"
 msgstr "この本の変換中にエラーが発生しました: %(res)s"
 
 #: cps/editbooks.py
+#, python-format
+msgid " (book IDs: %(failed_ids)s)"
+msgstr ""
+
+#: cps/editbooks.py
+#, python-format
+msgid ""
+"Bulk edit completed with errors: %(success_count)s succeeded and "
+"%(failure_count)s failed%(failed_ids_message)s. One or more failed books "
+"may have had files renamed before the database update failed; their files"
+" and database entries may now be inconsistent."
+msgstr ""
+
+#: cps/editbooks.py
 msgid "File type isn't allowed to be uploaded to this server"
 msgstr "このファイル形式はこのサーバーへのアップロードが許可されていません"
 
@@ -1397,6 +1411,10 @@ msgstr "IDは大文字小文字を区別しません。元のIDを上書きし�
 #, python-format
 msgid "'%(langname)s' is not a valid language"
 msgstr "'%(langname)s' は有効な言語ではありません"
+
+#: cps/editbooks.py cps/helper.py
+msgid "Cover-file is not a valid image file, or could not be stored"
+msgstr "表紙ファイルが有効な画像ファイルでないか、または保存できませんでした"
 
 #: cps/editbooks.py
 msgid "Metadata successfully updated"
@@ -1437,6 +1455,12 @@ msgstr "本の形式を削除しました"
 #: cps/editbooks.py
 msgid "Book Successfully Deleted"
 msgstr "本を削除しました"
+
+#: cps/editbooks.py
+msgid ""
+"Format metadata was deleted, but file cleanup was incomplete; an "
+"administrator can recover the quarantined file."
+msgstr ""
 
 #: cps/editbooks.py
 msgid "You are missing permissions to delete books"
@@ -1671,10 +1695,6 @@ msgid "Cover image exceeds maximum size of %(size)s MB"
 msgstr "表紙画像が最大サイズ%(size)s MBを超えています"
 
 #: cps/helper.py
-msgid "Cover-file is not a valid image file, or could not be stored"
-msgstr "表紙ファイルが有効な画像ファイルでないか、または保存できませんでした"
-
-#: cps/helper.py
 msgid "Cover Format Error"
 msgstr "表紙形式エラー"
 
@@ -1687,18 +1707,6 @@ msgstr "カバーアップロードのためにlocalhostまたはローカルネ
 #: cps/helper.py
 msgid "Failed to create path for cover"
 msgstr "表紙ファイルの作成に失敗しました"
-
-#: cps/helper.py
-msgid "Only jpg/jpeg/png/webp/bmp files are supported as coverfile"
-msgstr "表紙ファイルは jpg/jpeg/png/webp/bmp のみ対応しています"
-
-#: cps/helper.py
-msgid "Invalid cover file content"
-msgstr "表紙ファイルの内容が無効です"
-
-#: cps/helper.py
-msgid "Only jpg/jpeg files are supported as coverfile"
-msgstr "表紙ファイルは jpg/jpeg のみ対応しています"
 
 #: cps/helper.py cps/spa_strings.py
 msgid "Cover"
@@ -2060,7 +2068,7 @@ msgstr "本棚"
 msgid "Books organized in shelves"
 msgstr "本棚に整理された本"
 
-#: cps/opds.py
+#: cps/opds.py cps/templates/config_view_edit.html
 #, fuzzy
 msgid "Magic Shelves"
 msgstr "Magic Shelves ✨"
@@ -2110,7 +2118,8 @@ msgid ""
 "checks can run after imports and metadata changes. "
 msgstr ""
 
-#: cps/render_template.py cps/spa_strings.py
+#: cps/render_template.py cps/spa_strings.py cps/templates/user_edit.html
+#: cps/templates/user_table.html
 msgid "My Library"
 msgstr ""
 
@@ -2250,6 +2259,29 @@ msgid "Advanced Search"
 msgstr "詳細検索"
 
 #: cps/shelf.py
+msgid ""
+"This book is not in your library. Ask an administrator to add it to My "
+"Library before adding it to a shelf."
+msgstr ""
+
+#: cps/shelf.py
+msgid ""
+"This book is not in the shelf owner's library. The shelf owner cannot "
+"browse the global library; an administrator must add it to their My "
+"Library first."
+msgstr ""
+
+#: cps/shelf.py
+msgid "This book cannot be added to this shelf. Ask an administrator for help."
+msgstr ""
+
+#: cps/shelf.py
+msgid ""
+"This shelf has an invalid owner. Ask an administrator to repair it before"
+" adding books."
+msgstr ""
+
+#: cps/shelf.py
 msgid "Invalid shelf specified"
 msgstr "指定された本棚は無効です"
 
@@ -2259,12 +2291,6 @@ msgstr "申し訳ありませんが、あなたはこの本棚に本を追加す
 
 #: cps/shelf.py
 msgid "Book not found in the visible global library."
-msgstr ""
-
-#: cps/shelf.py
-msgid ""
-"This book is not in your library. Ask an administrator to add it to My "
-"Library before adding it to a shelf."
 msgstr ""
 
 #: cps/shelf.py
@@ -2488,6 +2514,30 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "A book must keep at least one format."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid ""
+"{succeeded} book(s) permanently deleted; {warnings} deleted with cleanup "
+"warnings; {failed} failed."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Cleanup warning for book {id}: {message}"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Book {id}: {message}"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid ""
+"Failed: {failures}. The failed books remain selected; choose the action "
+"again to retry."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -2797,11 +2847,11 @@ msgstr ""
 msgid "Library scope"
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/user_edit.html
+#: cps/spa_strings.py
 msgid "My selection"
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/index.html
+#: cps/spa_strings.py
 msgid "New: your own library"
 msgstr ""
 
@@ -2815,7 +2865,7 @@ msgid ""
 "highlights, notes and reading progress are kept."
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/index.html
+#: cps/spa_strings.py
 msgid ""
 "Nothing is missing — the whole library is still on the server. What you "
 "see here is your own selection. Add books from the global library; they "
@@ -2836,8 +2886,7 @@ msgid ""
 "any time."
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/user_edit.html
-#: cps/templates/user_table.html
+#: cps/spa_strings.py
 msgid "Own selection"
 msgstr ""
 
@@ -2874,6 +2923,14 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Set up My Library for all users"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"Set up My Library for every non-anonymous account? Each account starts "
+"with every book it can currently see—not only books it has shelved, read,"
+" or downloaded. Users can curate from there by removing books. Accounts "
+"already set up are never reseeded."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -2926,21 +2983,21 @@ msgid ""
 "restored."
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/user_edit.html
+#: cps/spa_strings.py
 msgid ""
 "Switching a user to their own selection first fills it with everything "
 "they can see now, so nothing changes for them until they remove books "
 "themselves. Switching back keeps the selection intact but unused."
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/index.html
+#: cps/spa_strings.py
 msgid ""
 "The library is shared and holds every book once — what you keep is your "
 "own selection. Nothing you had is gone. Every book, new arrivals "
 "included, is under Global Library in the menu."
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/index.html
+#: cps/spa_strings.py
 msgid ""
 "The library is shared and holds every book once — what you keep is your "
 "own selection. Nothing you had is gone. Your administrator manages what "
@@ -2962,7 +3019,7 @@ msgstr ""
 msgid "The whole archive. Add books to your library from here."
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/user_edit.html
+#: cps/spa_strings.py
 msgid "The whole library"
 msgstr ""
 
@@ -4261,6 +4318,10 @@ msgid "≥"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "(no text captured)"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "(replace cover)"
 msgstr ""
 
@@ -4295,10 +4356,6 @@ msgid ""
 " to run it."
 msgstr ""
 
-#: cps/spa_strings.py
-msgid "API key"
-msgstr "Clé API"
-
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "API keys"
 msgstr ""
@@ -4317,10 +4374,6 @@ msgid "Account: {name}"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Add bookmark"
-msgstr "Ajouter un signet"
-
-#: cps/spa_strings.py
 msgid "Active"
 msgstr ""
 
@@ -4337,6 +4390,10 @@ msgid "Add note"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Add or replace this line in the [OneStoreServices] section:"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Add to existing"
 msgstr ""
 
@@ -4345,11 +4402,11 @@ msgid "Add to favorites"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Additional headers must be a valid JSON object."
-msgstr "Les en-têtes supplémentaires doivent former un objet JSON valide."
+msgid "Admin group"
+msgstr ""
 
 #: cps/spa_strings.py
-msgid "Admin group"
+msgid "Admin navigation"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4359,10 +4416,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Advanced search"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "After"
-msgstr "Après"
 
 #: cps/spa_strings.py
 msgid "All books"
@@ -4379,10 +4432,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Allowed groups (comma-separated)"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Animated page turns"
-msgstr "Transitions de page animées"
 
 #: cps/spa_strings.py
 msgid "Annotation pages"
@@ -4423,10 +4472,6 @@ msgstr ""
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "Applying…"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Approve long OCR job"
-msgstr "Autoriser la tâche OCR longue"
 
 #: cps/spa_strings.py cps/templates/book_table.html
 #: cps/templates/duplicates.html cps/templates/kobo_reconcile.html
@@ -4483,29 +4528,12 @@ msgid "Authorize URL"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Auto"
-msgstr "Auto"
-
-#: cps/spa_strings.py
 msgid "Auto-create users"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Auto-create users on first login"
 msgstr ""
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "Automatic OCR page limit"
-msgstr "Limite automatique de pages OCR"
-
-#: cps/spa_strings.py
-msgid "Automatically translate the current page"
-msgstr "Traduire automatiquement la page actuelle"
-
-#: cps/spa_strings.py
-msgid "Back to account"
-msgstr "Retour au compte"
 
 #: cps/spa_strings.py
 msgid "Back to formatting"
@@ -4516,29 +4544,12 @@ msgid "Back to library"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Back to the classic view"
-msgstr ""
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "Background processing"
-msgstr "Traitement en arrière-plan"
-
-#: cps/spa_strings.py
 msgid "Base DN"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Base URL"
-msgstr "URL de base"
-
-#: cps/spa_strings.py
-msgid "Basic configuration"
+msgid "Basic settings"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Before"
-msgstr "Avant"
 
 #: cps/spa_strings.py
 msgid "Beta"
@@ -4547,10 +4558,6 @@ msgstr ""
 #: cps/spa_strings.py cps/templates/read.html
 msgid "Black"
 msgstr "ブラック"
-
-#: cps/spa_strings.py
-msgid "Book"
-msgstr "Livre"
 
 #: cps/spa_strings.py
 msgid "Bold"
@@ -4579,14 +4586,6 @@ msgid "Book {number}"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Bookmark"
-msgstr "Signet"
-
-#: cps/spa_strings.py
-msgid "Bookmarks"
-msgstr "Signets"
-
-#: cps/spa_strings.py
 msgid "Books"
 msgstr "本"
 
@@ -4609,10 +4608,6 @@ msgid ""
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Browser"
-msgstr "Navigateur"
-
-#: cps/spa_strings.py
 msgid "Built-in providers (leave blank to disable):"
 msgstr ""
 
@@ -4625,16 +4620,8 @@ msgid "CA certificate path"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "CWA settings (ingest/convert)"
+msgid "CWA settings"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Cache"
-msgstr "Cache"
-
-#: cps/spa_strings.py
-msgid "Cache full translated pages"
-msgstr "Mettre en cache les pages entièrement traduites"
 
 #: cps/spa_strings.py
 msgid "Can upload books"
@@ -4674,13 +4661,26 @@ msgstr ""
 msgid "Certificate path"
 msgstr ""
 
-#: cps/spa_strings.py cps/templates/book_edit.html
-#: cps/templates/cover_picker.html cps/templates/detail.html
-msgid "Change cover"
+#: cps/spa_strings.py
+msgid "Change library cover"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Change my cover"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Check again"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Checking…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"Choose Login and sign in with this NextGen account or one of its app "
+"passwords."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4701,6 +4701,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Choose your theme"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Classic"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4744,28 +4748,16 @@ msgid "Comfortable"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Comma-separated names"
-msgstr "Noms séparés par des virgules"
-
-#: cps/spa_strings.py
-msgid "Comma-separated tags"
-msgstr "Étiquettes séparées par des virgules"
-
-#: cps/spa_strings.py
 msgid "Compact"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Configure Moon+ Reader WebDAV"
-msgstr "Configurer WebDAV pour Moon+ Reader"
+msgid "Configuration"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Configured"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Configured — leave blank to keep"
-msgstr "Configuré — laissez vide pour conserver"
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -4777,16 +4769,16 @@ msgid "Confirm new password"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Connection successful."
-msgstr "Connexion réussie."
+msgid ""
+"Connect the Kobo to a computer and open .kobo/Kobo/Kobo eReader.conf in a"
+" text editor."
+msgstr ""
 
 #: cps/spa_strings.py
-msgid "Connection test failed."
-msgstr "Le test de connexion a échoué."
-
-#: cps/spa_strings.py
-msgid "Continuous scroll"
-msgstr "Défilement continu"
+msgid ""
+"Connect this account to an e-reader, then sync once to confirm it reached"
+" your library."
+msgstr ""
 
 #: cps/spa_strings.py cps/tasks/convert.py
 msgid "Convert"
@@ -4801,7 +4793,15 @@ msgid "Convert from"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Copied"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Copied to clipboard"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Copied to clipboard."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4809,7 +4809,23 @@ msgid "Copy link"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Copy server address"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Copy sync URL"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Could not assign."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not complete the action."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not copy. Select the address and copy it manually."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4821,10 +4837,6 @@ msgid "Could not create the shelf."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not delete annotation."
-msgstr "Impossible de supprimer l’annotation."
-
-#: cps/spa_strings.py
 msgid "Could not delete shelf."
 msgstr ""
 
@@ -4833,12 +4845,8 @@ msgid "Could not delete tag"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not delete the translation profile."
-msgstr "Impossible de supprimer le profil de traduction."
-
-#: cps/spa_strings.py
-msgid "Could not load Moon+ Reader settings."
-msgstr "Impossible de charger les paramètres de Moon+ Reader."
+msgid "Could not delete the Kobo sync URL."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not load candidates."
@@ -4857,16 +4865,16 @@ msgid "Could not load e-readers."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not load external ratings."
-msgstr "Impossible de charger les évaluations externes."
-
-#: cps/spa_strings.py
 msgid "Could not load highlights and notes."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not load models."
-msgstr "Impossible de charger les modèles."
+msgid "Could not load pairing details."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not load reading positions."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not load stats."
@@ -4874,23 +4882,6 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not load tasks."
-msgstr ""
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Could not load the PDF file ({status})"
-msgstr "Impossible de charger le fichier PDF ({status})"
-
-#: cps/spa_strings.py
-msgid "Could not load the book."
-msgstr "Impossible de charger le livre."
-
-#: cps/spa_strings.py
-msgid "Could not load this PDF file."
-msgstr "Impossible de charger ce fichier PDF."
-
-#: cps/spa_strings.py
-msgid "Could not load reading positions."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -4910,16 +4901,16 @@ msgid "Could not load users."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not open this book."
-msgstr "Impossible d’ouvrir ce livre."
+msgid "Could not open that highlight."
+msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not read OCR status."
-msgstr "Impossible de lire l’état de l’OCR."
+msgid "Could not open that search result."
+msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not read the RAG status."
-msgstr "Impossible de lire l’état de l’index RAG."
+msgid "Could not open the synced position."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not read this comic archive."
@@ -4941,24 +4932,17 @@ msgstr ""
 msgid "Could not reset password."
 msgstr ""
 
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "Could not save OCR settings."
-msgstr "Impossible d’enregistrer les paramètres OCR."
-
-#: cps/spa_strings.py
-msgid "Could not save annotation."
-msgstr "Impossible d’enregistrer l’annotation."
-
 #: cps/spa_strings.py cps/templates/shelf_reorder.html
 msgid "Could not save order."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not save reading position. It will be retried automatically."
+msgid "Could not save reader settings."
 msgstr ""
-"Impossible d’enregistrer la position de lecture. Une nouvelle tentative "
-"sera effectuée automatiquement."
+
+#: cps/spa_strings.py
+msgid "Could not save that note."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not save the default library filter."
@@ -4969,19 +4953,23 @@ msgid "Could not save the shelf."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not save the translation profile."
-msgstr "Impossible d’enregistrer le profil de traduction."
-
-#: cps/spa_strings.py
 msgid "Could not save title."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Could not start OCR."
-msgstr "Impossible de lancer l’OCR."
+msgid "Could not save your reading position."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not search this book."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Could not start the duplicate scan."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not update pairing details."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5064,19 +5052,19 @@ msgid "Currently reading"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Custom OpenAI-compatible"
-msgstr "Personnalisé compatible OpenAI"
-
-#: cps/spa_strings.py
 msgid "Custom border colour"
 msgstr ""
 
-#: cps/spa_strings.py
+#: cps/spa_strings.py cps/templates/config_view_edit.html
 msgid "Custom columns"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Database & library path"
+msgid "Data hoarder? This will help users organize their accounts!"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Database path"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/detail.html
@@ -5120,10 +5108,6 @@ msgid "Delete failed."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Delete note"
-msgstr "Supprimer la note"
-
-#: cps/spa_strings.py
 msgid "Delete from device"
 msgstr ""
 
@@ -5133,17 +5117,30 @@ msgid "Delete shelf \"{name}\"? This cannot be undone."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Delete sync URL"
+msgstr ""
+
+#: cps/spa_strings.py
 #, python-brace-format
 msgid "Delete tag {name}"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Delete this smart shelf? Your books are not affected."
+#, python-brace-format
+msgid ""
+"Delete the {fmt} file? The book record, metadata, shelves, and reading "
+"state stay available."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Delete this translation profile?"
-msgstr "Supprimer ce profil de traduction ?"
+msgid ""
+"Delete this Kobo sync URL? The current URL will stop working on every "
+"paired Kobo."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Delete this smart shelf? Your books are not affected."
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -5182,20 +5179,10 @@ msgstr ""
 msgid "Dense"
 msgstr ""
 
-#: cps/spa_strings.py
-msgid "Describe an idea, scene, fact, quote, technology, or topic…"
-msgstr ""
-"Décrivez une idée, une scène, un fait, une citation, une technologie ou "
-"un sujet…"
-
 #: cps/spa_strings.py cps/templates/book_edit.html
 #: cps/templates/cwa_settings.html cps/templates/search_form.html
 msgid "Description"
 msgstr "詳細"
-
-#: cps/spa_strings.py
-msgid "Detect automatically"
-msgstr "Détecter automatiquement"
 
 #: cps/spa_strings.py
 msgid "Description formatting"
@@ -5226,12 +5213,21 @@ msgid "Device restored."
 msgstr ""
 
 #: cps/spa_strings.py
+#, python-brace-format
+msgid "Device seen: {name}, last synced {when}. Pairing is working."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Device summary"
 msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Device: {name}"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Devices"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5254,36 +5250,26 @@ msgstr ""
 msgid "Discover — Random Picks"
 msgstr ""
 
-#: cps/spa_strings.py
-msgid "Discovered Moon+ sync folders"
-msgstr "Dossiers de synchronisation Moon+ détectés"
-
 #: cps/spa_strings.py cps/templates/cwng_feedback_popup.html
 #: cps/templates/duplicates.html cps/templates/layout.html
 msgid "Dismiss"
 msgstr "解除"
 
 #: cps/spa_strings.py
+msgid "Dismiss introduction"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Dismiss this group"
 msgstr ""
 
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "Document OCR"
-msgstr "OCR du document"
+#: cps/spa_strings.py cps/templates/readcbr.html
+msgid "Display"
+msgstr "表示"
 
 #: cps/spa_strings.py
 msgid "Documentation"
 msgstr ""
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid ""
-"Documents above this limit require explicit confirmation and are not "
-"started automatically."
-msgstr ""
-"Les documents dépassant cette limite nécessitent une confirmation "
-"explicite et ne démarrent pas automatiquement."
 
 #: cps/spa_strings.py
 msgid "Dog-ears"
@@ -5299,10 +5285,6 @@ msgid "Download"
 msgstr "ダウンロード"
 
 #: cps/spa_strings.py
-msgid "Download PDF"
-msgstr "Télécharger le PDF"
-
-#: cps/spa_strings.py
 msgid "Drop files here, or click to choose"
 msgstr ""
 
@@ -5312,10 +5294,6 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Duplicate books"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Duplicate detection settings"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5337,6 +5315,12 @@ msgid "E-readers"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid ""
+"Each account starts with every book it can currently see—not only books "
+"it has shelved, read, or downloaded."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Each type (isbn, amazon, google, doi…) may appear once."
 msgstr ""
 
@@ -5355,10 +5339,6 @@ msgstr ""
 #: cps/templates/user_table.html
 msgid "Edit"
 msgstr "編集"
-
-#: cps/spa_strings.py
-msgid "Edit highlight"
-msgstr "Modifier le surlignage"
 
 #: cps/spa_strings.py
 msgid "Edit HTML"
@@ -5403,36 +5383,20 @@ msgid "Email me a reset"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Email settings saved."
+msgid "Email server"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Embedding"
-msgstr "Vectorisation"
-
-#: cps/spa_strings.py
-msgid "Embedding model"
-msgstr "Modèle de vectorisation"
+msgid "Email settings saved."
+msgstr ""
 
 #: cps/spa_strings.py cps/templates/config_edit.html
 msgid "Enable Kobo sync"
 msgstr "Koboの同期を有効にする"
 
-#: cps/spa_strings.py
-msgid "Enable Moon+ Reader position sync"
-msgstr "Activer la synchronisation des positions Moon+ Reader"
-
 #: cps/spa_strings.py cps/templates/admin.html cps/templates/email_edit.html
 msgid "Encryption"
 msgstr "暗号化"
-
-#: cps/spa_strings.py
-msgid "Endpoint"
-msgstr "Point de terminaison"
-
-#: cps/spa_strings.py
-msgid "Enter WebDAV password"
-msgstr "Saisissez le mot de passe WebDAV"
 
 #: cps/spa_strings.py
 msgid "Enter at least 2 characters"
@@ -5461,16 +5425,16 @@ msgid "Expires in"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Explore the changes, you can always undo later."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Export"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Expose only selected shelves over OPDS"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Failed jobs"
-msgstr "Tâches échouées"
 
 #: cps/spa_strings.py
 msgid "Failed to load shelves."
@@ -5526,16 +5490,8 @@ msgid "Filter {items}…"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Filters"
-msgstr "Filtres"
-
-#: cps/spa_strings.py
-msgid "Find Moon sync files"
-msgstr "Rechercher les fichiers de synchronisation Moon"
-
-#: cps/spa_strings.py cps/templates/read.html
-msgid "Font"
-msgstr "フォント"
+msgid "Font family"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Font size"
@@ -5562,17 +5518,6 @@ msgid "Formats — include"
 msgstr ""
 
 #: cps/spa_strings.py
-#, python-brace-format
-msgid "Found {count} Moon+ sync folders. Select one below."
-msgstr ""
-"{count} dossiers de synchronisation Moon+ trouvés. Sélectionnez-en un ci-"
-"dessous."
-
-#: cps/spa_strings.py
-msgid "From"
-msgstr "De"
-
-#: cps/spa_strings.py
 msgid "Formatting is kept where the book page supports it."
 msgstr ""
 
@@ -5585,15 +5530,36 @@ msgid "Full screen"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Full user table & restrictions"
-msgstr ""
-
-#: cps/spa_strings.py
 msgid "Generate a new link"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid ""
+"Generate a private sync URL for this account. You can delete it at any "
+"time."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Generate sync URL"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Generating…"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Give your smart shelf a name."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid ""
+"Give {name} My Library? It starts as a copy of everything they can see "
+"now — nothing changes for them yet."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Go to this highlight"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5608,10 +5574,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Grey"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Groq"
-msgstr "Groq"
 
 #: cps/spa_strings.py
 msgid "Group by"
@@ -5642,10 +5604,6 @@ msgid "Header name"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Headers, JSON"
-msgstr "En-têtes, JSON"
-
-#: cps/spa_strings.py
 msgid "Heading"
 msgstr ""
 
@@ -5670,6 +5628,10 @@ msgid "Hide Discover section"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Hide device details"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Hide device library"
 msgstr ""
 
@@ -5686,11 +5648,20 @@ msgid "Highlight"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Highlight saved"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Highlights"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Highlights and notes"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Highlights, {count} saved annotations"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5703,6 +5674,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "How should multi-value fields be applied?"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "How switching between the global library and My Library works"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5721,11 +5696,6 @@ msgstr ""
 msgid "Identifiers"
 msgstr "識別子"
 
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "Idle"
-msgstr "Inactif"
-
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "Image from {source}"
@@ -5739,40 +5709,17 @@ msgstr "重要："
 msgid "Import and export"
 msgstr ""
 
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Import errors ({count})"
-msgstr "Erreurs d’importation ({count})"
-
-#: cps/spa_strings.py
-msgid "Import reading positions from Moon+ Reader through a WebDAV connection."
-msgstr ""
-"Importer les positions de lecture depuis Moon+ Reader via une connexion "
-"WebDAV."
-
 #: cps/spa_strings.py cps/templates/book_edit.html cps/templates/detail.html
 msgid "Imported as"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Imported from Moon+"
-msgstr "Importé depuis Moon+"
-
-#: cps/spa_strings.py
-msgid "Importing Moon+ positions…"
-msgstr "Importation des positions Moon+…"
+msgid "In KOReader, open NextGen Progress Sync and choose Set NextGen Server."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "In your book"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Include neighboring text for context"
-msgstr "Inclure le texte voisin comme contexte"
-
-#: cps/spa_strings.py
-msgid "Indexed books"
-msgstr "Livres indexés"
 
 #: cps/spa_strings.py
 msgid ""
@@ -5789,6 +5736,16 @@ msgid "Included"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Install or update the NextGen Sync plugin."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"Instead of forcing all of your books on friends, they can pick which ones"
+" they want!"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Issuer / base URL"
 msgstr ""
 
@@ -5797,19 +5754,15 @@ msgid "It may have moved, or it might still live in the classic interface."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "JSON"
-msgstr "JSON"
-
-#: cps/spa_strings.py
-msgid "Justify text"
-msgstr "Justifier le texte"
-
-#: cps/spa_strings.py
 msgid "Italic"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "KOReader"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/detail.html
+msgid "KOReader Progress"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5837,7 +5790,15 @@ msgid "Kobo Libra Color / Libra 2 (1264×1680)"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Kobo setup"
+msgid "Kobo sync URL deleted."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Kobo sync URL ready."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Kobo sync is not enabled on this server."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5862,11 +5823,6 @@ msgstr "言語"
 msgid "Languages — include"
 msgstr ""
 
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Last check: {date}"
-msgstr "Dernière vérification : {date}"
-
 #: cps/spa_strings.py cps/templates/detail.html
 msgid "Last modified"
 msgstr "最終更新"
@@ -5878,32 +5834,12 @@ msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
-msgid "Last sync: {date}"
-msgstr "Dernière synchronisation : {date}"
-
-#: cps/spa_strings.py
-msgid "Last synchronization failed"
-msgstr "La dernière synchronisation a échoué"
-
-#: cps/spa_strings.py
-msgid "Latency"
-msgstr "Latence"
-
-#: cps/spa_strings.py
-msgid "Leave blank to keep the saved key"
-msgstr "Laisser vide pour conserver la clé enregistrée"
-
-#: cps/spa_strings.py
-msgid "Leave blank to use the built-in literary translation prompt."
-msgstr "Laisser vide pour utiliser l’invite de traduction littéraire intégrée."
-
-#: cps/spa_strings.py
-msgid ""
-"Leave blank, search the WebDAV server, then select one discovered Moon+ "
-"folder."
+msgid "Last seen: {when}"
 msgstr ""
-"Laissez vide, recherchez sur le serveur WebDAV, puis sélectionnez un "
-"dossier Moon+ détecté."
+
+#: cps/spa_strings.py cps/templates/detail.html
+msgid "Last synced"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Library settings"
@@ -5911,19 +5847,6 @@ msgstr ""
 
 #: cps/spa_strings.py cps/templates/read.html
 msgid "Line height"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Load"
-msgstr "Charger"
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Last seen: {when}"
-msgstr ""
-
-#: cps/spa_strings.py cps/templates/detail.html
-msgid "Last synced"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -5953,12 +5876,8 @@ msgid "Loading new Discover picks."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Loading ratings…"
-msgstr "Chargement des évaluations…"
-
-#: cps/spa_strings.py
-msgid "Loading translation profiles…"
-msgstr "Chargement des profils de traduction…"
+msgid "Loading pairing details…"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Loading reading positions…"
@@ -5967,10 +5886,6 @@ msgstr ""
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "Loading…"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Location"
-msgstr "Emplacement"
 
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "Lock cover"
@@ -6033,7 +5948,7 @@ msgid "Manage shelves"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Manage your Kobo sync URL in the classic account page."
+msgid "Manual order"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/_book_organizer.html
@@ -6051,24 +5966,12 @@ msgid "Match"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Matched"
-msgstr "Correspondance"
-
-#: cps/spa_strings.py
-msgid "Matched books"
-msgstr "Livres associés"
-
-#: cps/spa_strings.py
 msgid "Max"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Max authors shown"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Max tokens"
-msgstr "Nombre maximal de jetons"
 
 #: cps/spa_strings.py
 msgid "Maximum rating"
@@ -6101,49 +6004,8 @@ msgid "Minimum rating"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Mistral"
-msgstr "Mistral"
-
-#: cps/spa_strings.py
 msgid "Model"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Model check completed."
-msgstr "Vérification des modèles terminée."
-
-#: cps/spa_strings.py
-msgid "Model check failed."
-msgstr "Échec de la vérification des modèles."
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Model {model} selected."
-msgstr "Modèle {model} sélectionné."
-
-#: cps/spa_strings.py
-msgid "Models"
-msgstr "Modèles"
-
-#: cps/spa_strings.py
-msgid "Moon+ Reader operation failed."
-msgstr "L’opération Moon+ Reader a échoué."
-
-#: cps/spa_strings.py
-msgid "Moon+ Reader settings saved."
-msgstr "Paramètres Moon+ Reader enregistrés."
-
-#: cps/spa_strings.py
-msgid "Moon+ Reader sync"
-msgstr "Synchronisation Moon+ Reader"
-
-#: cps/spa_strings.py
-msgid "Moon+ cache path"
-msgstr "Chemin du cache Moon+"
-
-#: cps/spa_strings.py
-msgid "Moon+ position sync queued."
-msgstr "Synchronisation des positions Moon+ mise en file d’attente."
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -6155,10 +6017,6 @@ msgid "More cover options (search providers, e-reader preview)"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "More server configuration"
-msgstr ""
-
-#: cps/spa_strings.py
 msgid "Move down"
 msgstr ""
 
@@ -6167,12 +6025,18 @@ msgid "Move up"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "My account"
+#, python-brace-format
+msgid "My Library is now on for {accounts} accounts."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "NVIDIA NIM"
-msgstr "NVIDIA NIM"
+#, python-brace-format
+msgid "My Library is on for {accounts} accounts; {errors} accounts failed."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "My account"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Name"
@@ -6188,6 +6052,10 @@ msgstr ""
 
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "New"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "New Feature!"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6220,6 +6088,10 @@ msgstr ""
 msgid "New user"
 msgstr ""
 
+#: cps/spa_strings.py cps/templates/index.html
+msgid "New: My Library"
+msgstr ""
+
 #: cps/spa_strings.py
 msgid "Newest"
 msgstr ""
@@ -6227,11 +6099,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Newest published"
 msgstr ""
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Newest: {date}"
-msgstr "Plus récent : {date}"
 
 #: cps/spa_strings.py cps/templates/cwng_feedback_popup.html
 #: cps/templates/feed.xml cps/templates/layout.html
@@ -6241,26 +6108,6 @@ msgstr "次"
 #: cps/spa_strings.py
 msgid "Next page"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "No Moon+ sync folders found."
-msgstr "Aucun dossier de synchronisation Moon+ trouvé."
-
-#: cps/spa_strings.py
-msgid "No Moon+ sync folders were found in the scanned WebDAV area."
-msgstr ""
-"Aucun dossier de synchronisation Moon+ n’a été trouvé dans la zone WebDAV"
-" analysée."
-
-#: cps/spa_strings.py
-msgid "No PDF annotations yet. Use the Annotate tools above the document."
-msgstr ""
-"Aucune annotation PDF pour le moment. Utilisez les outils d’annotation "
-"au-dessus du document."
-
-#: cps/spa_strings.py
-msgid "No bookmarks yet."
-msgstr "Aucun signet pour le moment."
 
 #: cps/spa_strings.py
 msgid "No books are ready yet — they appear here as they become ready."
@@ -6295,24 +6142,16 @@ msgid "No e-readers yet."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "No excerpt available."
-msgstr "Aucun extrait disponible."
-
-#: cps/spa_strings.py
 msgid "No excluded tags"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "No external ratings found."
-msgstr "Aucune évaluation externe trouvée."
+msgid "No highlights yet. Select text in the book to make one."
+msgstr ""
 
 #: cps/spa_strings.py
-msgid "No highlights or notes yet."
-msgstr "Aucun surlignage ni aucune note pour le moment."
-
-#: cps/spa_strings.py
-msgid "No matching passages were found."
-msgstr "Aucun passage correspondant n’a été trouvé."
+msgid "No matches found in this book."
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -6320,24 +6159,12 @@ msgid "No matching {items} for \"{query}\"."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "No models loaded. The check will load them first."
-msgstr "Aucun modèle chargé. La vérification les chargera d’abord."
-
-#: cps/spa_strings.py
-msgid "No models were returned by the provider."
-msgstr "Le fournisseur n’a renvoyé aucun modèle."
+msgid "No new device check-in yet."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "No pages found in this comic."
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "No profile selected"
-msgstr "Aucun profil sélectionné"
-
-#: cps/spa_strings.py
-msgid "No response"
-msgstr "Aucune réponse"
 
 #: cps/spa_strings.py
 msgid "No reading positions from this device yet."
@@ -6360,16 +6187,8 @@ msgid "No sources need a key."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "No supported reader format is available."
-msgstr "Aucun format de lecture pris en charge n’est disponible."
-
-#: cps/spa_strings.py
 msgid "No tasks running."
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "No visible text was found on this page."
-msgstr "Aucun texte visible n’a été trouvé sur cette page."
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -6381,28 +6200,12 @@ msgid "Not assigned"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Not checked"
-msgstr "Non vérifié"
-
-#: cps/spa_strings.py
-msgid "Not checked yet."
-msgstr "Pas encore vérifié."
-
-#: cps/spa_strings.py
 msgid "Not configured"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Not enabled"
-msgstr "Non activé"
-
-#: cps/spa_strings.py
 msgid "Not in current file"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Not indexed"
-msgstr "Non indexé"
 
 #: cps/spa_strings.py
 msgid "Not matched to this library"
@@ -6429,75 +6232,15 @@ msgid "Note"
 msgstr "メモ"
 
 #: cps/spa_strings.py
-msgid "Note (optional)"
-msgstr "Note (facultative)"
-
-#: cps/spa_strings.py
-msgid "Notes"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "OCR and RAG indexing completed."
-msgstr "OCR et indexation RAG terminés."
-
-#: cps/spa_strings.py
-msgid "OCR completed; RAG indexing is running."
-msgstr "OCR terminé ; l’indexation RAG est en cours."
-
-#: cps/spa_strings.py
-msgid "OCR failed."
-msgstr "Échec de l’OCR."
-
-#: cps/spa_strings.py
-msgid "OCR is processing the PDF."
-msgstr "L’OCR traite le PDF."
-
-#: cps/spa_strings.py
-msgid "OCR is queued."
-msgstr "L’OCR est en file d’attente."
-
-#: cps/spa_strings.py
-msgid ""
-"OCR job queued. You can leave this page; processing continues in the "
-"background."
-msgstr ""
-"Tâche OCR mise en file d’attente. Vous pouvez quitter cette page ; le "
-"traitement continue en arrière-plan."
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "OCR page limit saved."
-msgstr "Limite de pages OCR enregistrée."
-
-#: cps/spa_strings.py
-msgid "OCR processing…"
-msgstr "OCR en cours…"
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "OCR queued"
-msgstr "OCR en attente"
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "OCR running"
-msgstr "OCR en cours"
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "OCR settings"
-msgstr "Paramètres OCR"
-
-#: cps/spa_strings.py
-msgid "OCR was not started."
-msgstr "L’OCR n’a pas été lancé."
-
-#: cps/spa_strings.py
 msgid "Note removed"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Note saved"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Notes"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6508,6 +6251,13 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Nothing in this category yet."
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/index.html
+msgid ""
+"Nothing is missing — the global library is still on the server. What you "
+"see here is your selection in My Library. Add books from the global "
+"library; they appear here and on your e-reader."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6531,10 +6281,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Oldest published"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Ollama"
-msgstr "Ollama"
 
 #: cps/spa_strings.py
 msgid ""
@@ -6561,24 +6307,26 @@ msgid "Open Account"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Open administration"
-msgstr ""
-
-#: cps/spa_strings.py cps/templates/annotations_view.html
-msgid "Open book"
+msgid ""
+"Open NextGen using an address your e-reader can reach before copying "
+"these settings. Localhost only points back to the device itself."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Open full annotations page"
-msgstr "Ouvrir la page complète des annotations"
+msgid "Open administration"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Open classic reader"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Open navigation"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Open selected text in ChatGPT"
-msgstr "Ouvrir le texte sélectionné dans ChatGPT"
+msgid "Open reader"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Open the classic interface"
@@ -6589,24 +6337,8 @@ msgid "Open the link below on your signed-in device."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Open with browser PDF viewer"
-msgstr "Ouvrir avec le lecteur PDF du navigateur"
-
-#: cps/spa_strings.py
-msgid "OpenCode Go"
-msgstr "OpenCode Go"
-
-#: cps/spa_strings.py
-msgid "OpenCode Zen"
-msgstr "OpenCode Zen"
-
-#: cps/spa_strings.py
 msgid "OpenLDAP server"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "OpenRouter"
-msgstr "OpenRouter"
 
 #: cps/spa_strings.py
 msgid ""
@@ -6617,20 +6349,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Opens in classic view"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Original"
-msgstr "Original"
-
-#: cps/spa_strings.py
-msgid "Other models"
-msgstr "Autres modèles"
-
-#: cps/spa_strings.py
-msgid "PDF annotation changes could not be saved. Retry the edit."
-msgstr ""
-"Impossible d’enregistrer les modifications des annotations PDF. Réessayez"
-" la modification."
 
 #: cps/spa_strings.py cps/templates/user_edit.html
 msgid "Opt in to Kobo two-way annotation sync"
@@ -6643,40 +6361,22 @@ msgid ""
 msgstr ""
 
 #: cps/spa_strings.py
+msgid ""
+"Organize your library, your way. Checkout books from the Global Library "
+"to bring them into My Library."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "PDF reader"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Page"
-msgstr "Page"
-
-#: cps/spa_strings.py
-msgid ""
-"Page count changes with font, margins, and window size; progress remains "
-"stable."
-msgstr ""
-"Le nombre de pages varie selon la police, les marges et la taille de la "
-"fenêtre ; la progression reste stable."
-
-#: cps/spa_strings.py
-msgid "Page language view"
-msgstr "Affichage de la langue de la page"
 
 #: cps/spa_strings.py
 msgid "Page margins"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Page translation"
-msgstr "Traduction de page"
-
-#: cps/spa_strings.py
-msgid "Page translation failed."
-msgstr "La traduction de la page a échoué."
-
-#: cps/spa_strings.py
-msgid "Page translation timed out."
-msgstr "Le délai de traduction de la page a expiré."
+msgid "Page theme"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -6684,18 +6384,16 @@ msgid "Page {number}"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Pages"
-msgstr "Pages"
-
-#: cps/spa_strings.py
 #, python-brace-format
 msgid "Page {page} of {pages}"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid ""
-"Pages marked below open in the classic view. Changes there apply to the "
-"whole server."
+msgid "Pair a Kobo or KOReader"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Pair an e-reader"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -6711,13 +6409,16 @@ msgstr "パスワード"
 msgid "Password (leave blank to keep)"
 msgstr ""
 
-# OCR/RAG activity UI
 #: cps/spa_strings.py
-msgid "Pending"
-msgstr "En attente"
+msgid "Paste this server address (the plugin adds /kosync itself):"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Paused after a problem"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "People & devices"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/cover_picker.html
@@ -6743,34 +6444,24 @@ msgstr ""
 msgid "Pink"
 msgstr ""
 
+#: cps/spa_strings.py
+msgid "Please give this a try, you can easily undo later."
+msgstr ""
+
 #: cps/spa_strings.py cps/templates/admin.html
 msgid "Port"
 msgstr "ポート番号"
 
 #: cps/spa_strings.py
-msgid "Position files"
-msgstr "Fichiers de position"
-
-#: cps/spa_strings.py
-msgid "Positions synchronize both ways between Moon+ Reader and Calibre-Web."
+msgid "Position recorded"
 msgstr ""
-"Les positions se synchronisent dans les deux sens entre Moon+ Reader et "
-"Calibre-Web."
 
 #: cps/spa_strings.py
-msgid "Preload one translated page ahead"
-msgstr "Précharger une page traduite à l’avance"
+msgid "Position repair queued"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Preparing your magic link…"
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Preserve page structure, images, and inline formatting"
-msgstr "Conserver la structure de la page, les images et la mise en forme en ligne"
-
-#: cps/spa_strings.py
-msgid "Position recorded"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/duplicates.html
@@ -6786,27 +6477,9 @@ msgstr "前"
 msgid "Previous page"
 msgstr ""
 
-#: cps/spa_strings.py
-msgid ""
-"Private endpoints are blocked. Set "
-"CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true on the server to use"
-" Ollama or another LAN model."
-msgstr ""
-"Les points de terminaison privés sont bloqués. Définissez "
-"CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true sur le serveur pour "
-"utiliser Ollama ou un autre modèle du réseau local."
-
 #: cps/spa_strings.py cps/templates/duplicates.html cps/templates/tasks.html
 msgid "Progress"
 msgstr "進捗"
-
-#: cps/spa_strings.py
-msgid "Prompt"
-msgstr "Invite"
-
-#: cps/spa_strings.py
-msgid "Provider"
-msgstr "Fournisseur"
 
 #: cps/spa_strings.py
 msgid "Public"
@@ -6819,36 +6492,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Published before"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Publisher / serif"
-msgstr "Éditeur / avec empattements"
-
-#: cps/spa_strings.py
-msgid "RAG index status"
-msgstr "État de l’index RAG"
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "RAG indexing"
-msgstr "Indexation RAG"
-
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "RAG queued"
-msgstr "RAG en attente"
-
-#: cps/spa_strings.py
-msgid "RAG search"
-msgstr "Recherche RAG"
-
-#: cps/spa_strings.py
-msgid "RAG search failed."
-msgstr "La recherche RAG a échoué."
-
-#: cps/spa_strings.py
-msgid "RAG search is not available for this account."
-msgstr "La recherche RAG n’est pas disponible pour ce compte."
 
 #: cps/spa_strings.py
 msgid "Quarantined books"
@@ -6872,47 +6515,12 @@ msgid "Rating (stars)"
 msgstr ""
 
 #: cps/spa_strings.py
-#, python-brace-format
-msgid "Ratings: {count}"
-msgstr "Évaluations : {count}"
-
-#: cps/spa_strings.py
-msgid "Read aloud"
-msgstr "Lecture à voix haute"
-
-#: cps/spa_strings.py
 msgid "Read status"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Read status filter"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Reader settings"
-msgstr "Paramètres du lecteur"
-
-#: cps/spa_strings.py
-msgid "Reader settings are saved to your account and follow you across devices."
-msgstr ""
-"Les paramètres du lecteur sont enregistrés dans votre compte et vous "
-"suivent sur tous vos appareils."
-
-#: cps/spa_strings.py
-msgid "Reader tools"
-msgstr "Outils du lecteur"
-
-#: cps/spa_strings.py
-msgid "Reading mode"
-msgstr "Mode de lecture"
-
-#: cps/spa_strings.py
-msgid "Reading position could not be saved. Retrying…"
-msgstr "Impossible d’enregistrer la position de lecture. Nouvelle tentative…"
-
-#: cps/spa_strings.py
-msgid "Ready"
-msgstr "Prêt"
 
 #: cps/spa_strings.py
 msgid "Reader settings saved."
@@ -6937,10 +6545,6 @@ msgstr ""
 #: cps/spa_strings.py cps/templates/cover_picker.html cps/templates/index.html
 msgid "Refresh"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Refresh ratings"
-msgstr "Actualiser les évaluations"
 
 #: cps/spa_strings.py
 msgid "Registering…"
@@ -7056,14 +6660,6 @@ msgid "Require group membership"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Reranker"
-msgstr "Reclassement"
-
-#: cps/spa_strings.py
-msgid "Reranker model"
-msgstr "Modèle de reclassement"
-
-#: cps/spa_strings.py
 #, python-brace-format
 msgid "Reset password for {name}"
 msgstr ""
@@ -7076,8 +6672,18 @@ msgid ""
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Result limit"
-msgstr "Limite de résultats"
+#, python-brace-format
+msgid "Restored the previous library mode for {accounts} accounts."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Restoring…"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Resume at {percent} from another device"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Retry"
@@ -7086,11 +6692,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Reverse-proxy header login"
 msgstr ""
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Reviews: {count}"
-msgstr "Avis : {count}"
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -7104,12 +6705,8 @@ msgid "Rows per load"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Run OCR"
-msgstr "Lancer l’OCR"
-
-#: cps/spa_strings.py
-msgid "Run OCR again"
-msgstr "Relancer l’OCR"
+msgid "Run a sync from the plugin."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Run time"
@@ -7136,17 +6733,16 @@ msgstr "STARTTLS"
 msgid "Save"
 msgstr "保存"
 
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "Save OCR limit"
-msgstr "Enregistrer la limite OCR"
-
 #: cps/spa_strings.py
 msgid "Save email settings"
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Save name"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Save note"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -7158,17 +6754,16 @@ msgid "Save settings"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Save the file, safely eject the Kobo, then restart it."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Saved. Restart the server for the login changes to take effect."
 msgstr ""
 
 #: cps/spa_strings.py
 msgid "Scan for duplicates"
 msgstr ""
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Scanned {count} WebDAV folders up to {depth} levels deep."
-msgstr "{count} dossiers WebDAV analysés jusqu’à {depth} niveaux de profondeur."
 
 #: cps/spa_strings.py
 msgid "Scheduled tasks"
@@ -7179,24 +6774,16 @@ msgid "Scopes"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Search book contents"
-msgstr "Rechercher dans le contenu des livres"
-
-#: cps/spa_strings.py
-msgid "Search in book"
-msgstr "Rechercher dans le livre"
-
-#: cps/spa_strings.py
-msgid ""
-"Search inside the full text of your indexed books, not only titles and "
-"metadata."
+msgid "Search inside book"
 msgstr ""
-"Recherchez dans le texte intégral de vos livres indexés, pas seulement "
-"dans les titres et les métadonnées."
 
 #: cps/spa_strings.py
-msgid "Search mode"
-msgstr "Mode de recherche"
+msgid "Search term"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Search this book"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Search title, author…"
@@ -7206,8 +6793,16 @@ msgstr ""
 msgid "Searching every source…"
 msgstr ""
 
+#: cps/spa_strings.py
+msgid "Searching this book…"
+msgstr ""
+
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "Searching…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Security"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -7248,14 +6843,6 @@ msgstr ""
 #, python-brace-format
 msgid "Select note: {text}"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Selected"
-msgstr "Sélectionné"
-
-#: cps/spa_strings.py
-msgid "Selected text actions"
-msgstr "Actions sur le texte sélectionné"
 
 #: cps/spa_strings.py
 msgid "Selected books"
@@ -7310,6 +6897,10 @@ msgid "Server host"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Server tools"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Service account (DN)"
 msgstr ""
 
@@ -7325,10 +6916,6 @@ msgstr ""
 msgid ""
 "Set a metadata URL to auto-fill the endpoints below, or enter them "
 "manually."
-msgstr ""
-
-#: cps/spa_strings.py
-msgid "Set up Kobo sync"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -7382,6 +6969,10 @@ msgid "Show books in language"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Show device details"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Show e-reader previews on each candidate"
 msgstr ""
 
@@ -7398,8 +6989,19 @@ msgid "Show password"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Show surrounding context"
-msgstr "Afficher le contexte environnant"
+msgid ""
+"Show the global library again? Your selection is kept exactly as you left"
+" it — switch back any time and it is still there. At its next update, "
+"your e-reader syncs the global library."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid ""
+"Show {name} the global library again? Their selection is kept but no "
+"longer used, and their e-reader syncs the global library at the next "
+"update."
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -7485,23 +7087,22 @@ msgid "Source details"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Sources"
-msgstr "Sources"
+msgid ""
+"Start My Library? It begins as everything you can see now, so nothing "
+"changes until you remove books yourself. Your e-reader keeps the same "
+"books at its next update."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Start the only OAuth provider automatically"
 msgstr ""
 
-#: cps/spa_strings.py
-msgid "Starting scan…"
+#: cps/spa_strings.py cps/templates/detail.html
+msgid "Started reading"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Starting…"
-msgstr "Démarrage…"
-
-#: cps/spa_strings.py
-msgid "Statistics dashboard"
+msgid "Starting scan…"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/tasks.html
@@ -7509,17 +7110,17 @@ msgid "Status"
 msgstr "ステータス"
 
 #: cps/spa_strings.py
-msgid "Stop reading aloud"
-msgstr "Arrêter la lecture à voix haute"
+msgid "Stock Kobo"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Stock Kobo sync URL"
+msgstr ""
 
 #: cps/spa_strings.py cps/templates/config_edit.html
 #: cps/templates/cover_picker.html
 msgid "Stretch to fill — no border, slight distortion"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Structure"
-msgstr "Structure"
 
 #: cps/spa_strings.py
 msgid "Subheading"
@@ -7530,12 +7131,23 @@ msgid "Support on Ko-fi →"
 msgstr "Ko-fiで支援する →"
 
 #: cps/spa_strings.py
-msgid "Sync error"
-msgstr "Erreur de synchronisation"
+msgid ""
+"Switch back to My Library? Your library goes back to the books you had "
+"chosen — nothing was lost while you saw everything. At its next update, "
+"your e-reader returns to your selection."
+msgstr ""
 
 #: cps/spa_strings.py
-msgid "Sync now"
-msgstr "Synchroniser maintenant"
+#, python-brace-format
+msgid "Switch {name} back to My Library? Their chosen books are restored."
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/user_edit.html
+msgid ""
+"Switching a user to My Library first fills it with everything they can "
+"see now, so nothing changes for them until they remove books themselves. "
+"Switching back keeps the selection intact but unused."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "Sync only my selected shelves"
@@ -7544,26 +7156,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Sync only selected shelves to Kobo"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "Synced"
-msgstr "Synchronisé"
-
-#: cps/spa_strings.py
-msgid "Synchronization status"
-msgstr "État de la synchronisation"
-
-#: cps/spa_strings.py
-msgid ""
-"Synchronize Moon+ Reader WebDAV positions with Calibre-Web reading "
-"progress."
-msgstr ""
-"Synchronisez les positions WebDAV de Moon+ Reader avec la progression de "
-"lecture de Calibre-Web."
-
-#: cps/spa_strings.py
-msgid "Syncing positions…"
-msgstr "Synchronisation des positions…"
 
 #: cps/spa_strings.py
 msgid "Table view"
@@ -7586,6 +7178,10 @@ msgstr ""
 msgid "Tags — include"
 msgstr ""
 
+#: cps/spa_strings.py
+msgid "Tap Sync on the Kobo. Your NextGen books should appear."
+msgstr ""
+
 #: cps/spa_strings.py cps/templates/config_edit.html
 #: cps/templates/cover_picker.html
 msgid "Target aspect ratio"
@@ -7600,88 +7196,47 @@ msgstr "タスク"
 msgid "Tasks"
 msgstr "タスク"
 
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "Tasks remaining"
-msgstr "Tâches restantes"
-
 #: cps/spa_strings.py
 msgid "Technical details"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Temperature"
-msgstr "Température"
-
-#: cps/spa_strings.py
-msgid "Test"
-msgstr "Tester"
-
-#: cps/spa_strings.py
-msgid "Test connection"
-msgstr "Tester la connexion"
-
-#: cps/spa_strings.py
-msgid "Text chunks"
-msgstr "Segments de texte"
-
-#: cps/spa_strings.py
-msgid "Text width"
-msgstr "Largeur du texte"
-
-#: cps/spa_strings.py
 msgid "That URL is not a usable image."
 msgstr ""
 
-#: cps/spa_strings.py
-msgid "The PDF reader could not initialize its navigation or annotation plugins."
-msgstr ""
-"Le lecteur PDF n’a pas pu initialiser ses modules de navigation ou "
-"d’annotation."
-
-#: cps/spa_strings.py
+#: cps/spa_strings.py cps/templates/book_edit.html
+#: cps/templates/modal_dialogs.html
 msgid ""
-"The WebDAV password is encrypted on the server and is never returned to "
-"the browser after saving."
+"The book record, metadata, shelves, and reading state stay available. If "
+"this is the last format, you can add a replacement later."
 msgstr ""
-"Le mot de passe WebDAV est chiffré sur le serveur et n’est jamais renvoyé"
-" au navigateur après son enregistrement."
 
-#: cps/spa_strings.py
-msgid "The book is already in the target language."
-msgstr "Le livre est déjà dans la langue cible."
+#: cps/spa_strings.py cps/templates/user_edit.html
+msgid "The global library"
+msgstr ""
 
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "The page refreshes processing status automatically."
-msgstr "La page actualise automatiquement l’état du traitement."
-
-#: cps/spa_strings.py
-msgid "The scan reached its safety limit and may be incomplete."
-msgstr "L’analyse a atteint sa limite de sécurité et peut être incomplète."
-
-#: cps/spa_strings.py
-msgid "The selected text is already in the target language."
-msgstr "Le texte sélectionné est déjà dans la langue cible."
-
-#: cps/spa_strings.py
-#, python-brace-format
+#: cps/spa_strings.py cps/templates/index.html
 msgid ""
-"This PDF has {pages} pages, above the automatic OCR limit of {limit}. "
-"Processing may take a long time and use significant CPU."
+"The library is shared and holds every book once — what you keep is My "
+"Library. Nothing you had is gone. Every book, new arrivals included, is "
+"under Global Library in the menu."
 msgstr ""
-"Ce PDF contient {pages} pages, au-dessus de la limite OCR automatique de "
-"{limit}. Le traitement peut être long et utiliser beaucoup de ressources "
-"processeur."
 
-#: cps/spa_strings.py
-msgid "This device will no longer sync."
+#: cps/spa_strings.py cps/templates/index.html
+msgid ""
+"The library is shared and holds every book once — what you keep is My "
+"Library. Nothing you had is gone. Your administrator manages what enters "
+"it."
 msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
 "The server-wide option is also off, so nothing can sync yet. An "
 "administrator can enable it in the classic server settings."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "This device will no longer sync."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -7723,10 +7278,6 @@ msgid "This shelf is empty. Add books from any book's page."
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Timeout, s"
-msgstr "Délai d’attente, s"
-
-#: cps/spa_strings.py
 msgid "Title A–Z"
 msgstr ""
 
@@ -7737,10 +7288,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Title, author, or ISBN"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "To"
-msgstr "Vers"
 
 #: cps/spa_strings.py
 msgid "Token URL"
@@ -7757,24 +7304,16 @@ msgid "Top Rated"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Translation"
-msgstr "Traduction"
-
-#: cps/spa_strings.py
-msgid "Translation profile deleted."
-msgstr "Profil de traduction supprimé."
-
-#: cps/spa_strings.py
-msgid "Translation profile saved."
-msgstr "Profil de traduction enregistré."
-
-#: cps/spa_strings.py
 msgid "Trust authentication header"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Turn pages by clicking the left or right side"
-msgstr "Tourner les pages en cliquant sur le côté gauche ou droit"
+msgid "Try My Library"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/cwng_feedback_popup.html
+msgid "Try again"
+msgstr ""
 
 #: cps/spa_strings.py cps/templates/read.html
 msgid "Two columns"
@@ -7788,20 +7327,16 @@ msgstr ""
 msgid "Two-way sync preference saved."
 msgstr ""
 
-#: cps/spa_strings.py
-msgid "UI / display configuration"
-msgstr ""
-
 #: cps/spa_strings.py cps/templates/book_table.html
 msgid "Unarchive"
 msgstr "アーカイブ解除"
 
 #: cps/spa_strings.py
-msgid "Unchanged"
-msgstr "Inchangé"
+msgid "Undo"
+msgstr ""
 
 #: cps/spa_strings.py
-msgid "Undo"
+msgid "Undoing…"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -7817,10 +7352,6 @@ msgid "Unknown device"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Unknown model"
-msgstr "Modèle inconnu"
-
-#: cps/spa_strings.py
 msgid "Unknown source"
 msgstr ""
 
@@ -7831,11 +7362,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Unlock the cover to change it"
 msgstr ""
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "Unmatched Moon+ files ({count})"
-msgstr "Fichiers Moon+ non associés ({count})"
 
 #: cps/spa_strings.py
 msgid "Unpin sidebar"
@@ -7870,6 +7396,14 @@ msgid "Uploading is not available for your account on this server."
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Use my own cover"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Use the library cover"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid ""
 "Use these to connect OPDS readers or KOReader sync without your main "
 "password."
@@ -7892,6 +7426,10 @@ msgid "User object filter"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "User restrictions"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Userinfo URL"
 msgstr ""
 
@@ -7905,10 +7443,9 @@ msgstr "ユーザー名"
 msgid "Username claim"
 msgstr ""
 
-# OCR/RAG activity UI
 #: cps/spa_strings.py
-msgid "Vector sync"
-msgstr "Synchronisation vectorielle"
+msgid "Users"
+msgstr "ユーザー"
 
 #: cps/spa_strings.py
 msgid "Versions"
@@ -7928,6 +7465,10 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Viewer"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Waiting for a Kobo or KOReader to sync with this account."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -7965,33 +7506,6 @@ msgstr ""
 msgid "Web reader"
 msgstr ""
 
-#: cps/spa_strings.py
-msgid "WebDAV URL"
-msgstr "URL WebDAV"
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "WebDAV connected. Found {count} Moon+ position files."
-msgstr "WebDAV connecté. {count} fichier(s) de position Moon+ trouvé(s)."
-
-#: cps/spa_strings.py
-msgid "WebDAV connected. The selected Moon+ cache folder was not found."
-msgstr "WebDAV connecté. Le dossier de cache Moon+ sélectionné est introuvable."
-
-#: cps/spa_strings.py
-msgid "WebDAV connected. Use Find Moon sync files to choose a folder."
-msgstr ""
-"WebDAV connecté. Utilisez « Rechercher les fichiers de synchronisation "
-"Moon » pour choisir un dossier."
-
-#: cps/spa_strings.py
-msgid "WebDAV connection"
-msgstr "Connexion WebDAV"
-
-#: cps/spa_strings.py
-msgid "What do you want to find?"
-msgstr "Que souhaitez-vous trouver ?"
-
 #: cps/spa_strings.py cps/templates/cover_picker.html
 msgid "When locked, fetching metadata will not overwrite this cover."
 msgstr ""
@@ -8011,18 +7525,19 @@ msgid ""
 "working as long as standard password login is left enabled."
 msgstr ""
 
-# OCR/RAG activity UI
-#: cps/spa_strings.py
-msgid "Working"
-msgstr "En cours"
-
 #: cps/spa_strings.py
 msgid "Write a note"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "Written to Moon+"
-msgstr "Écrit dans Moon+"
+msgid "Write a note…"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"You're probably a long time user of calibre-web. Please let us know your "
+"feedback on this, why or why not this works with your flow."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
@@ -8037,6 +7552,23 @@ msgstr ""
 
 #: cps/spa_strings.py
 msgid "Your browser cannot play this audio format."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"Your cover appears only to you and on books delivered to your e-readers. "
+"The library cover stays unchanged for everyone else, and administrators "
+"manage it."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Your cover was updated."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"Your own cover is private to you and your e-reader deliveries. The "
+"library cover stays unchanged for everyone else."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -8060,10 +7592,6 @@ msgid "books"
 msgstr ""
 
 #: cps/spa_strings.py
-msgid "books indexed"
-msgstr "livres indexés"
-
-#: cps/spa_strings.py
 msgid "books match"
 msgstr ""
 
@@ -8082,14 +7610,6 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "eReader email subject"
 msgstr ""
-
-#: cps/spa_strings.py
-msgid "pages"
-msgstr "pages"
-
-#: cps/spa_strings.py
-msgid "results"
-msgstr "résultats"
 
 #: cps/spa_strings.py
 msgid "shared"
@@ -8127,11 +7647,6 @@ msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
-msgid "{count} characters"
-msgstr "{count} caractères"
-
-#: cps/spa_strings.py
-#, python-brace-format
 msgid "{count} file queued for import"
 msgstr ""
 
@@ -8152,18 +7667,8 @@ msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
-msgid "{count} models loaded."
-msgstr "{count} modèles chargés."
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "{count} pages"
-msgstr "{count} pages"
-
-#: cps/spa_strings.py
-#, python-brace-format
-msgid "{count} position files"
-msgstr "{count} fichiers de position"
+msgid "{count} matches"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -8197,7 +7702,17 @@ msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
+msgid "{name} now uses My Library."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
 msgid "{name} removed."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{name} sees the global library again."
 msgstr ""
 
 #: cps/spa_strings.py
@@ -8213,6 +7728,11 @@ msgstr ""
 #: cps/spa_strings.py
 #, python-brace-format
 msgid "{n} books in latest inventory"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{n} devices · {m} active"
 msgstr ""
 
 #: cps/spa_strings.py
@@ -8260,6 +7780,11 @@ msgid "{percent}% read"
 msgstr ""
 
 #: cps/spa_strings.py
+#, python-brace-format
+msgid "{seeded} of {total} books seeded"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "…or paste an image URL"
 msgstr ""
 
@@ -8278,6 +7803,1105 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "← Library"
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "API key"
+msgstr "Clé API"
+
+#: cps/spa_strings.py
+msgid "Add bookmark"
+msgstr "Ajouter un signet"
+
+#: cps/spa_strings.py
+msgid "Additional headers must be a valid JSON object."
+msgstr "Les en-têtes supplémentaires doivent former un objet JSON valide."
+
+#: cps/spa_strings.py
+msgid "After"
+msgstr "Après"
+
+#: cps/spa_strings.py
+msgid "Animated page turns"
+msgstr "Transitions de page animées"
+
+#: cps/spa_strings.py
+msgid "Approve long OCR job"
+msgstr "Autoriser la tâche OCR longue"
+
+#: cps/spa_strings.py
+msgid "Auto"
+msgstr "Auto"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Automatic OCR page limit"
+msgstr "Limite automatique de pages OCR"
+
+#: cps/spa_strings.py
+msgid "Automatically translate the current page"
+msgstr "Traduire automatiquement la page actuelle"
+
+#: cps/spa_strings.py
+msgid "Back to account"
+msgstr "Retour au compte"
+
+#: cps/spa_strings.py
+msgid "Back to the classic view"
+msgstr ""
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Background processing"
+msgstr "Traitement en arrière-plan"
+
+#: cps/spa_strings.py
+msgid "Base URL"
+msgstr "URL de base"
+
+#: cps/spa_strings.py
+msgid "Basic configuration"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Before"
+msgstr "Avant"
+
+#: cps/spa_strings.py
+msgid "Book"
+msgstr "Livre"
+
+#: cps/spa_strings.py
+msgid "Bookmark"
+msgstr "Signet"
+
+#: cps/spa_strings.py
+msgid "Bookmarks"
+msgstr "Signets"
+
+#: cps/spa_strings.py
+msgid "Browser"
+msgstr "Navigateur"
+
+#: cps/spa_strings.py
+msgid "CWA settings (ingest/convert)"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Cache"
+msgstr "Cache"
+
+#: cps/spa_strings.py
+msgid "Cache full translated pages"
+msgstr "Mettre en cache les pages entièrement traduites"
+
+#: cps/spa_strings.py cps/templates/book_edit.html
+#: cps/templates/cover_picker.html cps/templates/detail.html
+msgid "Change cover"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Comma-separated names"
+msgstr "Noms séparés par des virgules"
+
+#: cps/spa_strings.py
+msgid "Comma-separated tags"
+msgstr "Étiquettes séparées par des virgules"
+
+#: cps/spa_strings.py
+msgid "Configure Moon+ Reader WebDAV"
+msgstr "Configurer WebDAV pour Moon+ Reader"
+
+#: cps/spa_strings.py
+msgid "Configured — leave blank to keep"
+msgstr "Configuré — laissez vide pour conserver"
+
+#: cps/spa_strings.py
+msgid "Connection successful."
+msgstr "Connexion réussie."
+
+#: cps/spa_strings.py
+msgid "Connection test failed."
+msgstr "Le test de connexion a échoué."
+
+#: cps/spa_strings.py
+msgid "Continuous scroll"
+msgstr "Défilement continu"
+
+#: cps/spa_strings.py
+msgid "Could not delete annotation."
+msgstr "Impossible de supprimer l’annotation."
+
+#: cps/spa_strings.py
+msgid "Could not delete the translation profile."
+msgstr "Impossible de supprimer le profil de traduction."
+
+#: cps/spa_strings.py
+msgid "Could not load Moon+ Reader settings."
+msgstr "Impossible de charger les paramètres de Moon+ Reader."
+
+#: cps/spa_strings.py
+msgid "Could not load external ratings."
+msgstr "Impossible de charger les évaluations externes."
+
+#: cps/spa_strings.py
+msgid "Could not load models."
+msgstr "Impossible de charger les modèles."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Could not load the PDF file ({status})"
+msgstr "Impossible de charger le fichier PDF ({status})"
+
+#: cps/spa_strings.py
+msgid "Could not load the book."
+msgstr "Impossible de charger le livre."
+
+#: cps/spa_strings.py
+msgid "Could not load this PDF file."
+msgstr "Impossible de charger ce fichier PDF."
+
+#: cps/spa_strings.py
+msgid "Could not open this book."
+msgstr "Impossible d’ouvrir ce livre."
+
+#: cps/spa_strings.py
+msgid "Could not read OCR status."
+msgstr "Impossible de lire l’état de l’OCR."
+
+#: cps/spa_strings.py
+msgid "Could not read the RAG status."
+msgstr "Impossible de lire l’état de l’index RAG."
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Could not save OCR settings."
+msgstr "Impossible d’enregistrer les paramètres OCR."
+
+#: cps/spa_strings.py
+msgid "Could not save annotation."
+msgstr "Impossible d’enregistrer l’annotation."
+
+#: cps/spa_strings.py
+msgid "Could not save reading position. It will be retried automatically."
+msgstr ""
+"Impossible d’enregistrer la position de lecture. Une nouvelle tentative "
+"sera effectuée automatiquement."
+
+#: cps/spa_strings.py
+msgid "Could not save the translation profile."
+msgstr "Impossible d’enregistrer le profil de traduction."
+
+#: cps/spa_strings.py
+msgid "Could not start OCR."
+msgstr "Impossible de lancer l’OCR."
+
+#: cps/spa_strings.py
+msgid "Custom OpenAI-compatible"
+msgstr "Personnalisé compatible OpenAI"
+
+#: cps/spa_strings.py
+msgid "Database & library path"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Delete note"
+msgstr "Supprimer la note"
+
+#: cps/spa_strings.py
+msgid "Delete this translation profile?"
+msgstr "Supprimer ce profil de traduction ?"
+
+#: cps/spa_strings.py
+msgid "Describe an idea, scene, fact, quote, technology, or topic…"
+msgstr ""
+"Décrivez une idée, une scène, un fait, une citation, une technologie ou "
+"un sujet…"
+
+#: cps/spa_strings.py
+msgid "Detect automatically"
+msgstr "Détecter automatiquement"
+
+#: cps/spa_strings.py
+msgid "Discovered Moon+ sync folders"
+msgstr "Dossiers de synchronisation Moon+ détectés"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Document OCR"
+msgstr "OCR du document"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid ""
+"Documents above this limit require explicit confirmation and are not "
+"started automatically."
+msgstr ""
+"Les documents dépassant cette limite nécessitent une confirmation "
+"explicite et ne démarrent pas automatiquement."
+
+#: cps/spa_strings.py
+msgid "Download PDF"
+msgstr "Télécharger le PDF"
+
+#: cps/spa_strings.py
+msgid "Duplicate detection settings"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Edit highlight"
+msgstr "Modifier le surlignage"
+
+#: cps/spa_strings.py
+msgid "Embedding"
+msgstr "Vectorisation"
+
+#: cps/spa_strings.py
+msgid "Embedding model"
+msgstr "Modèle de vectorisation"
+
+#: cps/spa_strings.py
+msgid "Enable Moon+ Reader position sync"
+msgstr "Activer la synchronisation des positions Moon+ Reader"
+
+#: cps/spa_strings.py
+msgid "Endpoint"
+msgstr "Point de terminaison"
+
+#: cps/spa_strings.py
+msgid "Enter WebDAV password"
+msgstr "Saisissez le mot de passe WebDAV"
+
+#: cps/spa_strings.py
+msgid "Failed jobs"
+msgstr "Tâches échouées"
+
+#: cps/spa_strings.py
+msgid "Filters"
+msgstr "Filtres"
+
+#: cps/spa_strings.py
+msgid "Find Moon sync files"
+msgstr "Rechercher les fichiers de synchronisation Moon"
+
+#: cps/spa_strings.py cps/templates/read.html
+msgid "Font"
+msgstr "フォント"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Found {count} Moon+ sync folders. Select one below."
+msgstr ""
+"{count} dossiers de synchronisation Moon+ trouvés. Sélectionnez-en un ci-"
+"dessous."
+
+#: cps/spa_strings.py
+msgid "From"
+msgstr "De"
+
+#: cps/spa_strings.py
+msgid "Full user table & restrictions"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Groq"
+msgstr "Groq"
+
+#: cps/spa_strings.py
+msgid "Headers, JSON"
+msgstr "En-têtes, JSON"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Idle"
+msgstr "Inactif"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Import errors ({count})"
+msgstr "Erreurs d’importation ({count})"
+
+#: cps/spa_strings.py
+msgid "Import reading positions from Moon+ Reader through a WebDAV connection."
+msgstr ""
+"Importer les positions de lecture depuis Moon+ Reader via une connexion "
+"WebDAV."
+
+#: cps/spa_strings.py
+msgid "Imported from Moon+"
+msgstr "Importé depuis Moon+"
+
+#: cps/spa_strings.py
+msgid "Importing Moon+ positions…"
+msgstr "Importation des positions Moon+…"
+
+#: cps/spa_strings.py
+msgid "Include neighboring text for context"
+msgstr "Inclure le texte voisin comme contexte"
+
+#: cps/spa_strings.py
+msgid "Indexed books"
+msgstr "Livres indexés"
+
+#: cps/spa_strings.py
+msgid "JSON"
+msgstr "JSON"
+
+#: cps/spa_strings.py
+msgid "Justify text"
+msgstr "Justifier le texte"
+
+#: cps/spa_strings.py
+msgid "Kobo setup"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Last check: {date}"
+msgstr "Dernière vérification : {date}"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Last sync: {date}"
+msgstr "Dernière synchronisation : {date}"
+
+#: cps/spa_strings.py
+msgid "Last synchronization failed"
+msgstr "La dernière synchronisation a échoué"
+
+#: cps/spa_strings.py
+msgid "Latency"
+msgstr "Latence"
+
+#: cps/spa_strings.py
+msgid "Leave blank to keep the saved key"
+msgstr "Laisser vide pour conserver la clé enregistrée"
+
+#: cps/spa_strings.py
+msgid "Leave blank to use the built-in literary translation prompt."
+msgstr "Laisser vide pour utiliser l’invite de traduction littéraire intégrée."
+
+#: cps/spa_strings.py
+msgid ""
+"Leave blank, search the WebDAV server, then select one discovered Moon+ "
+"folder."
+msgstr ""
+"Laissez vide, recherchez sur le serveur WebDAV, puis sélectionnez un "
+"dossier Moon+ détecté."
+
+#: cps/spa_strings.py
+msgid "Load"
+msgstr "Charger"
+
+#: cps/spa_strings.py
+msgid "Loading ratings…"
+msgstr "Chargement des évaluations…"
+
+#: cps/spa_strings.py
+msgid "Loading translation profiles…"
+msgstr "Chargement des profils de traduction…"
+
+#: cps/spa_strings.py
+msgid "Location"
+msgstr "Emplacement"
+
+#: cps/spa_strings.py
+msgid "Manage your Kobo sync URL in the classic account page."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Matched"
+msgstr "Correspondance"
+
+#: cps/spa_strings.py
+msgid "Matched books"
+msgstr "Livres associés"
+
+#: cps/spa_strings.py
+msgid "Max tokens"
+msgstr "Nombre maximal de jetons"
+
+#: cps/spa_strings.py
+msgid "Mistral"
+msgstr "Mistral"
+
+#: cps/spa_strings.py
+msgid "Model check completed."
+msgstr "Vérification des modèles terminée."
+
+#: cps/spa_strings.py
+msgid "Model check failed."
+msgstr "Échec de la vérification des modèles."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Model {model} selected."
+msgstr "Modèle {model} sélectionné."
+
+#: cps/spa_strings.py
+msgid "Models"
+msgstr "Modèles"
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader operation failed."
+msgstr "L’opération Moon+ Reader a échoué."
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader settings saved."
+msgstr "Paramètres Moon+ Reader enregistrés."
+
+#: cps/spa_strings.py
+msgid "Moon+ Reader sync"
+msgstr "Synchronisation Moon+ Reader"
+
+#: cps/spa_strings.py
+msgid "Moon+ cache path"
+msgstr "Chemin du cache Moon+"
+
+#: cps/spa_strings.py
+msgid "Moon+ position sync queued."
+msgstr "Synchronisation des positions Moon+ mise en file d’attente."
+
+#: cps/spa_strings.py
+msgid "More server configuration"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "NVIDIA NIM"
+msgstr "NVIDIA NIM"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Newest: {date}"
+msgstr "Plus récent : {date}"
+
+#: cps/spa_strings.py
+msgid "No Moon+ sync folders found."
+msgstr "Aucun dossier de synchronisation Moon+ trouvé."
+
+#: cps/spa_strings.py
+msgid "No Moon+ sync folders were found in the scanned WebDAV area."
+msgstr ""
+"Aucun dossier de synchronisation Moon+ n’a été trouvé dans la zone WebDAV"
+" analysée."
+
+#: cps/spa_strings.py
+msgid "No PDF annotations yet. Use the Annotate tools above the document."
+msgstr ""
+"Aucune annotation PDF pour le moment. Utilisez les outils d’annotation "
+"au-dessus du document."
+
+#: cps/spa_strings.py
+msgid "No bookmarks yet."
+msgstr "Aucun signet pour le moment."
+
+#: cps/spa_strings.py
+msgid "No excerpt available."
+msgstr "Aucun extrait disponible."
+
+#: cps/spa_strings.py
+msgid "No external ratings found."
+msgstr "Aucune évaluation externe trouvée."
+
+#: cps/spa_strings.py
+msgid "No highlights or notes yet."
+msgstr "Aucun surlignage ni aucune note pour le moment."
+
+#: cps/spa_strings.py
+msgid "No matching passages were found."
+msgstr "Aucun passage correspondant n’a été trouvé."
+
+#: cps/spa_strings.py
+msgid "No models loaded. The check will load them first."
+msgstr "Aucun modèle chargé. La vérification les chargera d’abord."
+
+#: cps/spa_strings.py
+msgid "No models were returned by the provider."
+msgstr "Le fournisseur n’a renvoyé aucun modèle."
+
+#: cps/spa_strings.py
+msgid "No profile selected"
+msgstr "Aucun profil sélectionné"
+
+#: cps/spa_strings.py
+msgid "No response"
+msgstr "Aucune réponse"
+
+#: cps/spa_strings.py
+msgid "No supported reader format is available."
+msgstr "Aucun format de lecture pris en charge n’est disponible."
+
+#: cps/spa_strings.py
+msgid "No visible text was found on this page."
+msgstr "Aucun texte visible n’a été trouvé sur cette page."
+
+#: cps/spa_strings.py
+msgid "Not checked"
+msgstr "Non vérifié"
+
+#: cps/spa_strings.py
+msgid "Not checked yet."
+msgstr "Pas encore vérifié."
+
+#: cps/spa_strings.py
+msgid "Not enabled"
+msgstr "Non activé"
+
+#: cps/spa_strings.py
+msgid "Not indexed"
+msgstr "Non indexé"
+
+#: cps/spa_strings.py
+msgid "Note (optional)"
+msgstr "Note (facultative)"
+
+#: cps/spa_strings.py
+msgid "OCR and RAG indexing completed."
+msgstr "OCR et indexation RAG terminés."
+
+#: cps/spa_strings.py
+msgid "OCR completed; RAG indexing is running."
+msgstr "OCR terminé ; l’indexation RAG est en cours."
+
+#: cps/spa_strings.py
+msgid "OCR failed."
+msgstr "Échec de l’OCR."
+
+#: cps/spa_strings.py
+msgid "OCR is processing the PDF."
+msgstr "L’OCR traite le PDF."
+
+#: cps/spa_strings.py
+msgid "OCR is queued."
+msgstr "L’OCR est en file d’attente."
+
+#: cps/spa_strings.py
+msgid ""
+"OCR job queued. You can leave this page; processing continues in the "
+"background."
+msgstr ""
+"Tâche OCR mise en file d’attente. Vous pouvez quitter cette page ; le "
+"traitement continue en arrière-plan."
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "OCR page limit saved."
+msgstr "Limite de pages OCR enregistrée."
+
+#: cps/spa_strings.py
+msgid "OCR processing…"
+msgstr "OCR en cours…"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "OCR queued"
+msgstr "OCR en attente"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "OCR running"
+msgstr "OCR en cours"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "OCR settings"
+msgstr "Paramètres OCR"
+
+#: cps/spa_strings.py
+msgid "OCR was not started."
+msgstr "L’OCR n’a pas été lancé."
+
+#: cps/spa_strings.py
+msgid "Ollama"
+msgstr "Ollama"
+
+#: cps/spa_strings.py cps/templates/annotations_view.html
+msgid "Open book"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Open full annotations page"
+msgstr "Ouvrir la page complète des annotations"
+
+#: cps/spa_strings.py
+msgid "Open selected text in ChatGPT"
+msgstr "Ouvrir le texte sélectionné dans ChatGPT"
+
+#: cps/spa_strings.py
+msgid "Open with browser PDF viewer"
+msgstr "Ouvrir avec le lecteur PDF du navigateur"
+
+#: cps/spa_strings.py
+msgid "OpenCode Go"
+msgstr "OpenCode Go"
+
+#: cps/spa_strings.py
+msgid "OpenCode Zen"
+msgstr "OpenCode Zen"
+
+#: cps/spa_strings.py
+msgid "OpenRouter"
+msgstr "OpenRouter"
+
+#: cps/spa_strings.py
+msgid "Original"
+msgstr "Original"
+
+#: cps/spa_strings.py
+msgid "Other models"
+msgstr "Autres modèles"
+
+#: cps/spa_strings.py
+msgid "PDF annotation changes could not be saved. Retry the edit."
+msgstr ""
+"Impossible d’enregistrer les modifications des annotations PDF. Réessayez"
+" la modification."
+
+#: cps/spa_strings.py
+msgid "Page"
+msgstr "Page"
+
+#: cps/spa_strings.py
+msgid ""
+"Page count changes with font, margins, and window size; progress remains "
+"stable."
+msgstr ""
+"Le nombre de pages varie selon la police, les marges et la taille de la "
+"fenêtre ; la progression reste stable."
+
+#: cps/spa_strings.py
+msgid "Page language view"
+msgstr "Affichage de la langue de la page"
+
+#: cps/spa_strings.py
+msgid "Page translation"
+msgstr "Traduction de page"
+
+#: cps/spa_strings.py
+msgid "Page translation failed."
+msgstr "La traduction de la page a échoué."
+
+#: cps/spa_strings.py
+msgid "Page translation timed out."
+msgstr "Le délai de traduction de la page a expiré."
+
+#: cps/spa_strings.py
+msgid "Pages"
+msgstr "Pages"
+
+#: cps/spa_strings.py
+msgid ""
+"Pages marked below open in the classic view. Changes there apply to the "
+"whole server."
+msgstr ""
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Pending"
+msgstr "En attente"
+
+#: cps/spa_strings.py
+msgid "Position files"
+msgstr "Fichiers de position"
+
+#: cps/spa_strings.py
+msgid "Positions synchronize both ways between Moon+ Reader and Calibre-Web."
+msgstr ""
+"Les positions se synchronisent dans les deux sens entre Moon+ Reader et "
+"Calibre-Web."
+
+#: cps/spa_strings.py
+msgid "Preload one translated page ahead"
+msgstr "Précharger une page traduite à l’avance"
+
+#: cps/spa_strings.py
+msgid "Preserve page structure, images, and inline formatting"
+msgstr "Conserver la structure de la page, les images et la mise en forme en ligne"
+
+#: cps/spa_strings.py
+msgid ""
+"Private endpoints are blocked. Set "
+"CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true on the server to use"
+" Ollama or another LAN model."
+msgstr ""
+"Les points de terminaison privés sont bloqués. Définissez "
+"CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true sur le serveur pour "
+"utiliser Ollama ou un autre modèle du réseau local."
+
+#: cps/spa_strings.py
+msgid "Prompt"
+msgstr "Invite"
+
+#: cps/spa_strings.py
+msgid "Provider"
+msgstr "Fournisseur"
+
+#: cps/spa_strings.py
+msgid "Publisher / serif"
+msgstr "Éditeur / avec empattements"
+
+#: cps/spa_strings.py
+msgid "RAG index status"
+msgstr "État de l’index RAG"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "RAG indexing"
+msgstr "Indexation RAG"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "RAG queued"
+msgstr "RAG en attente"
+
+#: cps/spa_strings.py
+msgid "RAG search"
+msgstr "Recherche RAG"
+
+#: cps/spa_strings.py
+msgid "RAG search failed."
+msgstr "La recherche RAG a échoué."
+
+#: cps/spa_strings.py
+msgid "RAG search is not available for this account."
+msgstr "La recherche RAG n’est pas disponible pour ce compte."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Ratings: {count}"
+msgstr "Évaluations : {count}"
+
+#: cps/spa_strings.py
+msgid "Read aloud"
+msgstr "Lecture à voix haute"
+
+#: cps/spa_strings.py
+msgid "Reader settings"
+msgstr "Paramètres du lecteur"
+
+#: cps/spa_strings.py
+msgid "Reader settings are saved to your account and follow you across devices."
+msgstr ""
+"Les paramètres du lecteur sont enregistrés dans votre compte et vous "
+"suivent sur tous vos appareils."
+
+#: cps/spa_strings.py
+msgid "Reader tools"
+msgstr "Outils du lecteur"
+
+#: cps/spa_strings.py
+msgid "Reading mode"
+msgstr "Mode de lecture"
+
+#: cps/spa_strings.py
+msgid "Reading position could not be saved. Retrying…"
+msgstr "Impossible d’enregistrer la position de lecture. Nouvelle tentative…"
+
+#: cps/spa_strings.py
+msgid "Ready"
+msgstr "Prêt"
+
+#: cps/spa_strings.py
+msgid "Refresh ratings"
+msgstr "Actualiser les évaluations"
+
+#: cps/spa_strings.py
+msgid "Reranker"
+msgstr "Reclassement"
+
+#: cps/spa_strings.py
+msgid "Reranker model"
+msgstr "Modèle de reclassement"
+
+#: cps/spa_strings.py
+msgid "Result limit"
+msgstr "Limite de résultats"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Reviews: {count}"
+msgstr "Avis : {count}"
+
+#: cps/spa_strings.py
+msgid "Run OCR"
+msgstr "Lancer l’OCR"
+
+#: cps/spa_strings.py
+msgid "Run OCR again"
+msgstr "Relancer l’OCR"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Save OCR limit"
+msgstr "Enregistrer la limite OCR"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Scanned {count} WebDAV folders up to {depth} levels deep."
+msgstr "{count} dossiers WebDAV analysés jusqu’à {depth} niveaux de profondeur."
+
+#: cps/spa_strings.py
+msgid "Search book contents"
+msgstr "Rechercher dans le contenu des livres"
+
+#: cps/spa_strings.py
+msgid "Search in book"
+msgstr "Rechercher dans le livre"
+
+#: cps/spa_strings.py
+msgid ""
+"Search inside the full text of your indexed books, not only titles and "
+"metadata."
+msgstr ""
+"Recherchez dans le texte intégral de vos livres indexés, pas seulement "
+"dans les titres et les métadonnées."
+
+#: cps/spa_strings.py
+msgid "Search mode"
+msgstr "Mode de recherche"
+
+#: cps/spa_strings.py
+msgid "Selected"
+msgstr "Sélectionné"
+
+#: cps/spa_strings.py
+msgid "Selected text actions"
+msgstr "Actions sur le texte sélectionné"
+
+#: cps/spa_strings.py
+msgid "Set up Kobo sync"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Show surrounding context"
+msgstr "Afficher le contexte environnant"
+
+#: cps/spa_strings.py
+msgid "Sources"
+msgstr "Sources"
+
+#: cps/spa_strings.py
+msgid "Starting…"
+msgstr "Démarrage…"
+
+#: cps/spa_strings.py
+msgid "Statistics dashboard"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Stop reading aloud"
+msgstr "Arrêter la lecture à voix haute"
+
+#: cps/spa_strings.py
+msgid "Structure"
+msgstr "Structure"
+
+#: cps/spa_strings.py
+msgid "Sync error"
+msgstr "Erreur de synchronisation"
+
+#: cps/spa_strings.py
+msgid "Sync now"
+msgstr "Synchroniser maintenant"
+
+#: cps/spa_strings.py
+msgid "Synced"
+msgstr "Synchronisé"
+
+#: cps/spa_strings.py
+msgid "Synchronization status"
+msgstr "État de la synchronisation"
+
+#: cps/spa_strings.py
+msgid ""
+"Synchronize Moon+ Reader WebDAV positions with Calibre-Web reading "
+"progress."
+msgstr ""
+"Synchronisez les positions WebDAV de Moon+ Reader avec la progression de "
+"lecture de Calibre-Web."
+
+#: cps/spa_strings.py
+msgid "Syncing positions…"
+msgstr "Synchronisation des positions…"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Tasks remaining"
+msgstr "Tâches restantes"
+
+#: cps/spa_strings.py
+msgid "Temperature"
+msgstr "Température"
+
+#: cps/spa_strings.py
+msgid "Test"
+msgstr "Tester"
+
+#: cps/spa_strings.py
+msgid "Test connection"
+msgstr "Tester la connexion"
+
+#: cps/spa_strings.py
+msgid "Text chunks"
+msgstr "Segments de texte"
+
+#: cps/spa_strings.py
+msgid "Text width"
+msgstr "Largeur du texte"
+
+#: cps/spa_strings.py
+msgid "The PDF reader could not initialize its navigation or annotation plugins."
+msgstr ""
+"Le lecteur PDF n’a pas pu initialiser ses modules de navigation ou "
+"d’annotation."
+
+#: cps/spa_strings.py
+msgid ""
+"The WebDAV password is encrypted on the server and is never returned to "
+"the browser after saving."
+msgstr ""
+"Le mot de passe WebDAV est chiffré sur le serveur et n’est jamais renvoyé"
+" au navigateur après son enregistrement."
+
+#: cps/spa_strings.py
+msgid "The book is already in the target language."
+msgstr "Le livre est déjà dans la langue cible."
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "The page refreshes processing status automatically."
+msgstr "La page actualise automatiquement l’état du traitement."
+
+#: cps/spa_strings.py
+msgid "The scan reached its safety limit and may be incomplete."
+msgstr "L’analyse a atteint sa limite de sécurité et peut être incomplète."
+
+#: cps/spa_strings.py
+msgid "The selected text is already in the target language."
+msgstr "Le texte sélectionné est déjà dans la langue cible."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid ""
+"This PDF has {pages} pages, above the automatic OCR limit of {limit}. "
+"Processing may take a long time and use significant CPU."
+msgstr ""
+"Ce PDF contient {pages} pages, au-dessus de la limite OCR automatique de "
+"{limit}. Le traitement peut être long et utiliser beaucoup de ressources "
+"processeur."
+
+#: cps/spa_strings.py
+msgid "Timeout, s"
+msgstr "Délai d’attente, s"
+
+#: cps/spa_strings.py
+msgid "To"
+msgstr "Vers"
+
+#: cps/spa_strings.py
+msgid "Translation"
+msgstr "Traduction"
+
+#: cps/spa_strings.py
+msgid "Translation profile deleted."
+msgstr "Profil de traduction supprimé."
+
+#: cps/spa_strings.py
+msgid "Translation profile saved."
+msgstr "Profil de traduction enregistré."
+
+#: cps/spa_strings.py
+msgid "Turn pages by clicking the left or right side"
+msgstr "Tourner les pages en cliquant sur le côté gauche ou droit"
+
+#: cps/spa_strings.py
+msgid "UI / display configuration"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Unchanged"
+msgstr "Inchangé"
+
+#: cps/spa_strings.py
+msgid "Unknown model"
+msgstr "Modèle inconnu"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Unmatched Moon+ files ({count})"
+msgstr "Fichiers Moon+ non associés ({count})"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Vector sync"
+msgstr "Synchronisation vectorielle"
+
+#: cps/spa_strings.py
+msgid "WebDAV URL"
+msgstr "URL WebDAV"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "WebDAV connected. Found {count} Moon+ position files."
+msgstr "WebDAV connecté. {count} fichier(s) de position Moon+ trouvé(s)."
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. The selected Moon+ cache folder was not found."
+msgstr "WebDAV connecté. Le dossier de cache Moon+ sélectionné est introuvable."
+
+#: cps/spa_strings.py
+msgid "WebDAV connected. Use Find Moon sync files to choose a folder."
+msgstr ""
+"WebDAV connecté. Utilisez « Rechercher les fichiers de synchronisation "
+"Moon » pour choisir un dossier."
+
+#: cps/spa_strings.py
+msgid "WebDAV connection"
+msgstr "Connexion WebDAV"
+
+#: cps/spa_strings.py
+msgid "What do you want to find?"
+msgstr "Que souhaitez-vous trouver ?"
+
+# OCR/RAG activity UI
+#: cps/spa_strings.py
+msgid "Working"
+msgstr "En cours"
+
+#: cps/spa_strings.py
+msgid "Written to Moon+"
+msgstr "Écrit dans Moon+"
+
+#: cps/spa_strings.py
+msgid "books indexed"
+msgstr "livres indexés"
+
+#: cps/spa_strings.py
+msgid "pages"
+msgstr "pages"
+
+#: cps/spa_strings.py
+msgid "results"
+msgstr "résultats"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} characters"
+msgstr "{count} caractères"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} models loaded."
+msgstr "{count} modèles chargés."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} pages"
+msgstr "{count} pages"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{count} position files"
+msgstr "{count} fichiers de position"
 
 #: cps/tasks_status.py
 msgid "Waiting"
@@ -10280,9 +10904,9 @@ msgstr ""
 
 #: cps/templates/config_edit.html
 msgid ""
-"On by default. Unchanged books are suppressed only when the device "
-"returns a valid but stale CWNG sync token. Requests without a valid CWNG "
-"token always receive the full library, including after a factory reset."
+"On by default. Books already acknowledged by the same reader are "
+"protected for every sync-token shape. Use Full Sync or resend to "
+"deliberately deliver them again."
 msgstr ""
 
 #: cps/templates/config_edit.html
@@ -10943,6 +11567,10 @@ msgstr "無視するカラムの正規表現"
 #: cps/templates/config_view_edit.html
 msgid "Regex pattern to hide custom columns from being displayed in the UI."
 msgstr "UIでの表示からカスタムカラムを非表示にする正規表現パターン。"
+
+#: cps/templates/config_view_edit.html cps/templates/shelf_reorder.html
+msgid "Sort by"
+msgstr ""
 
 #: cps/templates/config_view_edit.html
 msgid "Link Read/Unread Status to Calibre Column"
@@ -11674,14 +12302,27 @@ msgstr ""
 
 #: cps/templates/cwa_settings.html
 msgid ""
+"Hardcover auto-fetch is off. Reading-progress and annotation sync are "
+"unaffected."
+msgstr ""
+
+#: cps/templates/cwa_settings.html
+msgid ""
 "Hardcover sync is enabled. The schedule below controls automatic ID "
 "fetching."
 msgstr ""
 
 #: cps/templates/cwa_settings.html
 msgid ""
-"Hardcover sync is disabled. Enable it once in Basic Configuration or set "
-"HARDCOVER_SYNC_ENABLED=true."
+"Hardcover sync is disabled, and auto-fetch is off. Enable Hardcover sync "
+"separately in Basic Configuration when you want reading-progress or "
+"annotation sync."
+msgstr ""
+
+#: cps/templates/cwa_settings.html
+msgid ""
+"Hardcover sync is disabled, so auto-fetch, reading-progress sync, and "
+"annotation sync are off."
 msgstr ""
 
 #: cps/templates/cwa_settings.html
@@ -11696,6 +12337,10 @@ msgstr ""
 #: cps/templates/cwa_settings.html
 msgid "Run Schedule:"
 msgstr "実行スケジュール："
+
+#: cps/templates/cwa_settings.html
+msgid "Never (auto-fetch off)"
+msgstr ""
 
 #: cps/templates/cwa_settings.html
 msgid "How often to automatically run the Hardcover ID fetch task"
@@ -12328,10 +12973,6 @@ msgid ""
 msgstr ""
 
 #: cps/templates/cwng_feedback_popup.html
-msgid "Try again"
-msgstr ""
-
-#: cps/templates/cwng_feedback_popup.html
 msgid "Anonymize my feedback"
 msgstr ""
 
@@ -12464,14 +13105,6 @@ msgstr "UUIDをコピー"
 #: cps/templates/detail.html
 msgid "File sizes"
 msgstr "ファイルサイズ"
-
-#: cps/templates/detail.html
-msgid "KOReader Progress"
-msgstr ""
-
-#: cps/templates/detail.html
-msgid "Started reading"
-msgstr ""
 
 #: cps/templates/detail.html cps/templates/listenmp3.html
 msgid "Description:"
@@ -13655,10 +14288,6 @@ msgid "Flip Image"
 msgstr "画像を反転する"
 
 #: cps/templates/readcbr.html
-msgid "Display"
-msgstr "表示"
-
-#: cps/templates/readcbr.html
 msgid "Single Page"
 msgstr "単一ページ"
 
@@ -13956,10 +14585,6 @@ msgstr "ユーザーが見つかりません"
 #: cps/templates/shelf_order.html
 msgid "Hidden Book"
 msgstr "非表示の本"
-
-#: cps/templates/shelf_reorder.html
-msgid "Sort by"
-msgstr ""
 
 #: cps/templates/shelf_reorder.html
 msgid "You do not have any shelves to reorder yet."
@@ -14626,6 +15251,15 @@ msgstr "選択した本棚をKoboと同期"
 msgid "Show Read/Unread Section"
 msgstr "既読/未読セクションを表示"
 
+#~ msgid "Only jpg/jpeg/png/webp/bmp files are supported as coverfile"
+#~ msgstr "表紙ファイルは jpg/jpeg/png/webp/bmp のみ対応しています"
+
+#~ msgid "Invalid cover file content"
+#~ msgstr "表紙ファイルの内容が無効です"
+
+#~ msgid "Only jpg/jpeg files are supported as coverfile"
+#~ msgstr "表紙ファイルは jpg/jpeg のみ対応しています"
+
 #~ msgid "%(book_id)s is a invalid Book Id. Could not be added to Shelf"
 #~ msgstr "%(book_id)s は無効な書籍IDです。本棚に追加できませんでした"
 
@@ -15199,9 +15833,6 @@ msgstr "既読/未読セクションを表示"
 #~ msgid "Value must be an iterable."
 #~ msgstr "値はtrueかfalseのどちらかでなければなりません"
 
-#~ msgid "Users"
-#~ msgstr "ユーザー"
-
 #~ msgid "Click the cover to load metadata to the form"
 #~ msgstr "カバー画像をクリックしてメタデータをフォームに読み込んでください"
 
@@ -15221,68 +15852,18 @@ msgstr "既読/未読セクションを表示"
 #~ msgid "Books currently being read"
 #~ msgstr "現在のバージョン"
 
-#~ msgid "(no text captured)"
+#~ msgid ""
+#~ "On by default. Unchanged books are "
+#~ "suppressed only when the device returns"
+#~ " a valid but stale CWNG sync "
+#~ "token. Requests without a valid CWNG "
+#~ "token always receive the full library,"
+#~ " including after a factory reset."
 #~ msgstr ""
 
-#~ msgid "Could not open that highlight."
+#~ msgid ""
+#~ "Hardcover sync is disabled. Enable it"
+#~ " once in Basic Configuration or set"
+#~ " HARDCOVER_SYNC_ENABLED=true."
 #~ msgstr ""
 
-#~ msgid "Could not open that search result."
-#~ msgstr ""
-
-#~ msgid "Could not save reader settings."
-#~ msgstr ""
-
-#~ msgid "Could not save that note."
-#~ msgstr ""
-
-#~ msgid "Could not save your reading position."
-#~ msgstr ""
-
-#~ msgid "Could not search this book."
-#~ msgstr ""
-
-#~ msgid "Font family"
-#~ msgstr ""
-
-#~ msgid "Go to this highlight"
-#~ msgstr ""
-
-#~ msgid "Highlight saved"
-#~ msgstr ""
-
-#~ msgid "No highlights yet. Select text in the book to make one."
-#~ msgstr ""
-
-#~ msgid "No matches found in this book."
-#~ msgstr ""
-
-#~ msgid "Open classic reader"
-#~ msgstr ""
-
-#~ msgid "Open reader"
-#~ msgstr ""
-
-#~ msgid "Page theme"
-#~ msgstr ""
-
-#~ msgid "Save note"
-#~ msgstr ""
-
-#~ msgid "Search inside book"
-#~ msgstr ""
-
-#~ msgid "Search term"
-#~ msgstr ""
-
-#~ msgid "Search this book"
-#~ msgstr ""
-
-#~ msgid "Searching this book…"
-#~ msgstr ""
-
-#~ msgid "Write a note…"
-#~ msgstr ""
-
-#~ msgid "{count} matches"
-#~ msgstr ""

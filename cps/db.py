@@ -119,6 +119,24 @@ def user_library_membership_filter(app_session, metadata_session, user_id,
     return Books.id.notin_(membership_ids)
 
 
+def public_shelf_book_filter(app_session, metadata_session):
+    """Build a cross-database predicate for books on explicit public shelves."""
+    public_books = (app_session.query(ub.BookShelf.book_id)
+                    .join(ub.Shelf, ub.Shelf.id == ub.BookShelf.shelf)
+                    .filter(ub.Shelf.is_public == 1))
+    if _sqlite_json_available(app_session, metadata_session):
+        book_ids_json = (public_books.with_entities(
+            func.json_group_array(ub.BookShelf.book_id)
+        ).scalar() or "[]")
+        values = (func.json_each(book_ids_json)
+                  .table_valued("value")
+                  .alias("public_shelf_books"))
+        book_ids = select(values.c.value)
+    else:
+        book_ids = [int(row.book_id) for row in public_books.all()]
+    return Books.id.in_(book_ids)
+
+
 def _register_sqlite_udfs(dbapi_connection, _connection_record):
     """Register Python UDFs (lower, uuid4, title_sort) once per SQLite
     connection — installed as a SQLAlchemy ``connect`` event listener.
@@ -364,6 +382,20 @@ books_publishers_link = Table('books_publishers_link', Base.metadata,
                               Column('book', Integer, ForeignKey('books.id'), primary_key=True),
                               Column('publisher', Integer, ForeignKey('publishers.id'), primary_key=True)
                               )
+
+
+# Calibre has no separate transactional sidecar table for per-source ingest
+# commits. The ingest helper therefore records its retry marker alongside book
+# identifiers so the book write and marker share one database transaction.
+# These rows are application state, not bibliographic identifiers. Keep the
+# default Books.identifiers relationship public-only so every ORM consumer gets
+# the safe view without remembering its own filter. Code that genuinely needs
+# ingest state must opt into Books.internal_identifiers by name.
+INTERNAL_IDENTIFIER_PREFIX = "cwng_ingest_sha256_"
+
+
+def is_internal_identifier_type(identifier_type):
+    return str(identifier_type or "").lower().startswith(INTERNAL_IDENTIFIER_PREFIX)
 
 
 class Library_Id(Base):
@@ -711,7 +743,28 @@ class Books(Base):
     ratings = relationship(Ratings, secondary=books_ratings_link, backref='books', lazy='selectin')
     languages = relationship(Languages, secondary=books_languages_link, backref='books', lazy='selectin')
     publishers = relationship(Publishers, secondary=books_publishers_link, backref='books', lazy='selectin')
-    identifiers = relationship(Identifiers, backref='books', lazy='selectin')
+    identifiers = relationship(
+        Identifiers,
+        primaryjoin=lambda: and_(
+            Books.id == Identifiers.book,
+            func.substr(
+                func.lower(Identifiers.type), 1, len(INTERNAL_IDENTIFIER_PREFIX)
+            ) != INTERNAL_IDENTIFIER_PREFIX,
+        ),
+        backref='books',
+        lazy='selectin',
+    )
+    internal_identifiers = relationship(
+        Identifiers,
+        primaryjoin=lambda: and_(
+            Books.id == Identifiers.book,
+            func.substr(
+                func.lower(Identifiers.type), 1, len(INTERNAL_IDENTIFIER_PREFIX)
+            ) == INTERNAL_IDENTIFIER_PREFIX,
+        ),
+        viewonly=True,
+        lazy='select',
+    )
 
     def __init__(self, title, sort, author_sort, timestamp, pubdate, series_index, last_modified, path, has_cover,
                  authors, tags, languages=None):
@@ -1504,7 +1557,8 @@ class CalibreDB:
         return self.session.query(Books).filter(Books.id == book_id).first()
 
     def get_filtered_book(self, book_id, allow_show_archived=False,
-                          allow_show_hidden=False, user=None):
+                          allow_show_hidden=False, allow_show_global=False,
+                          user=None):
         self.ensure_session()
         # Eagerly load all relationships to prevent detached instance errors during editing
         # allow_show_hidden=True: covers/read/edit/download flows for a user's
@@ -1525,12 +1579,14 @@ class CalibreDB:
                 .filter(self.common_filters(
                     allow_show_archived,
                     allow_show_hidden=allow_show_hidden,
+                    allow_show_global=allow_show_global,
                     user=user,
                 ))
                 .first())
 
     def get_filtered_book_ids_for_users(self, users, visibility_state,
-                                        candidates_by_user):
+                                        candidates_by_user,
+                                        allow_show_global=False):
         """Resolve candidate books in several users' current filtered views.
 
         ``common_filters`` intentionally performs app-database lookups for one
@@ -1613,7 +1669,8 @@ class CalibreDB:
                 denied_column_filter = false()
 
             membership_filter = true()
-            if bool(getattr(filter_user, "has_own_library", False)):
+            if (not allow_show_global
+                    and bool(getattr(filter_user, "has_own_library", False))):
                 membership_filter = Books.id.in_(membership_ids)
 
             candidate_values = func.json_each(
@@ -1760,6 +1817,7 @@ class CalibreDB:
         allow_show_hidden=False,
         extra_filter=None,
         allow_show_global=False,
+        allow_public_shelf_books=False,
         user=None,
     ):
         filter_user = user or current_user
@@ -1868,6 +1926,19 @@ class CalibreDB:
                 )
                 if cache is not None:
                     cache[user_id] = membership_filter
+            if allow_public_shelf_books:
+                public_shelf_filter = None
+                if has_request_context():
+                    public_shelf_filter = getattr(
+                        g, "_public_shelf_book_filter_cache", None
+                    )
+                if public_shelf_filter is None:
+                    public_shelf_filter = public_shelf_book_filter(
+                        ub.session, self.session
+                    )
+                    if has_request_context():
+                        g._public_shelf_book_filter_cache = public_shelf_filter
+                membership_filter = or_(membership_filter, public_shelf_filter)
         if extra_filter is None:
             extra_filter = true()
         return and_(lang_filter, pos_content_tags_filter, ~neg_content_tags_filter,
@@ -1931,6 +2002,7 @@ class CalibreDB:
         viewing_tag_id = kwargs.get('viewing_tag_id')
         allow_show_hidden = kwargs.get('allow_show_hidden', False)
         allow_show_global = kwargs.get('allow_show_global', False)
+        allow_public_shelf_books = kwargs.get('allow_public_shelf_books', False)
         extra_filter = kwargs.get('extra_filter')
         pagesize = pagesize or self.config.config_books_per_page
         if current_user.show_detail_random():
@@ -1949,6 +2021,7 @@ class CalibreDB:
                                                              viewing_tag_id=viewing_tag_id,
                                                              allow_show_hidden=allow_show_hidden,
                                                              allow_show_global=allow_show_global,
+                                                             allow_public_shelf_books=allow_public_shelf_books,
                                                              extra_filter=extra_filter))
                      .order_by(func.random())
                      .limit(self.config.config_random_books).all())
@@ -1992,6 +2065,7 @@ class CalibreDB:
                                         viewing_tag_id=viewing_tag_id,
                                         allow_show_hidden=allow_show_hidden,
                                         allow_show_global=allow_show_global,
+                                        allow_public_shelf_books=allow_public_shelf_books,
                                         extra_filter=extra_filter))
         entries = list()
         pagination = list()
@@ -2383,22 +2457,44 @@ class CalibreDB:
         Replaces the prior async TaskReconnectDatabase path which
         disposed the shared engine on a worker thread and raced with
         in-flight request greenlets (fork issue #192).
+
+        Every instance is attempted. If any active session cannot be
+        refreshed, raise after the sweep so callers never mistake a partial
+        refresh for success.
         """
+        failures = []
         with cls._reconnect_lock:
             for inst in list(cls.instances):
                 try:
-                    if inst.session is not None:
-                        try:
-                            inst.session.expire_all()
-                        except Exception:
-                            pass
-                        try:
-                            inst.session.rollback()
-                        except Exception:
-                            pass
-                except Exception:
-                    # One bad instance must not block the rest.
+                    session = inst._peek_session()
+                    if session is None:
+                        continue
+                except Exception as exc:
+                    # Refresh every other instance before reporting failure to
+                    # the caller. A partial refresh must not be reported as a
+                    # success: request handlers need a defined failure path.
+                    failures.append(exc)
                     continue
+
+                session_failure = None
+                try:
+                    session.expire_all()
+                except Exception as exc:
+                    session_failure = exc
+                try:
+                    session.rollback()
+                except Exception as exc:
+                    if session_failure is None:
+                        session_failure = exc
+                if session_failure is not None:
+                    failures.append(session_failure)
+
+        if failures:
+            raise RuntimeError(
+                "Could not refresh {} Calibre database session(s)".format(
+                    len(failures)
+                )
+            ) from failures[0]
 
 
 def lcase(s):
