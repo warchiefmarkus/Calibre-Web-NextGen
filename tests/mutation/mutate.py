@@ -13,7 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 import fcntl
 import hashlib
 import importlib.util
@@ -40,6 +40,17 @@ class IsolationError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class UninspectableProcess:
+    """No token observation was possible; neither presence nor absence is known."""
+
+    pid: int
+    error: int
+
+    def __bool__(self):
+        raise TypeError("an uninspectable process requires explicit handling")
+
+
+@dataclass(frozen=True, slots=True)
 class PhaseResult:
     argv: tuple[str, ...]
     returncode: int | None
@@ -48,8 +59,34 @@ class PhaseResult:
     timed_out: bool
     containment_error: str | None
     escaped_pids: tuple[int, ...]
+    inspection_gaps: tuple[UninspectableProcess, ...] = ()
     status: str = field(default="UNVERIFIED", init=False)
     authoritative: bool = field(default=False, init=False)
+
+    @property
+    def containment_verdict(self) -> str:
+        """Verdict for the restricted diagnostic contract, never authority."""
+        if self.containment_error or self.escaped_pids:
+            return "REJECTED"
+        if self.inspection_gaps:
+            return "INCONCLUSIVE"
+        return "ESTABLISHED"
+
+
+class ContainmentInconclusive(IsolationError):
+    """Ownership remains unresolved; no clean or contaminated verdict is known."""
+
+    def __init__(self, phase: PhaseResult):
+        self.phase = phase
+        super().__init__("containment INCONCLUSIVE: unresolved phase-token inspection "
+                         f"for processes {[gap.pid for gap in phase.inspection_gaps]}")
+
+
+def _require_phase_containment(phase: PhaseResult) -> None:
+    if phase.containment_verdict == "REJECTED":
+        raise IsolationError(phase.containment_error or "phase process escaped its process group")
+    if phase.containment_verdict == "INCONCLUSIVE":
+        raise ContainmentInconclusive(phase)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +155,16 @@ def _process_identity(pid: int) -> tuple[int, int] | None:
     raise IsolationError(f"cannot inspect identity of process {pid}: errno {error}")
 
 
-def _has_phase_token(pid: int, token: str) -> bool:
+def _has_phase_token(pid: int, token: str) -> bool | UninspectableProcess:
+    """Bounded sysctl reinspection resolves exit races without consulting ps."""
+    for _ in range(3):
+        observation = _read_phase_token(pid, token)
+        if not isinstance(observation, UninspectableProcess):
+            return observation
+    return observation
+
+
+def _read_phase_token(pid: int, token: str) -> bool | UninspectableProcess:
     """Read Darwin's exec environment without logging arguments or environment."""
     library = ctypes.CDLL(None, use_errno=True)
     mib = (ctypes.c_int * 3)(1, 49, pid)  # CTL_KERN, KERN_PROCARGS2
@@ -131,17 +177,9 @@ def _has_phase_token(pid: int, token: str) -> bool:
                 # Kernel tasks / exited processes have no inspectable exec args.
                 return False
             if error == errno.EIO:
-                # The process may have exited since the process-table snapshot.
-                # A fresh absent/zombie result needs no environment inspection.
-                try:
-                    state = subprocess.run(["ps", "-p", str(pid), "-o", "state="],
-                                           capture_output=True, text=True, timeout=5)
-                except (OSError, subprocess.TimeoutExpired):
-                    pass
-                else:
-                    if ((state.returncode == 1 and not state.stdout.strip() and not state.stderr.strip())
-                            or (state.returncode == 0 and state.stdout.strip().startswith("Z"))):
-                        return False
+                # A failed read says nothing about token ownership. Do not ask
+                # ps to adjudicate it, or reinterpret it as absence/contamination.
+                return UninspectableProcess(pid, error)
             raise IsolationError(f"cannot inspect process environment: errno {error}")
     data = buffer.raw[:size.value]
     argc = int.from_bytes(data[:4], sys.byteorder, signed=True)
@@ -159,11 +197,14 @@ def _has_phase_token(pid: int, token: str) -> bool:
     return marker in data[offset:].split(b"\0")
 
 
-def _phase_members(pgid: int, token: str) -> dict[int, tuple[int, bool]]:
+def _phase_members(
+    pgid: int, token: str,
+) -> tuple[dict[int, tuple[int, bool]], tuple[UninspectableProcess, ...]]:
     """Inspect group and visible inherited-token processes, retaining zombies.
 
-    Clearing a token, changing credentials, and uninspectable exec environments
-    are outside this diagnostic contract. This is not a complete ownership proof.
+    Uninspectable exec environments are returned as gaps that block acceptance.
+    Clearing a token and changing credentials remain outside this diagnostic
+    contract. This is not a complete ownership proof.
     """
     try:
         result = subprocess.run(
@@ -175,15 +216,22 @@ def _phase_members(pgid: int, token: str) -> dict[int, tuple[int, bool]]:
     if result.returncode:
         raise IsolationError("cannot inspect phase process table")
     members = {}
+    gaps = []
     for line in result.stdout.splitlines():
         fields = line.split()
         if len(fields) != 3 or not fields[0].isdigit() or not fields[1].isdigit():
             raise IsolationError("malformed process table")
         pid, group = int(fields[0]), int(fields[1])
         zombie = fields[2].startswith("Z")
-        if group == pgid or (not zombie and _has_phase_token(pid, token)):
+        if group == pgid:
             members[pid] = (group, zombie)
-    return members
+        elif not zombie:
+            observation = _has_phase_token(pid, token)
+            if isinstance(observation, UninspectableProcess):
+                gaps.append(observation)
+            elif observation is True:
+                members[pid] = (group, zombie)
+    return members, tuple(gaps)
 
 
 def _group_is_zombie_only(pgid: int) -> bool:
@@ -224,7 +272,9 @@ def _signal_group(pgid: int, sig: signal.Signals) -> None:
     # All other permission and inspection errors remain containment errors.
 
 
-def _terminate_phase_processes(proc, token: str) -> tuple[tuple[int, ...], str | None]:
+def _terminate_phase_processes(
+    proc, token: str,
+) -> tuple[tuple[int, ...], str | None, tuple[UninspectableProcess, ...]]:
     """Kill and observe disappearance under the inherited-token diagnostic contract.
 
     The direct child is reaped by Popen; orphan descendants are reaped by the OS.
@@ -233,17 +283,34 @@ def _terminate_phase_processes(proc, token: str) -> tuple[tuple[int, ...], str |
     escaped = set()
     known = {}
     errors = []
+    gaps = {}
     deadline = time.monotonic() + 3
     while True:
         proc.poll()  # reap the leader before checking the process group
         try:
-            members = _phase_members(proc.pid, token)
+            members, uninspectable = _phase_members(proc.pid, token)
+            gaps.update((gap.pid, gap) for gap in uninspectable)
+            # A missing entry in ps is not evidence of disappearance. Reinspect
+            # pending PIDs through sysctl before accepting the cleanup boundary.
+            for pid in list(gaps):
+                observation = _has_phase_token(pid, token)
+                if isinstance(observation, UninspectableProcess):
+                    gaps[pid] = observation
+                    continue
+                del gaps[pid]
+                if observation is True:
+                    # Gaps originate outside the leader's process group. A
+                    # newly readable token is an escape, not a cleared gap.
+                    escaped.add(pid)
+                    identity = _process_identity(pid)
+                    if identity is not None:
+                        known[pid] = identity
             for pid, (group, zombie) in members.items():
+                if group != proc.pid:
+                    escaped.add(pid)
                 identity = _process_identity(pid)
                 if identity is not None:
                     known[pid] = identity
-                    if group != proc.pid:
-                        escaped.add(pid)
             # Kill immediately: a grace period permits further forks and writes.
             # This snapshot avoids signalling an absent group, but does not pin
             # its identity against reuse between inspection and the syscall.
@@ -281,7 +348,8 @@ def _terminate_phase_processes(proc, token: str) -> tuple[tuple[int, ...], str |
         errors.append("phase leader survived termination")
     if escaped:
         errors.append(f"phase process escaped its process group: {sorted(escaped)}")
-    return tuple(sorted(escaped)), "; ".join(errors) or None
+    return (tuple(sorted(escaped)), "; ".join(errors) or None,
+            tuple(gaps[pid] for pid in sorted(gaps)))
 
 
 def run_phase_process(
@@ -324,10 +392,11 @@ def run_phase_process(
         except subprocess.TimeoutExpired:
             timed_out = True
         finally:
-            escaped, containment_error = _terminate_phase_processes(proc, token)
+            escaped, containment_error, gaps = _terminate_phase_processes(proc, token)
     return PhaseResult(
         tuple(argv), proc.returncode, stdout_path.read_text(errors="replace"),
         stderr_path.read_text(errors="replace"), timed_out, containment_error, escaped,
+        inspection_gaps=gaps,
     )
 
 
@@ -404,6 +473,8 @@ def provenance_preflight(
             path = pathlib.Path(relative)
             if path.is_absolute() or not (root / path).resolve(strict=True).is_relative_to(root):
                 raise IsolationError(f"provenance REJECTED: {shape} path outside disposable root")
+        _require_phase_containment(result)
+        record["inspection_gaps"] = [asdict(gap) for gap in result.inspection_gaps]
         records.append(record)
     return tuple(records)
 
@@ -411,6 +482,7 @@ def provenance_preflight(
 def _check_report(phase: PhaseResult, report: dict) -> None:
     if phase.timed_out or phase.containment_error:
         raise IsolationError("pytest phase timed out or failed containment")
+    _require_phase_containment(phase)
     if (not isinstance(report, dict) or type(report.get("version")) is not int
             or report["version"] != 1 or report.get("complete") is not True
             or report.get("exitstatus") != phase.returncode):
@@ -618,6 +690,8 @@ def _safe_trace(trace):
         phases.append({"phase": name, "returncode": phase.returncode, "summary": summary,
                        "stdout_sha256": hashlib.sha256(phase.stdout.encode()).hexdigest(),
                        "stderr_sha256": hashlib.sha256(phase.stderr.encode()).hexdigest(),
+                       "inspection_gaps": [asdict(gap) for gap in phase.inspection_gaps],
+                       "containment_verdict": phase.containment_verdict,
                        "report": report})
     return phases
 
@@ -629,7 +703,14 @@ def run_checked_mutation(sweep, relative, old, new, targets, *, environment, tim
     trace = []
     try:
         check = _assess_mutation(sweep, relative, old, new, targets, environment, timeout, trace)
+        for _, phase, _ in trace:
+            _require_phase_containment(phase)
         signal_name, detail = check.signal, "execution checks passed; authority remains unverified"
+    except ContainmentInconclusive as exc:
+        sweep._mark_containment_inconclusive()
+        if not any(phase is exc.phase for _, phase, _ in trace):
+            trace.append(("containment", exc.phase, None))
+        signal_name, detail = "INCONCLUSIVE", str(exc)
     except (IsolationError, OSError, ValueError) as exc:
         signal_name, detail = "ERROR", str(exc) if isinstance(exc, IsolationError) else type(exc).__name__
     for root, replacement in ((sweep.root, "<execution-root>"), (sweep.source_repo, "<source-root>"),
@@ -651,7 +732,7 @@ def present_checked_result(result: CheckedResult) -> int:
             or result.authoritative is not False or type(result.exit_code) is not int
             or result.exit_code != 1):
         raise IsolationError("diagnostic authority fields are invalid")
-    if result.signal not in ("ERROR", "TEST_FAILURE", "TESTS_PASSED"):
+    if result.signal not in ("ERROR", "INCONCLUSIVE", "TEST_FAILURE", "TESTS_PASSED"):
         raise IsolationError("unsupported diagnostic signal")
     try:
         digest = _digest(result.evidence)
@@ -759,7 +840,7 @@ def _reap_stale_sweeps(repo: pathlib.Path, state_root: pathlib.Path) -> list[pat
             owner = int(metadata["owner_pid"])
         except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
             continue
-        if not valid or _is_live_pid(owner):
+        if not valid or metadata.get("state") == "containment-inconclusive" or _is_live_pid(owner):
             continue
         removal = subprocess.run(
             ["git", "-C", str(repo), "worktree", "remove", "--force", str(worktree)],
@@ -793,6 +874,7 @@ class IsolatedSweep:
         self.seed_tree = seed_tree
         self._closed = False
         self._phase_failed = False
+        self._containment_inconclusive = False
 
     @classmethod
     def create(
@@ -903,20 +985,33 @@ class IsolatedSweep:
                 argv, cwd=self.root, environment=environment, timeout=timeout,
                 artifacts=self.entry / "artifacts", ownership_contract=ownership_contract,
             )
-            if result.containment_error:
-                raise IsolationError(result.containment_error)
+            _require_phase_containment(result)
             self.scrub()
             if result.timed_out:
                 raise IsolationError("phase timed out")
             return result
+        except ContainmentInconclusive:
+            self._mark_containment_inconclusive()
+            raise
         except BaseException:
             self._phase_failed = True
             raise
+
+    def _mark_containment_inconclusive(self) -> None:
+        self._phase_failed = True
+        self._containment_inconclusive = True
+        metadata_path = self.entry / "metadata.json"
+        if metadata_path.exists():
+            metadata = json.loads(metadata_path.read_text())
+            metadata["state"] = "containment-inconclusive"
+            _write_json(metadata_path, metadata)
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        if self._containment_inconclusive:
+            return  # Preserve the tree; an unreadable writer may still own it.
         removal = subprocess.run(
             [
                 "git",
@@ -1057,7 +1152,7 @@ def main():
                 )
                 present_checked_result(result)
                 print(f"UNVERIFIED observation={index} evidence={result.evidence.name}", flush=True)
-                if result.signal == "ERROR":
+                if result.signal in ("ERROR", "INCONCLUSIVE"):
                     break
         return 1
     except (IsolationError, OSError, ValueError) as exc:

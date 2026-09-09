@@ -55,9 +55,12 @@ def _run(body):
 
     app = flask.Flask(__name__)
     book = _book()
+    session = MagicMock()
+    session.execute.return_value.fetchall.return_value = [("eng",)]
     database = SimpleNamespace(
         get_filtered_book=lambda *args, **kwargs: book,
         get_cc_columns=lambda *args, **kwargs: [],
+        session=session,
     )
     core = MagicMock(return_value=_SUCCESS)
     with app.test_request_context(

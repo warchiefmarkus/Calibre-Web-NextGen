@@ -6619,6 +6619,17 @@ msgstr ""
 "bibliotheek om ze in Mijn bibliotheek te zetten."
 
 #: cps/spa_strings.py
+#, python-brace-format
+msgid "Original device attribution restored for {n}."
+msgstr "Toewijzing aan het oorspronkelijke apparaat hersteld voor {n}."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Original device attribution restored for {ok} of {total}."
+msgstr ""
+"Toewijzing aan het oorspronkelijke apparaat hersteld voor {ok} van {total}."
+
+#: cps/spa_strings.py
 msgid "PDF reader"
 msgstr "PDF-lezer"
 
@@ -7712,6 +7723,15 @@ msgstr "Uploaden is niet beschikbaar voor je account op deze server."
 #: cps/spa_strings.py
 msgid "Use my own cover"
 msgstr "Mijn eigen omslag gebruiken"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Use original device: {name}"
+msgstr "Oorspronkelijk apparaat gebruiken: {name}"
+
+#: cps/spa_strings.py
+msgid "Use original devices"
+msgstr "Oorspronkelijke apparaten gebruiken"
 
 #: cps/spa_strings.py
 msgid "Use the library cover"

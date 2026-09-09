@@ -6757,6 +6757,16 @@ msgstr ""
 " Bibliothèque globale pour les ajouter à Ma bibliothèque."
 
 #: cps/spa_strings.py
+#, python-brace-format
+msgid "Original device attribution restored for {n}."
+msgstr "Attribution à l'appareil d'origine rétablie pour {n}."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Original device attribution restored for {ok} of {total}."
+msgstr "Attribution à l'appareil d'origine rétablie pour {ok} sur {total}."
+
+#: cps/spa_strings.py
 msgid "PDF reader"
 msgstr "Lecteur PDF"
 
@@ -7852,6 +7862,15 @@ msgstr "Le téléversement n'est pas disponible pour votre compte sur ce serveur
 #: cps/spa_strings.py
 msgid "Use my own cover"
 msgstr "Utiliser ma propre couverture"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Use original device: {name}"
+msgstr "Utiliser l'appareil d'origine : {name}"
+
+#: cps/spa_strings.py
+msgid "Use original devices"
+msgstr "Utiliser les appareils d'origine"
 
 #: cps/spa_strings.py
 msgid "Use the library cover"

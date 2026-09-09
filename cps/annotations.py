@@ -2234,14 +2234,23 @@ def _data_json_row(r, cfi, pdf_quad, device_public_ids=None, anchor_status=None)
     }
 
 
-def _annotation_device_payload(user_id, session, device_ids=None):
-    """Return a bounded internal→public lookup for referenced devices only."""
-    if device_ids is not None and not device_ids:
+def _annotation_device_payload(user_id, session, device_ids=None, include_assignable=False):
+    """Return an owned, bounded lookup, optionally including assignment choices."""
+    if device_ids is not None and not device_ids and not include_assignable:
         return {}, {}
     query = session.query(ub.Device).filter(ub.Device.user_id == user_id)
     if device_ids is not None:
-        query = query.filter(ub.Device.id.in_(tuple(device_ids)))
-    devices = query.order_by(ub.Device.id).limit(MAX_DEVICE_LIST_LIMIT).all()
+        referenced = ub.Device.id.in_(tuple(device_ids))
+        query = query.filter(or_(referenced, ub.Device.active.is_(True)) if include_assignable else referenced)
+    if include_assignable:
+        # Preserve referenced attribution first; assignment choices take the
+        # remaining capacity in the active registry's order.
+        if device_ids is not None:
+            query = query.order_by(referenced.desc())
+        query = query.order_by(ub.Device.active.desc(), ub.Device.display_name, ub.Device.id)
+    else:
+        query = query.order_by(ub.Device.id)
+    devices = query.limit(MAX_DEVICE_LIST_LIMIT).all()
     public_ids = {device.id: device.public_id for device in devices}
     payload = {
         device.public_id: {
@@ -2278,7 +2287,7 @@ def annotations_data(book_id):
         if device_id is not None
     }
     device_public_ids, devices = _annotation_device_payload(
-        current_user.id, ub.session, device_ids=referenced_device_ids,
+        current_user.id, ub.session, device_ids=referenced_device_ids, include_assignable=True,
     )
     out = []
     for r in rows:
@@ -2398,6 +2407,11 @@ def create_annotation(payload, *, user_id, book, session, commit,
     request context — mirrors :func:`ingest_bookmarks`. Raises ``ValueError``
     on a payload with no usable anchor.
     """
+    # An explicitly empty note is learned; an omitted note remains unknown.
+    note_text = payload.get("note_text")
+    if "note_text" in payload and note_text is None:
+        note_text = ""
+
     # The reader sends a palette NAME; the column speaks canonical hex. Accept
     # the name (unchanged UI contract), store the hex.
     color_name = (payload.get("highlight_color") or "yellow").strip().lower()
@@ -2547,7 +2561,7 @@ def create_annotation(payload, *, user_id, book, session, commit,
             last_editor_device_id=origin_device_id,
             highlighted_text=payload.get("highlighted_text"),
             highlight_color=color,
-            note_text=payload.get("note_text"),
+            note_text=note_text,
             content_id=content_id,
             cfi_range=cfi_range,
             position_type="cfi",
@@ -2579,7 +2593,7 @@ def create_annotation(payload, *, user_id, book, session, commit,
         last_editor_device_id=origin_device_id,
         highlighted_text=payload.get("highlighted_text"),
         highlight_color=color,
-        note_text=payload.get("note_text"),
+        note_text=note_text,
         content_id=content_id,
         start_container_path="span#" + start_span,
         start_container_child_index=-99,
@@ -2645,7 +2659,9 @@ def edit_annotation(annotation_id, *, user_id, book_id, session, commit,
         # Validate the name the reader sent, store the canonical hex.
         row.highlight_color = to_storage_color(normalized)
     if note is not _UNSET:
-        row.note_text = note
+        # Explicit clears (including legacy reader JSON null) are known empty.
+        # Omission keeps _UNSET, preserving NULL for notes never learned.
+        row.note_text = "" if note is None else note
     if highlighted_text is not _UNSET:
         row.highlighted_text = highlighted_text
     if pdf_locator is not _UNSET:

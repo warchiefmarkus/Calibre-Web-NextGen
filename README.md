@@ -522,6 +522,20 @@ Behind multiple proxies (e.g. Cloudflare Tunnel then nginx then CWA), set the pr
 - TRUSTED_PROXY_COUNT=2
 ```
 
+Set `TRUSTED_PROXY_COUNT` to the number of trusted proxy hops: for
+HAProxy → traefik → container, use `2`. With `X-Forwarded-Proto: https, http`,
+the default of `1` selects the inner hop's `http`; `2` selects the browser-facing
+`https`. If headers have different chain lengths, use the per-header overrides below.
+
+The New UI's API Origin guard accepts a same-host HTTPS origin even when the
+proxy-derived URL is HTTP, so upstream TLS termination does not block writes.
+The reverse direction (HTTP origin against an HTTPS-derived URL) is still rejected.
+For a `Rejected cross-site` warning, check `TRUSTED_PROXY_COUNT` and the forwarded
+headers. If the proxy rewrites Host without preserving the public host in
+`X-Forwarded-Host`, set `CWNG_TRUSTED_ORIGINS` to your public origin
+(comma-separated for multiple origins). Correct proxy configuration is still
+needed for generated URLs and other scheme-sensitive behavior.
+
 Without this, CWA may see different client IPs across requests and trigger Session Protection warnings, forcing re-login on every page load. It can also mistake an externally secure OIDC callback for plain HTTP. Default is `1`.
 
 `TRUSTED_PROXY_COUNT` applies one trust depth to `X-Forwarded-For`,
@@ -837,34 +851,34 @@ The interface ships with the locales below. Completion is auto-refreshed on ever
 | Language | Completion | Strings | Fuzzy |
 |---|---|---:|---:|
 | English (source) | 100% | source | — |
-| Italian (`it`) | `████████████████████` 100% | 3128/3130 | 0 |
-| Spanish (`es`) | `████████████████████` 99% | 3108/3130 | 0 |
-| Russian (`ru`) | `██████████████████░░` 90% | 2813/3130 | 0 |
-| French (`fr`) | `█████████████████░░░` 83% | 2604/3130 | 125 |
-| Polish (`pl`) | `████████████████░░░░` 82% | 2575/3130 | 0 |
-| German (`de`) | `██████████████░░░░░░` 69% | 2157/3130 | 12 |
-| Dutch (`nl`) | `██████████████░░░░░░` 69% | 2150/3130 | 289 |
-| Hungarian (`hu`) | `██████████░░░░░░░░░░` 52% | 1636/3130 | 119 |
-| Portuguese (Brazil) (`pt_BR`) | `█████████░░░░░░░░░░░` 45% | 1396/3130 | 306 |
-| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `█████████░░░░░░░░░░░` 44% | 1371/3130 | 181 |
-| Japanese (`ja`) | `████████░░░░░░░░░░░░` 42% | 1310/3130 | 244 |
-| Slovenian (`sl`) | `████████░░░░░░░░░░░░` 38% | 1203/3130 | 313 |
-| Chinese (Simplified, China) (`zh_Hans_CN`) | `███████░░░░░░░░░░░░░` 37% | 1166/3130 | 343 |
-| Korean (`ko`) | `██████░░░░░░░░░░░░░░` 30% | 939/3130 | 266 |
-| Arabic (`ar`) | `█████░░░░░░░░░░░░░░░` 25% | 784/3130 | 281 |
-| Slovak (`sk`) | `█████░░░░░░░░░░░░░░░` 24% | 744/3130 | 308 |
-| Portuguese (`pt`) | `████░░░░░░░░░░░░░░░░` 22% | 696/3130 | 355 |
-| Galician (`gl`) | `████░░░░░░░░░░░░░░░░` 22% | 672/3130 | 356 |
-| Indonesian (`id`) | `████░░░░░░░░░░░░░░░░` 22% | 673/3130 | 357 |
-| Swedish (`sv`) | `████░░░░░░░░░░░░░░░░` 19% | 581/3130 | 383 |
-| Greek (`el`) | `███░░░░░░░░░░░░░░░░░` 16% | 504/3130 | 394 |
-| Czech (`cs`) | `███░░░░░░░░░░░░░░░░░` 15% | 475/3130 | 403 |
-| Ukrainian (`uk`) | `███░░░░░░░░░░░░░░░░░` 14% | 444/3130 | 368 |
-| Norwegian (`no`) | `███░░░░░░░░░░░░░░░░░` 14% | 429/3130 | 431 |
-| Vietnamese (`vi`) | `███░░░░░░░░░░░░░░░░░` 14% | 422/3130 | 352 |
-| Finnish (`fi`) | `██░░░░░░░░░░░░░░░░░░` 11% | 355/3130 | 383 |
-| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 9% | 289/3130 | 380 |
-| Khmer (`km`) | `█░░░░░░░░░░░░░░░░░░░` 7% | 207/3130 | 340 |
+| Swedish (`sv`) | `████████████████████` 100% | 3130/3134 | 0 |
+| Italian (`it`) | `████████████████████` 100% | 3128/3134 | 0 |
+| Spanish (`es`) | `████████████████████` 99% | 3108/3134 | 0 |
+| Russian (`ru`) | `██████████████████░░` 90% | 2813/3134 | 0 |
+| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `█████████████████░░░` 85% | 2673/3134 | 181 |
+| French (`fr`) | `█████████████████░░░` 83% | 2608/3134 | 125 |
+| Polish (`pl`) | `████████████████░░░░` 82% | 2575/3134 | 0 |
+| German (`de`) | `██████████████░░░░░░` 69% | 2157/3134 | 12 |
+| Dutch (`nl`) | `██████████████░░░░░░` 69% | 2154/3134 | 289 |
+| Hungarian (`hu`) | `██████████░░░░░░░░░░` 52% | 1636/3134 | 119 |
+| Portuguese (Brazil) (`pt_BR`) | `█████████░░░░░░░░░░░` 44% | 1396/3134 | 306 |
+| Japanese (`ja`) | `████████░░░░░░░░░░░░` 42% | 1310/3134 | 244 |
+| Slovenian (`sl`) | `████████░░░░░░░░░░░░` 38% | 1203/3134 | 313 |
+| Chinese (Simplified, China) (`zh_Hans_CN`) | `███████░░░░░░░░░░░░░` 37% | 1166/3134 | 343 |
+| Korean (`ko`) | `██████░░░░░░░░░░░░░░` 30% | 939/3134 | 266 |
+| Arabic (`ar`) | `█████░░░░░░░░░░░░░░░` 25% | 784/3134 | 281 |
+| Slovak (`sk`) | `█████░░░░░░░░░░░░░░░` 24% | 744/3134 | 308 |
+| Portuguese (`pt`) | `████░░░░░░░░░░░░░░░░` 22% | 696/3134 | 355 |
+| Indonesian (`id`) | `████░░░░░░░░░░░░░░░░` 22% | 673/3134 | 357 |
+| Galician (`gl`) | `████░░░░░░░░░░░░░░░░` 21% | 672/3134 | 356 |
+| Greek (`el`) | `███░░░░░░░░░░░░░░░░░` 16% | 504/3134 | 394 |
+| Czech (`cs`) | `███░░░░░░░░░░░░░░░░░` 15% | 475/3134 | 403 |
+| Ukrainian (`uk`) | `███░░░░░░░░░░░░░░░░░` 14% | 444/3134 | 368 |
+| Norwegian (`no`) | `███░░░░░░░░░░░░░░░░░` 14% | 429/3134 | 431 |
+| Vietnamese (`vi`) | `███░░░░░░░░░░░░░░░░░` 14% | 422/3134 | 352 |
+| Finnish (`fi`) | `██░░░░░░░░░░░░░░░░░░` 11% | 355/3134 | 383 |
+| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 9% | 289/3134 | 380 |
+| Khmer (`km`) | `█░░░░░░░░░░░░░░░░░░░` 7% | 207/3134 | 340 |
 <!-- TRANSLATION_STATUS_END -->
 
 ---
