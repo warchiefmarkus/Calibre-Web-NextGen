@@ -148,26 +148,26 @@ function BookCardInner({
           <span className={styles.readingBadge} role="img" aria-label={t('Reading')}
             data-testid="reading-badge">
             <BookOpen size={13} strokeWidth={2.5} aria-hidden="true" focusable={false} />
-            {t('Reading')}
+            <span className={styles.badgeLabel}>{t('Reading')}</span>
           </span>
         ) : book.read ? (
           <span className={styles.readBadge} role="img" aria-label={t('Read')}
             data-testid="read-badge">
             <Check size={13} strokeWidth={3} aria-hidden="true" focusable={false} />
-            {t('Read')}
+            <span className={styles.badgeLabel}>{t('Read')}</span>
           </span>
         ) : null}
         {book.hidden && (
           <span className={styles.hiddenBadge} role="img" aria-label={t('Hidden')}
             data-testid="hidden-book-badge">
             <EyeOff size={12} aria-hidden="true" focusable={false} />
-            {t('Hidden')}
+            <span className={styles.badgeLabel}>{t('Hidden')}</span>
           </span>
         )}
         {membership === 'owned' && (
           <span className={styles.libraryBadge} role="img" aria-label={t('In your library')}>
             <BookCheck size={12} aria-hidden="true" focusable={false} />
-            {t('In your library')}
+            <span className={styles.badgeLabel}>{t('In your library')}</span>
           </span>
         )}
         {seriesIndexLabel && (

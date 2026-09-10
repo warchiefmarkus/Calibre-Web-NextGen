@@ -196,9 +196,13 @@
    because "done" reads as green far more universally than amber, and because
    the amber circle was competing with the accent-coloured hover actions. */
 .readBadge, .readingBadge {
+  min-width: 0;
+  max-width: 100%;
   min-height: 24px;
   padding: 0 var(--sp-2);
   border-radius: var(--r-full);
+  box-sizing: border-box;
+  overflow: hidden;
   /* Fixed green, NOT var(--success). The badge sits on a cover image, so its
      legibility has to be self-contained — it cannot borrow contrast from the
      page background the way page text can. --success is theme-aware and flips
@@ -232,8 +236,12 @@
 /* Personal-library state: quiet but explicit when Show hidden books is on.
    Sits in .badgeRow. */
 .hiddenBadge, .libraryBadge {
+  min-width: 0;
+  max-width: 100%;
   min-height: 24px;
   padding: 0 var(--sp-2);
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: var(--r-full);
   background: var(--cover-control-bg);
   color: var(--cover-control-fg);
@@ -249,6 +257,13 @@
 }
 
 .libraryBadge {
+  white-space: nowrap;
+}
+
+.badgeLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -462,32 +477,70 @@
   .readNow, .removeBtn, .quickEditBtn { display: none; }
   .addToLibrary { display: flex; min-height: 44px; }
   .moreActionsWrap { display: block; }
-  /* Bigger where legibility is worst — a phone held at arm's length is the
-     case the reporter was describing. */
-  .readBadge, .readingBadge, .hiddenBadge, .libraryBadge {
-    min-height: 28px;
-    font-size: var(--fs-sm);
+  /* Keep cover chrome compact on phones. These badges are status indicators,
+     not tap targets, so they do not need the 44px control sizing used by the
+     disclosure actions. The label itself ellipsises before it can escape the
+     cover on Compact/Dense grids. */
+  .badgeRow {
+    bottom: var(--sp-1);
+    left: var(--sp-1);
+    max-width: calc(100% - var(--sp-1) * 2);
+    gap: 2px;
   }
-  .seriesBadge { min-width: 28px; height: 28px; font-size: var(--fs-sm); }
+  .readBadge, .readingBadge, .hiddenBadge, .libraryBadge {
+    min-height: 22px;
+    padding-inline: var(--sp-1);
+    font-size: var(--fs-xs);
+  }
+  .seriesBadge {
+    min-width: 22px;
+    height: 22px;
+    padding-inline: var(--sp-1);
+    font-size: var(--fs-xs);
+  }
 }
 
 .moreActionsTrigger {
+  /* Preserve a generous 44x44 hit target, but do not paint a 44px disc over a
+     cover that may be only ~82px wide in Dense mode. */
+  position: relative;
   width: 44px;
   height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 0;
   border-radius: var(--r-full);
   color: var(--cover-control-fg);
+  background: transparent;
+  box-shadow: none;
+}
+
+.moreActionsTrigger::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: var(--r-full);
   background: var(--cover-control-bg);
   border: 1px solid var(--cover-control-border);
-  box-shadow: var(--elev-2);
+  box-shadow: var(--elev-1);
+}
+
+.moreActionsTrigger svg {
+  position: relative;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
 }
 
 .moreActionsTrigger[aria-expanded="true"],
 .moreActionsTrigger:hover {
-  background: var(--surface-3);
   color: var(--text);
+}
+
+.moreActionsTrigger[aria-expanded="true"]::before,
+.moreActionsTrigger:hover::before {
+  background: var(--surface-3);
 }
 
 .moreActionsPanel {
@@ -553,4 +606,12 @@
      threshold that has nothing to do with the rail. */
   .actionRowEdit .readNowLabel { display: none; }
   .removeBtn, .quickEditBtn { width: 32px; height: 32px; }
+}
+
+/* Dense mobile cards can be ~82px wide. The read-state icon is decorative and
+   duplicates the visible/ARIA label, so reclaim its width before truncating
+   useful status text such as Ukrainian "Прочитано". */
+@container book-card (max-width: 100px) {
+  .readBadge svg, .readingBadge svg { display: none; }
+  .readBadge, .readingBadge { gap: 0; }
 }

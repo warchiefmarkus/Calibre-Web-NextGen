@@ -272,7 +272,28 @@ def test_coarse_pointer_reversal_does_not_touch_primary_actions_or_badges():
         .split("/* Narrow cards", 1)[0]
     assert ".addToLibrary {\n  opacity: 1;" in css
     assert ".readBadge, .readingBadge, .hiddenBadge, .libraryBadge" in coarse
-    assert ".seriesBadge { min-width: 28px; height: 28px;" in coarse
+    assert "min-height: 22px;" in coarse
+    assert ".seriesBadge {" in coarse and "height: 22px;" in coarse
+
+
+def test_touch_cover_chrome_keeps_large_hit_target_but_small_visuals():
+    """Touch safety must not require painting half of an 82px Dense cover.
+
+    The disclosure keeps its 44px hit box while a 30px pseudo-element paints the
+    visible disc. Badge labels shrink/ellipsis inside the cover, and Dense cards
+    drop only the redundant read-state icon before truncating the status text.
+    """
+    src = (_FE / "components" / "BookCard.tsx").read_text()
+    css = (_FE / "components" / "BookCard.module.css").read_text()
+
+    assert ".moreActionsTrigger::before" in css
+    assert "inset: 7px;" in css  # 44px target -> 30px painted circle
+    assert "background: transparent;" in css
+    assert ".badgeLabel" in css and "text-overflow: ellipsis;" in css
+    assert "max-width: 100%;" in css
+    assert "@container book-card (max-width: 100px)" in css
+    assert ".readBadge svg, .readingBadge svg { display: none; }" in css
+    assert src.count("className={styles.badgeLabel}") >= 4
 
 
 def test_every_book_card_surface_passes_the_live_preference():
