@@ -121,30 +121,53 @@ async function bookHasFormat(page: Page, bookId: number, format: string) {
   return detail.formats.some(({ format: current }) => current.toUpperCase() === format);
 }
 
-test('disclosed card actions keep SC 2.5.8 targets on touch (2026-08-29 ruling)', async ({ page, isMobile }) => {
+test('touch cards expose no action targets; the book page carries them (2026-09-12 ruling)', async ({ page, isMobile }) => {
   test.skip(isMobile !== true, 'coarse-pointer target-size regression');
 
   await page.goto('/app/');
+  const details = page.locator('a[aria-label^="Open details for"]');
+  await expect(details.first()).toBeVisible();
+
+  // The operator removed the per-card disclosure: a touch card is a cover and
+  // a title link, so there is no small card control left to measure. Assert the
+  // absence rather than deleting the coverage, then measure the controls the
+  // actions actually moved to.
+  await expect(
+    page.getByRole('button', { name: /^More actions for / }),
+    'a touch card must expose no More actions target',
+  ).toHaveCount(0);
   const edit = page.locator('a[aria-label^="Edit "]').first();
   await expect(edit).toBeAttached();
-  const card = edit.locator('..').locator('..');
-  const more = card.getByRole('button', { name: /^More actions for / });
-  await expectSc258Target('Touch card More actions trigger', more);
-  await more.click();
-  const actions = card.getByRole('group', { name: /^Actions for / });
+  expect(
+    await edit.boundingBox(),
+    'the legacy card pencil must occupy no touch target',
+  ).toBeNull();
+
+  // Where those actions live now. Read now and Add to shelf are full-width row
+  // controls; the Edit affordance is the gear menu's "Edit metadata" item (the
+  // menu stays open while measured). These are the measurements that protect a
+  // touch user's reach.
+  const href = await details.first().getAttribute('href');
+  const bookId = href!.match(/\/book\/(\d+)$/)![1];
+  await page.goto(`/app/book/${bookId}`);
   await expectSc258Target(
-    'Touch card Read now disclosure action',
-    actions.getByRole('link', { name: /^Read / }),
+    'Book page Read now',
+    page.getByRole('link', { name: 'Read now' }),
   );
+  await page.getByTestId('book-actions-menu').click();
   await expectSc258Target(
-    'Touch card Edit disclosure action',
-    actions.getByRole('link', { name: /^Edit / }),
+    'Book page Edit metadata menuitem',
+    page.getByRole('menuitem', { name: 'Edit metadata' }),
+  );
+  await page.keyboard.press('Escape');
+  await expectSc258Target(
+    'Book page Add to shelf',
+    page.getByRole('button', { name: 'Add to shelf' }),
   );
 
+  // A shelf card loses its X on touch too, and shelf membership is reached from
+  // the same Add-to-shelf control measured above.
   const headers = await csrfHeaders(page);
-  const books = await page.request.get('/api/v1/books?per_page=1');
-  const { items } = await books.json() as BookList;
-  expect(items.length, 'the target-size fixture needs a shelfable book').toBeGreaterThan(0);
   const created = await page.request.post('/api/v1/shelves', {
     headers,
     data: { name: `sc258-card-actions-${Date.now()}` },
@@ -152,24 +175,19 @@ test('disclosed card actions keep SC 2.5.8 targets on touch (2026-08-29 ruling)'
   expect(created.ok(), 'temporary shelf creation').toBeTruthy();
   const shelfId = ((await created.json()) as { id: number }).id;
   try {
-    const added = await page.request.post(`/api/v1/shelves/${shelfId}/books/${items[0].id}`, { headers });
+    const added = await page.request.post(`/api/v1/shelves/${shelfId}/books/${bookId}`, { headers });
     expect(added.ok(), 'temporary shelf membership').toBeTruthy();
     await page.goto(`/app/shelf/${shelfId}`);
-    // The legacy fine-pointer control remains attached but is deliberately
-    // display:none on touch. Include it only to resolve the owning card; target
-    // measurements below remain scoped to the visible disclosure controls.
     const remove = page.getByRole('button', { name: 'Remove from shelf', includeHidden: true });
     await expect(remove).toHaveCount(1);
-    const shelfCard = remove.locator('..');
-    const shelfMore = shelfCard.getByRole('button', { name: /^More actions for / });
-    await expectSc258Target('Touch shelf More actions trigger', shelfMore);
-    await shelfMore.click();
-    await expectSc258Target(
-      'Touch card Remove disclosure action',
-      shelfCard
-        .getByRole('group', { name: /^Actions for / })
-        .getByRole('button', { name: 'Remove from shelf' }),
-    );
+    expect(
+      await remove.boundingBox(),
+      'the legacy shelf X must occupy no touch target',
+    ).toBeNull();
+    await expect(
+      page.getByRole('button', { name: /^More actions for / }),
+      'a shelf card must expose no More actions target',
+    ).toHaveCount(0);
   } finally {
     await page.request.post(`/api/v1/shelves/${shelfId}/delete`, { headers }).catch(() => undefined);
   }
@@ -225,9 +243,12 @@ test('compact controls expose at least a 24x24 effective clickable target', asyn
       { message: `temporary ${TEMP_FORMAT} format was not attached by ingest`, timeout: 30_000 },
     ).toBe(true);
 
-    await page.goto(`/app/book/${formatBookId}/edit`);
-    const deleteButton = page.getByRole('button', { name: `Delete ${TEMP_FORMAT}` });
-    await expectSc258Target('EditBook format delete button', deleteButton);
+    await page.goto(`/app/book/${formatBookId}`);
+    // The per-format delete button moved from Edit metadata to the book page's
+    // Files section with the book-page actions cleanup.
+    const deleteButton = page.getByTestId('book-files')
+      .getByRole('button', { name: `Delete ${TEMP_FORMAT}` });
+    await expectSc258Target('Book page Files format delete button', deleteButton);
   } finally {
     if (formatQueued && formatBookId !== undefined) {
       const deleted = await page.request.post(

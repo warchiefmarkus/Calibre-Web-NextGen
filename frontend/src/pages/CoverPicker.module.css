@@ -22,6 +22,58 @@
 }
 .subtitle { color: var(--text-muted); font-size: var(--fs-base); margin: 0; max-width: 60ch; }
 
+/* ---- scope switch (Library cover | My own cover) ---- */
+.scopeSwitch {
+  display: inline-flex;
+  gap: 2px;
+  margin-top: var(--sp-3);
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+}
+.scope, .scopeOn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: var(--sp-1) var(--sp-4);
+  border: none;
+  border-radius: var(--r-full);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.scope { background: transparent; color: var(--text-muted); }
+.scope:hover { color: var(--text); }
+.scopeOn { background: var(--accent); color: var(--on-accent); cursor: default; }
+.scope:focus-visible, .scopeOn:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+/* Personal scope: drop the private cover and fall back to the library one. */
+.restoreLibrary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 34px;
+  margin-top: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.restoreLibrary:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+.restoreLibrary:disabled { opacity: .6; cursor: wait; }
+
 /* ---- banner ---- */
 .bannerOk, .bannerErr {
   display: flex; align-items: center; gap: var(--sp-2);
@@ -147,7 +199,9 @@
 .field select:focus-visible, .field input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* ---- grid toolbar ---- */
-.gridToolbar { display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-4) 0 var(--sp-3); }
+.gridToolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); margin: var(--sp-4) 0 var(--sp-3); }
+.queryForm { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 260px; min-width: 0; }
+.queryInput { flex: 1 1 auto; width: auto; min-width: 0; }
 .gridTitle { font-family: var(--font-display); font-size: var(--fs-lg); font-weight: var(--fw-semi); color: var(--text); margin: 0; }
 .provSummary { color: var(--text-faint); font-size: var(--fs-xs); margin-right: auto; }
 .gridLoading { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-muted); font-size: var(--fs-sm); padding: var(--sp-8) 0; justify-content: center; }
@@ -246,4 +300,15 @@
 @media (prefers-reduced-motion: reduce) {
   .spin, .overlay, .modal { animation: none; }
   .card:hover:not(:disabled) { transform: none; }
+}
+
+/* ---- "Design a cover" panel lives in features/coverDesigner/DesignerPanel.module.css (v2). ---- */
+
+/* Every panel summary is a single flex row, so the hint's `margin-left: auto`
+   takes half the width and wraps the panel's own title mid-phrase on a phone
+   ("Design a / cover", "E-reader / preview", "API / keys"). One rule heals all
+   three: the hint drops to its own line instead of competing for the row. */
+@media (max-width: 600px) {
+  .panelSummary { flex-wrap: wrap; }
+  .panelHint { flex-basis: 100%; margin-left: 0; }
 }

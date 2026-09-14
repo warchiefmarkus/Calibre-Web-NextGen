@@ -60,13 +60,15 @@ def test_moonreader_folder_discovery_requires_an_explicit_selection():
     assert "select one discovered Moon+ folder" in PAGE
 
 
-def test_book_detail_has_square_bidirectional_moon_sync_action_after_chatgpt():
-    chatgpt = BOOK_DETAIL.index('data-testid="chatgpt-similar-books"')
-    moon = BOOK_DETAIL.index('data-testid="moonreader-book-sync"')
+def test_book_detail_keeps_bidirectional_moon_sync_after_chatgpt_in_more_actions():
+    chatgpt = BOOK_DETAIL.index("id: 'chatgpt-similar'")
+    moon = BOOK_DETAIL.index("id: 'moonreader-sync'")
     assert moon > chatgpt
+    assert "testId: 'chatgpt-similar-books'" in BOOK_DETAIL
+    assert "testId: 'moonreader-book-sync'" in BOOK_DETAIL
     assert 'useStartBookMoonReaderSync(id)' in BOOK_DETAIL
-    assert '<Cloud size={19}' in BOOK_DETAIL
-    assert '<RefreshCw size={10}' in BOOK_DETAIL
+    assert '<Cloud size={15}' in BOOK_DETAIL
     assert '`/api/v1/books/${bookId}/moonreader/sync`' in QUERIES
-    assert 'width: 38px;' in BOOK_DETAIL_CSS
-    assert 'height: 38px;' in BOOK_DETAIL_CSS
+    # #2237 moved secondary book actions into one accessible gear menu; do not
+    # resurrect the old square cover-page button just to keep Moon sync visible.
+    assert '.moonSyncBtn' not in BOOK_DETAIL_CSS

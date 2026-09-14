@@ -65,7 +65,7 @@ def test_metadata_typeahead_uses_only_visible_books(monkeypatch):
 
 
 @pytest.mark.unit
-def test_annotations_allow_user_hidden_book(monkeypatch):
+def test_annotations_bypass_membership_but_keep_hidden_policy(monkeypatch):
     calls = {}
     book = object()
 
@@ -76,4 +76,5 @@ def test_annotations_allow_user_hidden_book(monkeypatch):
     monkeypatch.setattr(annotations.calibre_db, "get_filtered_book", get_filtered_book)
     assert annotations._resolve_book_or_404(10) is book
     assert calls["allow_show_archived"] is True
-    assert calls["allow_show_hidden"] is True
+    assert calls["allow_show_global"] is True
+    assert calls.get("allow_show_hidden", False) is False

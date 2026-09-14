@@ -70,7 +70,13 @@ KOB0_COVER_RESET_PROGRESS_EPSILON = 1.0
 # the server intentionally changes the entitlement renderer's declared shape;
 # unchanged book/tombstone bases will then be lazily re-fingerprinted instead
 # of being re-delivered to Nickel.
-ENTITLEMENT_PAYLOAD_SCHEMA_VERSION = 1
+# v2: the entitlement fingerprint no longer covers ``DownloadUrls[].Size``.
+# Materialising a KEPUB from a stored EPUB swaps the served Data row, which
+# changed Size and therefore the fingerprint while the canonical book basis
+# (``last_modified``) stayed put; that was delivered as a ChangedEntitlement
+# and de-downloaded the book on the device that had just fetched it. Content
+# provenance is the basis; Size is a description of a derived artifact.
+ENTITLEMENT_PAYLOAD_SCHEMA_VERSION = 2
 
 # Stored in KoboDeviceEntitlementSeed, never sent to the device. Version 1
 # replaces Books.timestamp watermark classification with the physical-device
@@ -84,10 +90,35 @@ kobo_auth.register_url_value_preprocessor(kobo)
 log = logger.create()
 
 
+def _fingerprint_projection(value):
+    """Copy ``value`` without the download ``Size`` members (schema v2)."""
+    if isinstance(value, dict):
+        projected = {}
+        for key, member in value.items():
+            if key == "DownloadUrls" and isinstance(member, list):
+                projected[key] = [
+                    {k: v for k, v in entry.items() if k != "Size"}
+                    if isinstance(entry, dict) else entry
+                    for entry in member
+                ]
+            else:
+                projected[key] = _fingerprint_projection(member)
+        return projected
+    if isinstance(value, list):
+        return [_fingerprint_projection(item) for item in value]
+    return value
+
+
 def _entitlement_fingerprint(entitlement):
-    """Stable hash of fields that can change Nickel's local book record."""
+    """Stable hash of fields that can change Nickel's local book record.
+
+    ``DownloadUrls[].Size`` is excluded: it changes when a derived artifact
+    (on-demand KEPUB) replaces the served row without any change to the
+    source bytes the device already holds. Real content changes advance
+    ``Books.last_modified`` and are caught by the change basis.
+    """
     payload = json.dumps(
-        entitlement,
+        _fingerprint_projection(entitlement),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -2044,6 +2075,7 @@ def HandleSyncRequest():
     reseeded_shape_change_deleted_uuids = set()
     delivered_book_identities = []
     rehydrate_book_ids = set()
+    redownload_book_ids = set()
     book_candidates_scanned = 0
     book_delivery_slots = 0
     book_selection_exhausted = book_count == 0
@@ -2166,6 +2198,10 @@ def HandleSyncRequest():
                     sync_results.append({"NewEntitlement": entitlement})
                 else:
                     sync_results.append({"ChangedEntitlement": entitlement})
+                    # Nickel answers a Changed entitlement for a book it
+                    # holds by de-downloading it; the annotation GET after
+                    # its re-download must be served from CWNG's rows.
+                    redownload_book_ids.add(book.Books.id)
                 candidate_emitted_work = True
                 # Only a real delivery arms repair. A byte-identical replay
                 # that #1925 suppresses (including a declared #1953 shape
@@ -2795,6 +2831,24 @@ def HandleSyncRequest():
         )
         for position in rehydrate_positions_emitted:
             position.rehydrate_needed = False
+
+    if requesting_device_id and redownload_book_ids:
+        try:
+            from .services.kobo_post_download_restore import arm_pending_restore
+            arm_pending_restore(
+                device_id=requesting_device_id,
+                book_ids=sorted(redownload_book_ids),
+                log=log,
+            )
+        except Exception:
+            return _abort_sync_with_observability(
+                503,
+                requesting_device_id,
+                sync_cursor_in,
+                response_mode="post_download_restore_arm_failed",
+                capture_session=capture_session,
+                outgoing_cursor=sync_cursor_out,
+            )
 
     # This commit makes only the replayable response durable. Confirmed
     # delivery state was promoted at the beginning of this request (when its
@@ -3687,7 +3741,12 @@ def HandleStateRequest(book_uuid):
                     location_supplied=bool(location),
                     incoming_clock=request_lm,
                     clock_accepts=True,
-                    equal_accepts=True,
+                    # An armed latch means the server holds a position it
+                    # deliberately re-placed (a re-converted book) and will
+                    # replay on the next sync. The device echoing its old
+                    # locator at the same progress with an older clock must
+                    # not overwrite that repair (OBSERVED on hardware).
+                    equal_accepts=not rehydrate_pending,
                     preserve_clock_when_missing=True,
                     block_lower_at_or_below=(
                         KOB0_COVER_RESET_PROGRESS_EPSILON
@@ -4111,6 +4170,14 @@ def get_or_create_reading_state(book_id):
 
 
 def get_kobo_reading_state_response(book, kobo_reading_state):
+    try:
+        from .services.kobo_position_reanchor import reanchor_missing_position
+        reanchor_missing_position(
+            book, kobo_reading_state.current_bookmark, log=log,
+        )
+    except Exception:  # noqa: BLE001 - a broken file must not break the sync
+        log.exception("Kobo position reanchor failed for book %s",
+                      getattr(book, "id", None))
     return {
         "EntitlementId": book.uuid,
         "Created": convert_to_kobo_timestamp_string(book.timestamp),

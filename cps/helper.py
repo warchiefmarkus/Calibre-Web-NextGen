@@ -56,6 +56,7 @@ from .constants import (STATIC_DIR as _STATIC_DIR, CACHE_TYPE_THUMBNAILS, THUMBN
 from .subproc_wrapper import process_wait
 from .services.file_move import copy_with_metadata_fallback
 from .services import parallel
+from .services.cover_url_validator import cover_fetch_headers
 
 # Track books with pending thumbnail generation to prevent duplicate tasks
 _pending_thumbnail_books = set()
@@ -146,6 +147,39 @@ def mark_book_modified(book, *, set_dirty=True, unsync=False):
     if unsync:
         from . import kobo_sync_status
         kobo_sync_status.remove_synced_book(book.id, all=True)
+
+
+KOBO_DELIVERABLE_FORMATS = frozenset({"KEPUB", "EPUB", "EPUB3"})
+
+
+def mark_book_format_materialised(book, new_format, *, set_dirty=False):
+    """Single source of truth for "a converted/derived format row was added".
+
+    Advances ``last_modified`` (through :func:`mark_book_modified`) ONLY when
+    the new format makes the book Kobo-deliverable for the first time, e.g. a
+    PDF-only book gaining its first EPUB: the sync selects books by
+    ``Books.last_modified > sync_token``, so without a bump that book would
+    never be offered.
+
+    A KEPUB derived from an existing EPUB (or vice versa) leaves the clock
+    alone. The entitlement Nickel holds still describes the same source
+    bytes, and advancing the clock re-sent it on the next sync; Nickel answers
+    a ChangedEntitlement by marking the book not-downloaded. OBSERVED
+    2026-09-11 on a Libra Colour: the on-demand KEPUB minted by the reader's
+    own re-download bumped the clock, and the second de-download came 25 s
+    after she had re-found her place.
+
+    Returns ``True`` when the clock was advanced.
+    """
+    new_format = (new_format or "").upper()
+    if new_format not in KOBO_DELIVERABLE_FORMATS:
+        return False
+    for row in getattr(book, "data", None) or ():
+        existing = (getattr(row, "format", None) or "").upper()
+        if existing in KOBO_DELIVERABLE_FORMATS and existing != new_format:
+            return False
+    mark_book_modified(book, set_dirty=set_dirty)
+    return True
 
 
 def log_metadata_change(book, changed=None):
@@ -2228,10 +2262,15 @@ def save_cover_from_url(url, book_path):
         # advocate path stays SSRF-safe under redirects because validation
         # happens per-connection in ValidatingPoolManager — every hop's
         # target is re-validated, not just the first URL (fork #404).
+        # Identify the software on the download too: hosts like Wikimedia
+        # answer 403 to the bare python-requests agent, and the validator
+        # probe already sends these — the two must agree or a link that
+        # previewed fine fails on apply.
+        headers = cover_fetch_headers()
         if cli_param.allow_localhost:
-            img = requests.get(url, timeout=(10, 30), allow_redirects=True, stream=True)
+            img = requests.get(url, timeout=(10, 30), allow_redirects=True, stream=True, headers=headers)
         elif use_advocate:
-            img = cw_advocate.get(url, timeout=(10, 30), allow_redirects=True, stream=True)
+            img = cw_advocate.get(url, timeout=(10, 30), allow_redirects=True, stream=True, headers=headers)
         else:
             log.error("python module advocate is not installed but is needed")
             return False, _("Python module 'advocate' is not installed but is needed for cover uploads")
@@ -2347,6 +2386,52 @@ class StagedCoverWrite:
             return False, str(ex)
 
 
+class InPlaceStagedCoverWrite(StagedCoverWrite):
+    """A validated stage elsewhere, published by rewriting the live cover in place.
+
+    Used only when the book folder refuses new entries (a folder owned by
+    another uid on a network share is the measured case) but the existing
+    ``cover.jpg`` itself is writable. Overwriting an existing file needs no
+    directory permission, which is exactly what the pre-#2127 store relied on.
+    The rewrite is not an atomic rename: a crash between truncate and fsync
+    leaves a torn cover, which the next successful save repairs. That is the
+    trade for not refusing the user's cover outright; the honest alternative
+    (a permission error) is still what they get when no writable cover exists.
+    """
+
+    def publish(self):
+        if self._published:
+            return True, None
+        try:
+            with open(self.staged_path, "rb") as staged_file:
+                content = staged_file.read()
+            # No O_CREAT: creating the file would need the directory permission
+            # this path exists to do without, and it must fail loudly instead.
+            fd = os.open(
+                self.target_path,
+                os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
+            )
+            try:
+                _write_all(fd, content)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            self._published = True
+        except (IOError, OSError) as ex:
+            log.error(
+                "Publishing cover in place failed target=%s: %s: %s",
+                self.target_path,
+                type(ex).__name__,
+                ex,
+            )
+            return False, str(ex)
+        try:
+            os.remove(self.staged_path)
+        except OSError as ex:
+            log.warning("Could not remove published cover stage %s: %s", self.staged_path, ex)
+        return True, None
+
+
 class GDriveStagedCoverWrite(StagedCoverWrite):
     """Locally validated cover bytes awaiting a post-commit Drive upload."""
 
@@ -2435,12 +2520,63 @@ def _validate_and_normalize_staged_cover(staged_path):
         verified.load()
 
 
+class _CoverNotDecodable(Exception):
+    """The staged bytes are not an image we accept (wraps the decoder error)."""
+
+
+def _describe_owner(path):
+    try:
+        return os.stat(path).st_uid
+    except OSError:
+        return "?"
+
+
+def _server_uid():
+    return os.geteuid() if hasattr(os, "geteuid") else "?"
+
+
+def _open_cover_stage(filepath, saved_filename):
+    """Create the stage file, beside the target when the folder allows it.
+
+    Returns ``(fd, staged_path, in_place)``. ``in_place`` is True when the book
+    folder refused a new entry and the existing target is writable, in which
+    case the stage lives in the temp directory (where the startup scavenger
+    already looks) and publication rewrites the target in place. A folder that
+    refuses new entries with no writable target is a real permission failure
+    and the PermissionError is re-raised for the caller to report as such.
+    """
+    prefix = ".{}.cwng-".format(saved_filename)
+    target = os.path.join(filepath, saved_filename)
+    try:
+        fd, staged_path = tempfile.mkstemp(prefix=prefix, suffix=".stage", dir=filepath)
+        return fd, staged_path, False
+    except PermissionError as ex:
+        # A symlinked target is never rewritten in place: the rename path
+        # replaced the link itself, and following it here would write through
+        # to wherever the link points.
+        if os.path.islink(target) or not (os.path.isfile(target) and os.access(target, os.W_OK)):
+            raise
+        log.warning(
+            "Book folder %s refuses new entries (owner uid %s, server uid %s): %s. "
+            "Replacing the existing cover in place instead of by atomic rename. "
+            "Give the folder the server's uid to restore the atomic path.",
+            filepath, _describe_owner(filepath), _server_uid(), ex,
+        )
+    fd, staged_path = tempfile.mkstemp(prefix=prefix, suffix=".stage", dir=get_temp_dir())
+    return fd, staged_path, True
+
+
 def save_cover_from_filestorage(filepath, saved_filename, img, handle_factory=None):
     """Write and validate a temporary sibling, returning a publish handle.
 
     Despite the historical name, this function deliberately does not replace
     ``saved_filename``.  It is the single storage primitive used by every cover
     surface; callers own the surrounding metadata transaction.
+
+    The failure message distinguishes bytes that are not an image from bytes
+    that could not be stored: a permission problem on the book folder is
+    reported as one, with the folder and the uids involved, never as a bad
+    image (measured on a household library, 2026-09-10).
     """
     if not os.path.exists(filepath):
         try:
@@ -2451,12 +2587,9 @@ def save_cover_from_filestorage(filepath, saved_filename, img, handle_factory=No
     target = os.path.join(filepath, saved_filename)
     staged_path = None
     fd = None
+    in_place = False
     try:
-        fd, staged_path = tempfile.mkstemp(
-            prefix=".{}.cwng-".format(saved_filename),
-            suffix=".stage",
-            dir=filepath,
-        )
+        fd, staged_path, in_place = _open_cover_stage(filepath, saved_filename)
         try:
             staged_mode = os.stat(target).st_mode & 0o777
         except OSError:
@@ -2469,7 +2602,7 @@ def save_cover_from_filestorage(filepath, saved_filename, img, handle_factory=No
                 log.error("Cover save aborted: empty response body (url=%s, content-type=%s, http=%s)",
                           getattr(getattr(img, "request", None), "url", "?"), ct,
                           getattr(img, "status_code", "?"))
-                raise ValueError("empty response body")
+                raise _CoverNotDecodable("empty response body")
             _write_all(fd, img.content)
             os.fsync(fd)
         else:
@@ -2495,14 +2628,38 @@ def save_cover_from_filestorage(filepath, saved_filename, img, handle_factory=No
                 os.fsync(sync_fd)
             finally:
                 os.close(sync_fd)
-        _validate_and_normalize_staged_cover(staged_path)
+        try:
+            _validate_and_normalize_staged_cover(staged_path)
+        except (ValueError, OSError) as decode_error:
+            # PIL raises OSError subclasses (UnidentifiedImageError, truncated
+            # data) for bad bytes; that is an image problem, not a storage one.
+            raise _CoverNotDecodable(decode_error)
         if handle_factory is not None:
             return handle_factory(staged_path), None
+        if in_place:
+            return InPlaceStagedCoverWrite(staged_path, target), None
         return StagedCoverWrite(staged_path, target), None
-    except (IOError, OSError, ValueError) as e:
+    except _CoverNotDecodable as e:
+        log.error("Cover rejected target=%s: not a decodable image: %s", target, e)
+        message = _("Cover-file is not a valid image file, or could not be stored")
+    except PermissionError as e:
+        log.error(
+            "Cover storage refused target=%s: %s (folder %s owner uid %s, server uid %s). "
+            "The server cannot create files in this book folder; give the folder the "
+            "server's uid or make it group-writable.",
+            target, e, filepath, _describe_owner(filepath), _server_uid(),
+        )
+        message = _(
+            "Cover could not be stored: the server has no permission to write into "
+            "the book folder %(folder)s (folder owner uid %(owner)s, server uid %(uid)s).",
+            folder=filepath, owner=_describe_owner(filepath), uid=_server_uid(),
+        )
+    except (IOError, OSError) as e:
         log.error("Cover staging failed target=%s: %s: %s", target, type(e).__name__, e)
+        message = _("Cover could not be stored: %(reason)s", reason=str(e))
     except Exception as e:
         log.error("Cover staging failed (unexpected) target=%s: %s: %s", target, type(e).__name__, e)
+        message = _("Cover-file is not a valid image file, or could not be stored")
     finally:
         if fd is not None:
             try:
@@ -2514,7 +2671,7 @@ def save_cover_from_filestorage(filepath, saved_filename, img, handle_factory=No
             os.remove(staged_path)
         except OSError:
             pass
-    return None, _("Cover-file is not a valid image file, or could not be stored")
+    return None, message
 
 
 # saves book cover to gdrive or locally
@@ -2986,6 +3143,21 @@ def get_download_link(book_id, book_format, client):
     if not data1:
         log.error("Requested format %s for book id %s not found in database", book_format.upper(), book_id)
         abort(404)
+
+    if client == "kobo":
+        # The device is about to replace its local copy; remember that so the
+        # annotation GET that follows is answered from CWNG's own rows.
+        try:
+            from flask import g
+            from .services.kobo_post_download_restore import record_download
+            record_download(
+                device_id=getattr(g, "annotation_origin_device_id", None),
+                book_id=book.id, book_format=book_format, log=log,
+                user_id=getattr(current_user, "id", None),
+            )
+        except Exception:
+            log.warning("Kobo download ledger update failed for book %s",
+                        book.id, exc_info=True)
 
     # collect downloaded books only for registered user and not for anonymous user
     if current_user.is_authenticated:

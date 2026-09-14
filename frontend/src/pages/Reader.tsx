@@ -12,6 +12,9 @@ import {
 import { useT } from '../lib/i18n';
 import { formatReadingProgress, parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
 import { resumeForArchive } from '../lib/readerResume';
+import {
+  classifyHref, inBookTarget, isNoteElement, isNoterefAnchor, isOpenableHref, sanitizeNoteElement,
+} from '../lib/readerLinks';
 import styles from './Reader.module.css';
 
 // Foliate-specific engine details live behind the reader module boundary.
@@ -68,6 +71,29 @@ type SyncedResume = {
   epub_sha256?: string;
 };
 
+type ReaderLinkHit = {
+  key: string;
+  href: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  label: string;
+};
+
+type ReaderNote = { html: string; label: string; target: string };
+const MIN_LINK_HIT_PX = 24;
+
+function epubTypeOf(element: Element): string | null {
+  return element.getAttribute('epub:type')
+    ?? element.getAttributeNS('http://www.idpf.org/2007/ops', 'type');
+}
+
+function safeDecodeReaderPath(value: string): string {
+  try { return decodeURIComponent(value); }
+  catch { return value; }
+}
+
 function chatGptSelectedTextUrl(text: string): string {
   return `https://chatgpt.com/?q=${encodeURIComponent(text.trim())}`;
 }
@@ -104,6 +130,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
+  const linkAnchorsRef = useRef(new Map<string, { anchor: HTMLAnchorElement; doc: Document }>());
+  const linkSyncTimersRef = useRef<number[]>([]);
+  const linkSyncRetriesRef = useRef(0);
+  const syncLinkHitsRef = useRef<() => void>(() => undefined);
   const searchRunRef = useRef(0);
   const annotationsRef = useRef<Map<string, FoliateAnnotation>>(new Map());
   const currentRef = useRef<FoliateLocation>({ fraction: 0 });
@@ -135,6 +165,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const translationSkippedRef = useRef(false);
   const pendingSelectionRangeRef = useRef<{ range: Range; doc: Document } | null>(null);
   const inlineTranslationPatchesRef = useRef<InlineTranslationPatch[]>([]);
+  const dismissSelectionActionRef = useRef<() => void>(() => undefined);
+  const restoreInlineTranslationsActionRef = useRef<() => void>(() => undefined);
 
   const { fullscreenSupported, isFullscreen, toggleFullscreen } = useReaderFullscreen(shellRef);
 
@@ -148,6 +180,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [sectionFractions, setSectionFractions] = useState<number[]>([]);
   const [location, setLocation] = useState<FoliateLocation>({ fraction: 0 });
   const [remoteResume, setRemoteResume] = useState<SyncedResume | null>(null);
+  const [linkHits, setLinkHits] = useState<ReaderLinkHit[]>([]);
+  const [readerNote, setReaderNote] = useState<ReaderNote | null>(null);
   const [settings, setSettings] = useState<ReaderSettings | null>(null);
   const [searchText, setSearchText] = useState('');
   const [searching, setSearching] = useState(false);
@@ -224,6 +258,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     }
     translationAbortRef.current?.abort();
     translationPreloadAbortRef.current?.abort();
+    linkSyncTimersRef.current.forEach(window.clearTimeout);
+    linkSyncTimersRef.current = [];
   }, []);
 
   const applySettings = useCallback((next: ReaderSettings) => {
@@ -254,6 +290,141 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     renderer.setAttribute('background', READER_THEME[next.theme].background);
     renderer.setStyles?.(readerCss(next, compactViewport));
   }, []);
+
+  const syncLinkHits = useCallback(() => {
+    const contents = viewRef.current?.renderer?.getContents?.() ?? [];
+    const anchors = new Map<string, { anchor: HTMLAnchorElement; doc: Document }>();
+    const hits: ReaderLinkHit[] = [];
+    let sawAnchors = false;
+    let sawRects = false;
+
+    contents.forEach(({ doc, index }, viewIndex) => {
+      const frame = doc.defaultView?.frameElement as HTMLIFrameElement | null;
+      if (!frame) return;
+      const frameRect = frame.getBoundingClientRect();
+      const pageWidth = doc.documentElement?.clientWidth || frameRect.width;
+      const pageHeight = doc.documentElement?.clientHeight || frameRect.height;
+      const scaleX = pageWidth > 0 ? frameRect.width / pageWidth : 1;
+      const scaleY = pageHeight > 0 ? frameRect.height / pageHeight : 1;
+
+      Array.from(doc.querySelectorAll('a[href]')).forEach((node, anchorIndex) => {
+        const anchor = node as HTMLAnchorElement;
+        sawAnchors = true;
+        // Prevent native frame navigation in WebKit; the parent overlay owns activation.
+        if (anchor.getAttribute('target') !== '_blank') anchor.setAttribute('target', '_blank');
+        Array.from(anchor.getClientRects()).forEach((rect, rectIndex) => {
+          if (rect.width > 0 && rect.height > 0) sawRects = true;
+          if (rect.width <= 0 || rect.height <= 0) return;
+          if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= pageWidth || rect.top >= pageHeight) return;
+          const padX = Math.max(0, (MIN_LINK_HIT_PX - rect.width) / 2);
+          const padY = Math.max(0, (MIN_LINK_HIT_PX - rect.height) / 2);
+          const left = Math.max(0, rect.left - padX);
+          const top = Math.max(0, rect.top - padY);
+          const right = Math.min(pageWidth, rect.right + padX);
+          const bottom = Math.min(pageHeight, rect.bottom + padY);
+          if (right <= left || bottom <= top) return;
+          const key = `${index ?? viewIndex}:${anchorIndex}:${rectIndex}`;
+          anchors.set(key, { anchor, doc });
+          hits.push({
+            key,
+            href: anchor.getAttribute('href') || '',
+            left: frameRect.left + left * scaleX,
+            top: frameRect.top + top * scaleY,
+            width: (right - left) * scaleX,
+            height: (bottom - top) * scaleY,
+            label: (anchor.textContent || '').replace(/\s+/g, ' ').trim() || t('Untitled link'),
+          });
+        });
+      });
+    });
+
+    linkAnchorsRef.current = anchors;
+    setLinkHits(hits);
+    if (sawAnchors && !sawRects && linkSyncRetriesRef.current < 12) {
+      linkSyncRetriesRef.current += 1;
+      linkSyncTimersRef.current.push(window.setTimeout(
+        () => window.requestAnimationFrame(() => syncLinkHitsRef.current()),
+        250 * linkSyncRetriesRef.current,
+      ));
+    }
+  }, [t]);
+  syncLinkHitsRef.current = syncLinkHits;
+
+  const scheduleLinkSync = useCallback(() => {
+    linkSyncTimersRef.current.forEach(window.clearTimeout);
+    linkSyncTimersRef.current = [];
+    linkSyncRetriesRef.current = 0;
+    [0, 60, 200, 500, 1200].forEach((delay) => {
+      linkSyncTimersRef.current.push(window.setTimeout(
+        () => window.requestAnimationFrame(() => syncLinkHitsRef.current()), delay,
+      ));
+    });
+  }, []);
+
+  const showReaderNote = useCallback((element: Element, markerId: string | null, label: string, target: string) => {
+    const html = sanitizeNoteElement(element, markerId);
+    if (!html.trim()) return false;
+    setReaderNote({ html, label, target });
+    return true;
+  }, []);
+
+  const activateReaderLink = useCallback(async (anchor: HTMLAnchorElement, doc: Document) => {
+    const raw = anchor.getAttribute('href');
+    const kind = classifyHref(raw);
+    if (kind !== 'in-book') {
+      if (raw && isOpenableHref(raw)) window.open(raw, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const view = viewRef.current;
+    if (!view) return;
+    const target = inBookTarget(anchor.href, doc.baseURI);
+    if (!target) return;
+    const rawHref = raw || (target.hash ? `#${target.hash}` : target.path);
+    const label = (anchor.textContent || '').replace(/\s+/g, ' ').trim();
+    const noteref = isNoterefAnchor({ epubType: epubTypeOf(anchor), role: anchor.getAttribute('role') });
+    const markerId = anchor.id || anchor.parentElement?.id || null;
+
+    if (target.hash && target.sameDocument) {
+      const element = doc.getElementById(target.hash);
+      const isNote = !!element && (noteref || isNoteElement({
+        epubType: epubTypeOf(element), role: element.getAttribute('role'), tagName: element.tagName,
+      }));
+      if (element && isNote && showReaderNote(element, markerId, label, rawHref)) return;
+    } else if (target.hash && noteref) {
+      const pathPart = rawHref.split('#', 1)[0];
+      const sections = (view.book?.sections ?? []) as Array<{
+        id?: string; createDocument?: () => Promise<Document>; unload?: () => void;
+      }>;
+      const normalized = safeDecodeReaderPath(pathPart || '').replace(/^\.\//, '');
+      const section = sections.find((item) => {
+        const id = safeDecodeReaderPath(item.id || '').replace(/^\.\//, '');
+        return !!id && (!!normalized && (id === normalized || id.endsWith(`/${normalized}`) || normalized.endsWith(`/${id}`)));
+      });
+      if (section?.createDocument) {
+        try {
+          const noteDoc = await section.createDocument();
+          const element = noteDoc.getElementById(target.hash);
+          if (element && showReaderNote(element, markerId, label, rawHref)) {
+            try { section.unload?.(); } catch { /* best effort */ }
+            return;
+          }
+          try { section.unload?.(); } catch { /* best effort */ }
+        } catch { /* fall through to navigation */ }
+      }
+    }
+
+    markReadingMovement();
+    restoreInlineTranslationsActionRef.current();
+    dismissSelectionActionRef.current();
+    setReaderNote(null);
+    try { await view.goTo(rawHref); }
+    catch { if (target.hash) await view.goTo(`#${target.hash}`); }
+  }, [markReadingMovement, showReaderNote]);
+
+  const activateReaderLinkByKey = useCallback((key: string) => {
+    const entry = linkAnchorsRef.current.get(key);
+    if (entry) void activateReaderLink(entry.anchor, entry.doc);
+  }, [activateReaderLink]);
 
   const updateSettings = useCallback((patch: Partial<ReaderSettings>) => {
     setSettings((current) => {
@@ -509,6 +680,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       if (patch.marker.isConnected) patch.marker.replaceWith(patch.original);
     }
   }, []);
+  dismissSelectionActionRef.current = dismissSelection;
+  restoreInlineTranslationsActionRef.current = restoreInlineTranslations;
 
   const navigate = useCallback(async (action: 'prev' | 'next' | 'left' | 'right') => {
     restoreInlineTranslations();
@@ -1044,6 +1217,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       dismissSelection();
       currentRef.current = detail;
       setLocation(detail);
+      setReaderNote(null);
+      scheduleLinkSync();
       if (detail.cfi && !restoringInitialPosition && readingMovementRef.current) {
         const anchorText = detail.range?.toString().replace(/\s+/gu, ' ').trim().slice(0, 1000);
         schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText || undefined);
@@ -1152,6 +1327,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       doc.addEventListener('touchcancel', handleTouchEnd, { passive: true });
       doc.addEventListener('contextmenu', handleContextMenu);
       doc.addEventListener('selectionchange', () => scheduleSelectionRead(false, 80));
+      const routeBookLink = (event: Event) => {
+        const origin = event.target as Element | null;
+        const anchor = (origin?.closest?.('a[href]') ?? null) as HTMLAnchorElement | null;
+        if (!anchor) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void activateReaderLink(anchor, doc);
+      };
+      doc.addEventListener('click', routeBookLink, true);
+
       const armMovement = markReadingMovement;
       const armPointerDrag = (event: PointerEvent) => {
         if (event.pointerType === 'touch' || event.buttons !== 0) armMovement();
@@ -1171,6 +1356,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       const detail = (event as CustomEvent<{ doc: Document; index: number }>).detail;
       setBookLanguage((current) => current || normalizeLanguageCode(detail.doc.documentElement.lang));
       attachSelection(detail.doc, detail.index);
+      scheduleLinkSync();
+      void detail.doc.fonts?.ready?.then(scheduleLinkSync).catch(() => undefined);
     };
     const onDrawAnnotation = (event: Event) => {
       const { draw, annotation } = (event as CustomEvent<{
@@ -1276,6 +1463,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         restoringInitialPosition = false;
         resetReadingMovement();
         setReady(true);
+        scheduleLinkSync();
         void annotationPromise.then((annotationPayload) => {
           if (cancelled) return;
           const deviceMap: Record<string, { label?: string }> = annotationPayload.devices ?? {};
@@ -1308,6 +1496,11 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       cancelled = true;
       restoreInlineTranslations();
       window.speechSynthesis?.cancel();
+      linkSyncTimersRef.current.forEach(window.clearTimeout);
+      linkSyncTimersRef.current = [];
+      linkAnchorsRef.current.clear();
+      setLinkHits([]);
+      setReaderNote(null);
       view.removeEventListener('relocate', onRelocate);
       view.removeEventListener('load', onLoad);
       view.removeEventListener('draw-annotation', onDrawAnnotation);
@@ -1323,7 +1516,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     positionQuery.data?.position_section, positionQuery.data?.resume,
     positionQuery.isFetched, selectedFormat,
     settingsQuery.data, bookStateQuery.data, bookStateQuery.isFetching,
-    schedulePosition, dismissSelection, handleReaderWheel,
+    schedulePosition, dismissSelection, handleReaderWheel, scheduleLinkSync, activateReaderLink,
     markReadingMovement, openEditAnnotation, resetReadingMovement, restoreInlineTranslations, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -1362,6 +1555,18 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       dismissSelection();
     }
   }
+
+  useEffect(() => {
+    if (!ready) return;
+    scheduleLinkSync();
+    window.addEventListener('resize', scheduleLinkSync);
+    window.addEventListener('orientationchange', scheduleLinkSync);
+    return () => {
+      window.removeEventListener('resize', scheduleLinkSync);
+      window.removeEventListener('orientationchange', scheduleLinkSync);
+    };
+  }, [ready, settings?.fontSize, settings?.font, settings?.lineHeight, settings?.margin,
+    settings?.spread, settings?.flow, isFullscreen, scheduleLinkSync]);
 
   useEffect(() => {
     document.addEventListener('keydown', onReaderKeyDown);
@@ -1722,6 +1927,22 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
           {error && <EmptyState message={error} />}
           <div ref={hostRef} className={styles.host} data-ready={ready ? 'true' : 'false'} />
+          {linkHits.length > 0 && (
+            <div className={styles.linkLayer}>
+              {linkHits.map((hit) => (
+                <button
+                  key={hit.key}
+                  type="button"
+                  className={styles.linkHit}
+                  style={{ left: hit.left, top: hit.top, width: hit.width, height: hit.height }}
+                  data-testid="reader-link-hit"
+                  data-href={hit.href}
+                  aria-label={t('Follow link: {label}', { label: hit.label })}
+                  onClick={() => activateReaderLinkByKey(hit.key)}
+                />
+              ))}
+            </div>
+          )}
           {translationRequested && (translationError || translationSkipped) && (
             <div className={styles.translationStatus} role={translationError ? 'alert' : 'status'}>
               {translationSkipped && (
@@ -1771,6 +1992,33 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           )}
         </section>
       </div>
+      {readerNote && (
+        <>
+          <button type="button" className={styles.noteScrim} onClick={() => setReaderNote(null)}
+            aria-label={t('Close')} tabIndex={-1} />
+          <section className={styles.noteSheet} role="dialog" aria-modal="true" aria-label={t('Note')}
+            data-testid="reader-note-sheet">
+            <header className={styles.noteSheetHead}>
+              <strong className={styles.noteSheetTitle}>
+                {readerNote.label ? t('Note {label}', { label: readerNote.label }) : t('Note')}
+              </strong>
+              <button type="button" className={styles.noteClose} onClick={() => setReaderNote(null)}
+                aria-label={t('Close')}>×</button>
+            </header>
+            <div className={styles.noteSheetBody} dangerouslySetInnerHTML={{ __html: readerNote.html }} />
+            <footer className={styles.noteSheetActions}>
+              <button type="button" onClick={() => {
+                const target = readerNote.target;
+                setReaderNote(null);
+                markReadingMovement();
+                restoreInlineTranslations();
+                dismissSelection();
+                void viewRef.current?.goTo(target);
+              }}>{t('Go to note')}</button>
+            </footer>
+          </section>
+        </>
+      )}
       <ReaderBottomBar location={location} percent={percent} progress={progress}
         sectionFractions={sectionFractions}
         previous={() => navigateReaderOrClosePanel('prev')}

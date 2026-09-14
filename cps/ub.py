@@ -754,6 +754,14 @@ class Bookmark(Base):
     bookmark_key = Column(String)
     updated_at = Column(DateTime)
 
+    # Every read of this table is "this user, this book" — the reader opening a
+    # book, the reader saving a position, and the "Recent" order asking when the
+    # user last read each book on the page. Without it that last one is a full
+    # scan per book listed. Not unique: one row per format.
+    __table_args__ = (
+        Index('ix_bookmark_user_book', 'user_id', 'book_id'),
+    )
+
 
 class ReaderBookmark(Base):
     """A named reader bookmark, separate from the single current-position row.
@@ -1019,6 +1027,61 @@ class UserBookCover(Base):
                         default=lambda: datetime.now(timezone.utc))
 
 
+class CoverDesignPreset(Base):
+    """A named cover design somebody saved.
+
+    Presets are only useful if a reader can add and remove their own, so the
+    shipped ones are a starting point rather than the whole vocabulary. A row is
+    owned by the user who saved it; an admin can additionally save one with
+    ``scope='library'``, which offers it to everybody on the instance without
+    taking away their ability to hide it again (see
+    :class:`HiddenCoverDesignPreset`).
+
+    The design is stored as JSON rather than as columns because it *is* a
+    document — five styles' worth of colours, per-slot fonts and templates — and
+    nothing here ever queries inside it. It is re-validated on the way out, so a
+    design saved before a font was uninstalled still opens.
+    """
+    __tablename__ = 'cover_design_preset'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    scope = Column(String, nullable=False, default='user')
+    name = Column(String, nullable=False)
+    design = Column(String, nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'scope', 'name', name='uq_cover_design_preset_name'),
+    )
+
+
+class HiddenCoverDesignPreset(Base):
+    """One user's decision not to see one preset they cannot delete.
+
+    Deleting a builtin preset, or a library preset somebody else saved, must not
+    remove it for everyone — but a dropdown full of designs a reader will never
+    use is exactly the complaint that made presets worth fixing. So a delete of
+    something they do not own hides it for them alone, and the restore route
+    brings it back.
+    """
+    __tablename__ = 'hidden_cover_design_preset'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    preset_key = Column(String, nullable=False)
+    hidden_at = Column(DateTime, nullable=False,
+                       default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'preset_key', name='uq_hidden_cover_design_preset'),
+    )
+
+
 class KoboSyncedBooks(Base):
     __tablename__ = 'kobo_synced_books'
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -1069,6 +1132,43 @@ class KoboDeviceBookEntitlement(Base):
             name='uq_kobo_device_book_entitlement_device_book',
         ),
         Index('ix_kobo_device_book_entitlement_book', 'book_id'),
+    )
+
+
+class KoboDeviceBookDownload(Base):
+    """Latest file download of one book by one physical Kobo (#1925 follow-up).
+
+    Nickel discards a book's local annotations and reading position when it
+    re-downloads the file, then asks ``/annotations`` for the replacement set.
+    This row is the server-side memory that such a request is the first one
+    after a download, so CWNG can answer it from its own rows instead of
+    proxying to a Kobo cloud that never held them (OBSERVED 2026-09-11: the
+    proxied answer was an empty set and the reader's 22 highlights vanished).
+    ``restore_state`` is ``pending`` until that first request is answered.
+    """
+    __tablename__ = 'kobo_device_book_download'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(
+        Integer, ForeignKey('device.id', ondelete='CASCADE'), nullable=False,
+    )
+    # calibre's Books row lives in metadata.db: no cross-database foreign key.
+    book_id = Column(Integer, nullable=False)
+    book_format = Column(String(16), nullable=True)
+    downloaded_at = Column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+    )
+    restore_state = Column(
+        String(16), nullable=False, default='pending', server_default='pending',
+    )
+    restored_at = Column(DateTime, nullable=True)
+    restored_count = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'device_id', 'book_id', name='uq_kobo_device_book_download_device_book',
+        ),
+        Index('ix_kobo_device_book_download_book', 'book_id'),
     )
 
 
@@ -1456,6 +1556,13 @@ class KoboBookmark(Base):
     location_value = Column(String)
     progress_percent = Column(Float)
     content_source_progress_percent = Column(Float)
+
+    # The parent FK is how every reader of this table reaches it. Unindexed,
+    # SQLite reports "AUTOMATIC PARTIAL COVERING INDEX" — it rebuilds a
+    # throwaway index on each statement (measured on the "Recent" order).
+    __table_args__ = (
+        Index('ix_kobo_bookmark_state', 'kobo_reading_state_id'),
+    )
 
 
 class KoboStatistics(Base):
@@ -2553,6 +2660,7 @@ def add_missing_tables(engine, _session):
         ("kobo_device_deleted_entitlement", KoboDeviceDeletedEntitlement.__table__),
         ("kobo_device_entitlement_seed", KoboDeviceEntitlementSeed.__table__),
         ("kobo_device_pending_sync_page", KoboDevicePendingSyncPage.__table__),
+        ("kobo_device_book_download", KoboDeviceBookDownload.__table__),
     )
     for table_name, table in tables + kobo_entitlement_tables:
         # Explicit transaction control means even schema inspection begins a
@@ -3805,6 +3913,15 @@ def migrate_user_book_cover_table(engine, _session):
     """Create per-user cover metadata on upgraded app.db files."""
     Base.metadata.create_all(
         engine, tables=[UserBookCover.__table__], checkfirst=True,
+    )
+
+
+def migrate_cover_design_preset_tables(engine, _session):
+    """Create the saved-cover-design tables on upgraded app.db files."""
+    Base.metadata.create_all(
+        engine,
+        tables=[CoverDesignPreset.__table__, HiddenCoverDesignPreset.__table__],
+        checkfirst=True,
     )
 
 
@@ -5154,11 +5271,43 @@ def migrate_thumbnail_lookup_index(engine, _session):
         )
 
 
+def migrate_reading_activity_indexes(engine, _session):
+    """Index the two reading-position tables by how they are actually read.
+
+    ``book_read_link`` and ``kobo_reading_state`` already carry UNIQUE(user_id,
+    book_id); these two never carried anything. Every lookup of a position is
+    "this user, this book" (the reader) or "this reading state" (the Kobo sync
+    and the "Recent" order), so unindexed they cost a scan of the whole table
+    per book — and the "Recent" order evaluates them once per book on the page.
+
+    Not gated on a CONFIG_DIR marker, for the same reason
+    :func:`migrate_thumbnail_lookup_index` is not: a different app.db can be
+    selected or restored under the same config directory. ``IF NOT EXISTS`` is
+    the idempotency guard.
+    """
+    try:
+        _run_ddl_with_retry(
+            engine,
+            [
+                "CREATE INDEX IF NOT EXISTS ix_bookmark_user_book "
+                "ON bookmark(user_id, book_id)",
+                "CREATE INDEX IF NOT EXISTS ix_kobo_bookmark_state "
+                "ON kobo_bookmark(kobo_reading_state_id)",
+            ],
+        )
+    except Exception as error:
+        log.warning(
+            "[reading-activity-index-migration] index creation failed: %s",
+            error,
+        )
+
+
 def migrate_Database(_session):
     engine = _session.bind
     add_missing_tables(engine, _session)
     migrate_kobo_entitlement_ledger_columns(engine, _session)
     migrate_thumbnail_lookup_index(engine, _session)
+    migrate_reading_activity_indexes(engine, _session)
     migrate_hardcover_match_queue_dedup(engine, _session)
     migrate_registration_table(engine, _session)
     migrate_user_session_table(engine, _session)
@@ -5193,6 +5342,7 @@ def migrate_Database(_session):
     migrate_kobo_two_way_annotation_sync(engine, _session)
     migrate_book_cover_preview_table(engine, _session)
     migrate_user_book_cover_table(engine, _session)
+    migrate_cover_design_preset_tables(engine, _session)
     migrate_notice_tables(engine, _session)
     migrate_kepub_package_repair_disposition(engine, _session)
     migrate_dismissed_duplicate_groups_table(engine, _session)

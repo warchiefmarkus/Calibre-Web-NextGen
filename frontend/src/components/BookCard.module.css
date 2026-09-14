@@ -6,6 +6,15 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* iOS Safari paints its default tap highlight — a grey box BEHIND the link —
+     on every touch that starts on a cover, including touches that turn into a
+     scroll and never open the book (operator, 2026-09-14: "the little highlight
+     that goes behind the tapped on but not necessarily opened book keeps being
+     kinda glitchy"). The property inherits, so opting out here silences the
+     flash for the link and every control inside the tile, and nowhere else —
+     deliberately scoped to the card, not global. Fine pointers never paint a
+     tap highlight, so desktop is unchanged. */
+  -webkit-tap-highlight-color: transparent;
   /* Named query container so the action row can respond to the CARD's width
      rather than the viewport's (#1166) — the same card renders at 82px in a
      dense phone grid and at 260px in search results on the same screen.
@@ -47,7 +56,6 @@
   outline-offset: 2px;
 }
 
-
 /* Selection controls already own the top-left corner. Keep the persistent
    progress badge visible immediately below them instead of stacking overlays. */
 .coverWrapSelectable [data-cover-progress] {
@@ -61,26 +69,45 @@
   opacity: 0;
   transform: translateY(-3px);
   pointer-events: none;
-  transition:
-    opacity var(--dur-fast) var(--ease),
-    transform var(--dur-fast) var(--ease);
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
-.wrap:hover .coverWrap [data-cover-rating],
-.wrap:focus-within .coverWrap [data-cover-rating],
+@media (hover: hover) {
+  .wrap:hover .coverWrap [data-cover-rating] {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+.wrap:has(:focus-visible) .coverWrap [data-cover-rating],
 .cardSelected .coverWrap [data-cover-rating] {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
 }
 
-/* The compact card variants of both pills fit in one top row. Selection mode
-   still moves progress below its checkbox; the rating remains top-right. */
+/* Lift when a pointer that can hover rests on the card, or when keyboard focus
+   lands on anything in it (card control or an action button; keyed off .wrap so
+   focusing a sibling action button lifts too).
 
-/* Lift on hover or when anything in the card (card control or an action button)
-   is focused. Keyed off .wrap so focusing a sibling action button lifts too. */
-.wrap:hover .coverWrap,
-.wrap:focus-within .coverWrap {
+   Hover is gated on `(hover: hover)` because iOS Safari applies a synthetic
+   :hover to the last thing tapped and keeps it until the next tap lands
+   elsewhere — so on a phone the ring stayed lit under a cover the reader had
+   touched while scrolling and never opened. A device whose primary pointer
+   cannot hover gets no hover lift at all; there is no "stable" version of a
+   hover affordance on a finger.
+
+   Focus uses :focus-visible rather than :focus-within for the same reason: a
+   tap focuses the link in some engines, and that focus is not a cue the user
+   asked for. Keyboard focus still lifts. */
+@media (hover: hover) {
+  .wrap:hover .coverWrap {
+    transform: translateY(-4px);
+    box-shadow: var(--elev-3);
+    outline-color: var(--accent);
+  }
+}
+.wrap:has(:focus-visible) .coverWrap {
   transform: translateY(-4px);
   box-shadow: var(--elev-3);
   outline-color: var(--accent);
@@ -313,8 +340,6 @@
   opacity: 1;
 }
 
-.removeBtnWithProgress { top: calc(var(--sp-2) + 30px); }
-
 .removeBtn:hover {
   background: var(--danger);
   color: var(--cover-control-fg);
@@ -446,41 +471,17 @@
 
 .addToLibrary:disabled { cursor: wait; opacity: .7; }
 
-.moreActionsWrap {
-  display: none;
-  position: absolute;
-  top: var(--sp-2);
-  right: var(--sp-2);
-  /* Card chrome must stay below application popovers. The old overlay+1 value
-     let every closed trigger intercept View settings controls above the grid. */
-  z-index: 1;
-}
-
-/* The named query container on every card creates an independent stacking
-   context, so raising only the child panel cannot clear later sibling cards.
-   Lift the entire active card while keeping it below application chrome. */
-.wrapActionsOpen { z-index: calc(var(--z-bar) - 1); }
-
-/* Main's catalog jank pass applies content-visibility:auto to each grid card,
-   which brings paint containment with it. An open disclosure intentionally
-   overflows the card, so release that containment only for the active card.
-   The compound selector outranks Catalog's `.grid > *` regardless of bundle
-   order; closed cards retain the off-screen rendering optimization. */
-.wrap.wrapActionsOpen { content-visibility: visible; }
-
-/* Coarse pointers use one visible disclosure rather than opacity-hidden live
-   controls. A real iPad tap applies synthetic hover before click; that made the
-   old opacity:0 Read link reveal and activate under the same finger. Removing
-   the legacy controls from layout makes invisible activation impossible while
-   preserving the established hover/focus treatment for fine pointers. */
+/* Coarse pointers carry no card actions at all. Operator ruling 2026-09-12:
+   even one visible disclosure per cover was too much chrome on a phone, and
+   all three actions already live on the book's own page, which the cover links
+   to. The legacy controls are REMOVED FROM LAYOUT rather than made transparent
+   — PR #2028's finding stands: a real iPad tap applies synthetic hover before
+   click, so an opacity:0 control reveals AND activates under the same finger.
+   Fine pointers keep the established hover/focus treatment unchanged. */
 @media (any-hover: none), (any-pointer: coarse) {
   .readNow, .removeBtn, .quickEditBtn { display: none; }
   .addToLibrary { display: flex; min-height: 44px; }
-  .moreActionsWrap { display: block; }
-  /* Keep cover chrome compact on phones. These badges are status indicators,
-     not tap targets, so they do not need the 44px control sizing used by the
-     disclosure actions. The label itself ellipsises before it can escape the
-     cover on Compact/Dense grids. */
+  /* Status badges are not controls; keep them compact on narrow touch grids. */
   .badgeRow {
     bottom: var(--sp-1);
     left: var(--sp-1);
@@ -499,89 +500,6 @@
     font-size: var(--fs-xs);
   }
 }
-
-.moreActionsTrigger {
-  /* Preserve a generous 44x44 hit target, but do not paint a 44px disc over a
-     cover that may be only ~82px wide in Dense mode. */
-  position: relative;
-  width: 44px;
-  height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: var(--r-full);
-  color: var(--cover-control-fg);
-  background: transparent;
-  box-shadow: none;
-}
-
-.moreActionsTrigger::before {
-  content: "";
-  position: absolute;
-  inset: 7px;
-  border-radius: var(--r-full);
-  background: var(--cover-control-bg);
-  border: 1px solid var(--cover-control-border);
-  box-shadow: var(--elev-1);
-}
-
-.moreActionsTrigger svg {
-  position: relative;
-  z-index: 1;
-  width: 18px;
-  height: 18px;
-}
-
-.moreActionsTrigger[aria-expanded="true"],
-.moreActionsTrigger:hover {
-  color: var(--text);
-}
-
-.moreActionsTrigger[aria-expanded="true"]::before,
-.moreActionsTrigger:hover::before {
-  background: var(--surface-3);
-}
-
-.moreActionsPanel {
-  position: absolute;
-  top: calc(100% + var(--sp-1));
-  width: max-content;
-  min-width: 180px;
-  max-width: min(240px, calc(100vw - 2 * var(--sp-4)));
-  padding: var(--sp-1);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--elev-3);
-}
-
-.moreActionsPanelStart { left: 0; }
-.moreActionsPanelEnd { right: 0; }
-
-.moreActionsItem {
-  width: 100%;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  border-radius: var(--r-sm);
-  color: var(--text);
-  font-size: var(--fs-sm);
-  text-align: left;
-  text-decoration: none;
-  white-space: normal;
-}
-
-.moreActionsItem:hover,
-.moreActionsItem:focus-visible {
-  background: var(--surface-3);
-}
-
-.moreActionsDanger { color: var(--danger); }
-.moreActionsDanger:hover,
-.moreActionsDanger:focus-visible { background: var(--danger-soft); }
 
 /* Narrow cards — the Compact and Dense grids, which are 3 and 4 columns on a
    phone. Measured at 375px: comfortable 164px, compact 106px, dense 82px per
@@ -607,10 +525,8 @@
   .actionRowEdit .readNowLabel { display: none; }
   .removeBtn, .quickEditBtn { width: 32px; height: 32px; }
 }
-
-/* Dense mobile cards can be ~82px wide. The read-state icon is decorative and
-   duplicates the visible/ARIA label, so reclaim its width before truncating
-   useful status text such as Ukrainian "Прочитано". */
+/* Dense mobile cards can be ~82px wide. Reclaim the decorative icon before
+   truncating useful read-state text. */
 @container book-card (max-width: 100px) {
   .readBadge svg, .readingBadge svg { display: none; }
   .readBadge, .readingBadge { gap: 0; }

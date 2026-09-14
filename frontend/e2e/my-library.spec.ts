@@ -268,15 +268,32 @@ test.describe('My Library', () => {
       await page.getByRole('link', { name: `Open details for ${book!.title}` }).click();
       await expect(page).toHaveURL(new RegExp(`/app/book/${book!.id}$`));
       await expect(page.getByRole('heading', { level: 1, name: book!.title })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Add to my library' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Edit', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Delete from the global library' })).toBeVisible();
 
-      await expect(page.getByRole('button', { name: 'Remove from my library' })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'Add to shelf' })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: /Mark as (?:un)?read/ })).toHaveCount(0);
+      // A non-member's visible row carries none of the member controls — every
+      // action lives in the "More actions" gear menu.
+      const actions = page.getByTestId('book-actions');
+      await expect(actions.getByRole('link', { name: 'Read now' })).toHaveCount(0);
+      await expect(actions.getByRole('button', { name: /^(Add to favorites|Remove from favorites)$/ }))
+        .toHaveCount(0);
+      await expect(actions.getByRole('button', { name: 'Add to shelf' })).toHaveCount(0);
+      await expect(actions.getByTestId('book-actions-menu')).toBeVisible();
+
+      await actions.getByTestId('book-actions-menu').click();
+      const menu = page.getByTestId('book-actions-menu-list');
+      await expect(menu.getByRole('menuitem', { name: 'Add to library' })).toBeVisible();
+      await expect(menu.getByRole('menuitem', { name: 'Edit metadata' })).toBeVisible();
+      // This account has delete_books but is NOT an admin: whole-book deletion
+      // in the SPA menu is admin-only, so the section stays absent for it.
+      await expect(menu.getByRole('menuitem', { name: 'Delete from the global library' })).toHaveCount(0);
+
+      // Member-only controls are absent from the menu, not just the row.
+      await expect(menu.getByRole('menuitem', { name: 'Remove from library' })).toHaveCount(0);
+      await expect(menu.getByRole('menuitem', { name: /Mark as (?:un)?read/ })).toHaveCount(0);
+      await expect(menu.getByRole('menuitem', { name: /^View highlights/ })).toHaveCount(0);
       await expect(page.getByRole('progressbar', { name: 'Reading progress' })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: /^Highlights/ })).toHaveCount(0);
+      // Settle back to the plain page before the accessibility sweep.
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
 
       const detailResponse = await page.request.get(`/api/v1/books/${book!.id}`);
       expect(detailResponse.ok(), await detailResponse.text()).toBeTruthy();
@@ -347,17 +364,30 @@ test.describe('My Library', () => {
       expect(secondaryIds).toContain(secondaryBook.id);
       expect(secondaryIds).not.toContain(adminBook.id);
 
-      await adminPage.goto('/app');
+      // Sort-immune UI proof: the Recent default sort (#2238) can push the pair
+      // off page 1 of the grid, so search inside each library — the server-side
+      // membership filter decides what the grid can show. Absence is asserted
+      // on the id-scoped link, not the "No results" copy: the seed carries two
+      // different "Alice's Adventures in Wonderland" books, and owning one must
+      // not mask the other's absence.
+      await adminPage.goto(`/app/?q=${encodeURIComponent(adminBook.title)}`);
       const adminGrid = adminPage.getByTestId('catalog-grid');
-      await expect(adminGrid.getByRole('link', { name: `Open details for ${adminBook.title}` })).toBeVisible();
-      await expect(adminGrid.getByRole('link', { name: `Open details for ${secondaryBook.title}` })).toHaveCount(0);
+      await expect(adminGrid.locator(`a[href$="/book/${adminBook.id}"]`)).toBeVisible();
+      await adminPage.goto(`/app/?q=${encodeURIComponent(secondaryBook.title)}`);
+      await expect(adminGrid.locator(`a[href$="/book/${secondaryBook.id}"]`)).toHaveCount(0);
 
-      await secondaryPage.goto('/app');
+      await secondaryPage.goto(`/app/?q=${encodeURIComponent(secondaryBook.title)}`);
       const secondaryGrid = secondaryPage.getByTestId('catalog-grid');
-      await expect(secondaryGrid.getByRole('link', { name: `Open details for ${secondaryBook.title}` })).toBeVisible();
-      await expect(secondaryGrid.getByRole('link', { name: `Open details for ${adminBook.title}` })).toHaveCount(0);
+      await expect(secondaryGrid.locator(`a[href$="/book/${secondaryBook.id}"]`)).toBeVisible();
+      await secondaryPage.goto(`/app/?q=${encodeURIComponent(adminBook.title)}`);
+      await expect(secondaryGrid.locator(`a[href$="/book/${adminBook.id}"]`)).toHaveCount(0);
 
-      await expect(adminPage.getByRole('link', { name: 'Global Library', includeHidden: true }))
+      // The searched page carries a "Search the global library for …" link
+      // whose name also matches /Global Library/ — leave it before the sidebar
+      // link assertion. Exact name: the empty-library recovery link ("Browse
+      // the global library") must not match either.
+      await adminPage.goto('/app');
+      await expect(adminPage.getByRole('link', { name: 'Global Library', exact: true, includeHidden: true }))
         .toHaveAttribute('href', '/app/global');
       await adminPage.goto('/app/global');
       await expect(adminPage).toHaveURL(/\/app\/global/);
@@ -369,10 +399,11 @@ test.describe('My Library', () => {
 
       await adminPage.getByRole('button', { name: `Add ${secondaryBook.title} to my library` }).click();
       await expect(adminPage.getByText('Added to your library', { exact: true })).toBeAttached();
-      await adminPage.goto('/app');
-      await expect(adminPage.getByTestId('catalog-grid').getByRole('link', {
-        name: `Open details for ${secondaryBook.title}`,
-      })).toBeVisible();
+      // Search rather than page-1 position: the Recent default sort (#2238)
+      // decides where the freshly added book lands in the grid. The link is
+      // id-scoped: the seed carries two books with this exact title.
+      await adminPage.goto(`/app/?q=${encodeURIComponent(secondaryBook.title)}`);
+      await expect(adminPage.getByTestId('catalog-grid').locator(`a[href$="/book/${secondaryBook.id}"]`)).toBeVisible();
 
       await secondaryPage.goto('/app/account');
       await expect(secondaryPage.getByRole('radio', { name: /My Library/ })).toBeChecked();
@@ -443,10 +474,12 @@ test.describe('My Library', () => {
     try {
       await page.goto(`/app/book/${book.id}`);
       const shelfTrigger = page.getByRole('button', { name: 'Add to shelf' });
-      const addButton = page.getByRole('button', { name: 'Add to my library' });
-      await expect(addButton).toBeVisible();
       await expect(shelfTrigger).toHaveCount(0);
-      await addButton.click();
+      // Adding from the book page is the gear menu's "Add to library" item.
+      await page.getByTestId('book-actions-menu').click();
+      const addItem = page.getByRole('menuitem', { name: 'Add to library' });
+      await expect(addItem).toBeVisible();
+      await addItem.click();
       await expect.poll(async () => {
         const response = await page.request.get(`/api/v1/books/${book.id}`);
         return ((await response.json()) as BookDetailPayload).in_my_library;
@@ -529,8 +562,10 @@ test.describe('My Library', () => {
     try {
       annotationId = await createBrowserHighlight(page, book.id, marker);
 
-      // Drive the same confirmation and membership mutation a person uses.
+      // Drive the same confirmation and membership mutation a person uses; the
+      // control is the gear menu's "Remove from library" item.
       await page.goto(`/app/book/${book.id}`);
+      await page.getByTestId('book-actions-menu').click();
       const confirmation = page.waitForEvent('dialog').then(async (dialog) => {
         expect(dialog.message()).toContain(`Remove "${book.title}" from your library?`);
         expect(dialog.message()).toContain('your highlights, notes and reading progress are kept');
@@ -538,7 +573,7 @@ test.describe('My Library', () => {
       });
       await Promise.all([
         confirmation,
-        page.getByRole('button', { name: 'Remove from my library' }).click(),
+        page.getByRole('menuitem', { name: 'Remove from library' }).click(),
       ]);
       await expect(page.getByText('Removed from your library', { exact: true })).toBeAttached();
       await expect.poll(async () => {
@@ -636,13 +671,14 @@ test.describe('My Library', () => {
       const acknowledged = await koboSync(page, token, deviceId, delivered.syncToken);
 
       await page.goto(`/app/book/${detail!.id}`);
+      await page.getByTestId('book-actions-menu').click();
       const confirmation = page.waitForEvent('dialog').then(async (dialog) => {
         expect(dialog.message()).toContain("it also leaves your Kobo at its next sync");
         await dialog.accept();
       });
       await Promise.all([
         confirmation,
-        page.getByRole('button', { name: 'Remove from my library' }).click(),
+        page.getByRole('menuitem', { name: 'Remove from library' }).click(),
       ]);
       await expect(page.getByText('Removed from your library', { exact: true })).toBeAttached();
 
@@ -709,17 +745,19 @@ test.describe('My Library', () => {
     await keepOnlyMembership(page, book.id);
     await page.goto(`/app/book/${book.id}`);
 
-    // The detail action is identical for mouse, keyboard and touch. The card's
-    // compact remove affordance is intentionally hover/disclosure-driven on
-    // some viewports and is not the right cross-modality oracle for this cell.
-    const removeButton = page.getByRole('button', { name: 'Remove from my library' });
+    // The detail action is the same gear-menu item for mouse, keyboard and
+    // touch. The card's compact remove affordance is intentionally
+    // hover/disclosure-driven on some viewports and is not the right
+    // cross-modality oracle for this cell.
+    await page.getByTestId('book-actions-menu').click();
+    const removeItem = page.getByRole('menuitem', { name: 'Remove from library' });
     const confirmation = page.waitForEvent('dialog').then(async (dialog) => {
       expect(dialog.message()).toContain(`Remove "${book.title}" from your library?`);
       expect(dialog.message()).toContain('the book stays in the global library');
       expect(dialog.message()).toContain('You can add it back any time from the global library.');
       await dialog.accept();
     });
-    await Promise.all([confirmation, removeButton.click()]);
+    await Promise.all([confirmation, removeItem.click()]);
     await expect(page.getByText('Removed from your library', { exact: true })).toBeAttached();
     await page.getByRole('link', { name: '← Library', exact: true }).click();
 

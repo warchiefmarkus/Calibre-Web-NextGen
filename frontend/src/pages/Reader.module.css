@@ -1411,3 +1411,85 @@
   outline-offset: -3px;
 }
 
+
+/* In-book link hit targets live in the parent document because sandboxed EPUB
+   frames cannot reliably intercept taps in WebKit. The book keeps its own link
+   styling; these controls only provide safe routing and a 24px minimum target. */
+.linkLayer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 39;
+}
+.linkHit {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.linkHit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.noteScrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  border: 0;
+  background: rgb(0 0 0 / 35%);
+}
+.noteSheet {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: calc(var(--z-overlay) + 1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(560px, 100vw);
+  max-height: min(60vh, 520px);
+  box-sizing: border-box;
+  padding: 10px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--reader-chrome);
+  color: var(--reader-chrome-text);
+  border: 1px solid var(--reader-chrome-border);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--elev-3);
+}
+.noteSheetHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+.noteSheetTitle { font-weight: 600; font-size: 15px; }
+.noteSheetBody {
+  overflow-y: auto;
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.noteSheetBody :first-child { margin-top: 0; }
+.noteSheetBody :last-child { margin-bottom: 0; }
+.noteSheetActions {
+  display: flex;
+  justify-content: flex-end;
+}
+.noteSheetActions button, .noteClose {
+  min-height: 44px;
+  border: 1px solid var(--reader-chrome-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.noteClose { min-width: 44px; font-size: 22px; }

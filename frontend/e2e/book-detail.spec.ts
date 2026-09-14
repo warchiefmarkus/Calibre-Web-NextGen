@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { collectPageErrors, assertNoPageErrors, assertNoHorizontalOverflow, pageOverflow } from './utils';
+import { collectPageErrors, assertNoPageErrors, assertNoHorizontalOverflow, pageOverflow, fetchJsonSafe } from './utils';
 
 /*
  * Book-detail completeness pass:
@@ -107,8 +107,9 @@ async function firstBookId(page: Page): Promise<number | null> {
 }
 
 // #803 — the new UI had no way to delete a book (users had to switch to classic).
-// The book-detail page now carries a whole-book delete action, gated on the
-// delete role and confirmed before it fires. These fail pre-fix (no button).
+// Whole-book deletion now lives in the book page's "More actions" gear menu, in
+// an admin-only section, gated on the delete role and confirmed before it fires.
+// These fail pre-fix (no such control).
 
 test('a permitted user gets a delete action that confirms, calls the delete endpoint, and returns to the library (#803)', async ({ page }) => {
   await page.goto('/app');
@@ -132,10 +133,13 @@ test('a permitted user gets a delete action that confirms, calls the delete endp
   await page.goto(`/app/book/${bookId}`, { waitUntil: 'domcontentloaded' });
 
   // #1939 renamed the accessible name to disambiguate irreversible global
-  // deletion from "remove from my library". The flow this test guards (#803) -
-  // confirm dialog, whole-book delete endpoint, return to the library - is
-  // unchanged.
-  const del = page.getByRole('button', { name: 'Delete from the global library' });
+  // deletion from "remove from my library"; it now sits on the gear menu's
+  // admin-only menuitem. The flow this test guards (#803) — confirm dialog,
+  // whole-book delete endpoint, return to the library — is unchanged.
+  const trigger = page.getByTestId('book-actions-menu');
+  await expect(trigger).toBeVisible({ timeout: 10_000 });
+  await trigger.click();
+  const del = page.getByRole('menuitem', { name: 'Delete from the global library' });
   await expect(del).toBeVisible({ timeout: 10_000 });
 
   // Clicking fires the confirm dialog, then a POST to the whole-book delete
@@ -155,28 +159,36 @@ test('a permitted user gets a delete action that confirms, calls the delete endp
   assertNoPageErrors(errors);
 });
 
-test('the delete action is hidden for a user without the delete role (#803)', async ({ page }) => {
+test('the delete action is hidden for a non-admin user (#803)', async ({ page }) => {
   await page.goto('/app');
   const bookId = await firstBookId(page);
   test.skip(bookId == null, 'seed has no books');
 
-  // Force the current-user payload to lack the delete role; the control must
+  // Force the current-user payload to lack the admin role; the control must
   // not render at all (hidden, never merely disabled — a forged request is
   // separately rejected server-side with 403).
   await page.route('**/api/v1/auth/me', async (route) => {
-    const res = await route.fetch();
-    const me = await res.json();
-    if (me?.role) me.role.delete_books = false;
+    const got = await fetchJsonSafe(route);
+    if (!got) return;
+    const { response: res, body: me } = got;
+    if (me?.role) me.role.admin = false;
     await route.fulfill({ response: res, json: me });
   });
 
   await page.goto(`/app/book/${bookId}`, { waitUntil: 'domcontentloaded' });
-  // The page has rendered (an existing action is present) but delete is absent.
-  await expect(page.getByRole('button', { name: /Mark as (read|unread)/ })).toBeVisible({ timeout: 10_000 });
+  // The page has rendered (the gear menu opens and an existing action is
+  // present) but the admin-only delete section is absent.
+  const trigger = page.getByTestId('book-actions-menu');
+  await expect(trigger).toBeVisible({ timeout: 10_000 });
+  await trigger.click();
+  const menu = page.getByTestId('book-actions-menu-list');
+  await expect(menu.getByRole('menuitem', { name: /Mark as (read|unread)/ }))
+    .toBeVisible({ timeout: 10_000 });
   // #1939 renamed the book-detail destructive control's accessible name. This
   // absence assertion MUST track the rename: against the old name it would now
   // pass whether or not the control is hidden, i.e. prove nothing.
-  await expect(page.getByRole('button', { name: 'Delete from the global library' })).toHaveCount(0);
+  await expect(menu.getByRole('menuitem', { name: 'Delete from the global library' })).toHaveCount(0);
+  await expect(menu.getByText('Admin only')).toHaveCount(0);
 });
 
 test('book detail with a "More by" strip has no horizontal overflow on mobile', async ({ page }) => {
@@ -199,8 +211,9 @@ test('long custom identifier types and values stay within the metadata grid', as
   const longType = `external-catalog-${'x'.repeat(64)}`;
   const longValue = `record-${'y'.repeat(96)}`;
   await page.route(`**/api/v1/books/${bookId}`, async (route) => {
-    const res = await route.fetch();
-    const book = await res.json();
+    const got = await fetchJsonSafe(route);
+    if (!got) return;
+    const { response: res, body: book } = got;
     book.identifiers = [
       ...(book.identifiers ?? []),
       { type: longType, label: longType, val: longValue, url: null },
@@ -237,8 +250,9 @@ test('long tag names add no horizontal overflow to the read-only detail page', a
   // Drop the edit role so the page renders the read-only Pill branch that a
   // guest or viewer account gets.
   await page.route('**/api/v1/auth/me', async (route) => {
-    const res = await route.fetch();
-    const me = await res.json();
+    const got = await fetchJsonSafe(route);
+    if (!got) return;
+    const { response: res, body: me } = got;
     if (me?.role) me.role.edit = false;
     await route.fulfill({ response: res, json: me });
   });
@@ -250,8 +264,9 @@ test('long tag names add no horizontal overflow to the read-only detail page', a
   // A real LoC heading plus a single unbroken token wider than the viewport.
   const longTag = 'France -- History -- Revolution, 1789-1799 -- Fiction';
   await page.route(`**/api/v1/books/${bookId}`, async (route) => {
-    const res = await route.fetch();
-    const book = await res.json();
+    const got = await fetchJsonSafe(route);
+    if (!got) return;
+    const { response: res, body: book } = got;
     book.tags = [
       { id: 990001, name: longTag },
       { id: 990002, name: 'Bildungsroman'.repeat(8) },
@@ -298,8 +313,9 @@ test('long title, author and series tokens add no horizontal overflow', async ({
   // transliterated name, a long series title. None contains a break opportunity.
   const longTitle = 'Kraftfahrzeughaftpflichtversicherungsgesetz';
   await page.route(`**/api/v1/books/${bookId}`, async (route) => {
-    const res = await route.fetch();
-    const book = await res.json();
+    const got = await fetchJsonSafe(route);
+    if (!got) return;
+    const { response: res, body: book } = got;
     book.title = longTitle;
     book.authors = [{ id: 990101, name: 'Nebuchadnezzarssonssonssonsdottir' }];
     book.series = { id: 990102, name: 'Donaudampfschiffahrtsgesellschaftskapitaen' };
@@ -323,25 +339,37 @@ test('long title, author and series tokens add no horizontal overflow', async ({
 });
 
 // #1828 — the mobile book page buried the description under ~two screens of
-// action chips, a heavy delete block and the attribute list. The redesign puts
-// the description directly under the title/author on narrow viewports, with
-// the action row, tags and metadata after it. Desktop keeps its historical
-// order (actions first, description last) — pinned by the second test.
+// action chips, a heavy delete block and the attribute list. The 2026-09-14
+// operator ruling then moved the (now four-control) action row to the TOP of
+// the page — directly under the back link, above the cover — on both
+// viewports. What remains of #1828's promise: the description still precedes
+// the attribute list on mobile (reading order inside the info column).
 //
 // The description and a publisher row are stubbed into the detail payload so
 // the assertions do not depend on what the seed library happens to carry.
 
 async function stubDescription(page: Page, bookId: number) {
   await page.route(`**/api/v1/books/${bookId}`, async (route) => {
-    const res = await route.fetch();
-    const book = await res.json();
+    const got = await fetchJsonSafe(route);
+    if (!got) return;
+    const { response: res, body: book } = got;
     book.description_html = '<p>Reading-order sentinel description.</p>';
     book.publishers = [{ id: 990201, name: 'Sentinel Publisher' }];
     await route.fulfill({ response: res, json: book });
   });
 }
 
-test('mobile reading order: description precedes the action row and the attribute list (#1828)', async ({ page }) => {
+/** Fonts + cover art settle the layout before the sequential box reads (the
+ *  movers: an Arabic display-face title re-wrapping, and `aspect-ratio:
+ *  auto 2 / 3` reserving 2:3 only until the cover's natural ratio lands). */
+async function settleBookLayout(page: Page) {
+  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() =>
+    Promise.all(Array.from(document.images).map((img) =>
+      img.complete ? null : img.decode().catch(() => null))));
+}
+
+test('mobile: the action row leads above the cover; the description still precedes the attribute list (#1828)', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 667 });
   await page.goto('/app');
   const bookId = await firstBookId(page);
@@ -353,24 +381,28 @@ test('mobile reading order: description precedes the action row and the attribut
   await expect(description).toBeVisible({ timeout: 10_000 });
   const actions = page.getByTestId('book-actions');
   await expect(actions).toBeVisible();
+  const cover = page.locator('main [class*="coverWrap"]').first();
+  await expect(cover).toBeVisible();
   const metaList = page.locator('main dl');
   await expect(metaList).toContainText('Sentinel Publisher');
+  await settleBookLayout(page);
 
-  const descBox = (await description.boundingBox())!;
   const actionsBox = (await actions.boundingBox())!;
+  const coverBox = (await cover.boundingBox())!;
+  const descBox = (await description.boundingBox())!;
   const metaBox = (await metaList.boundingBox())!;
 
   expect(
-    descBox.y + descBox.height,
-    'the description must end above the action row on mobile, not follow it',
-  ).toBeLessThanOrEqual(actionsBox.y + 1);
-  expect(
     actionsBox.y + actionsBox.height,
-    'the action row must end above the attribute list on mobile',
+    'the action row must end above the cover on mobile — it leads the page',
+  ).toBeLessThanOrEqual(coverBox.y + 1);
+  expect(
+    descBox.y + descBox.height,
+    'the description must end above the attribute list on mobile (#1828)',
   ).toBeLessThanOrEqual(metaBox.y + 1);
 });
 
-test('desktop layout is unchanged: the action row still precedes the description (#1828)', async ({ page, isMobile }) => {
+test('desktop: the action row leads above the cover/title block; the description stays last in the column (#1828)', async ({ page, isMobile }) => {
   test.skip(isMobile === true, 'desktop layout assertion — the mobile project emulates a handset');
   await page.goto('/app');
   const bookId = await firstBookId(page);
@@ -382,11 +414,26 @@ test('desktop layout is unchanged: the action row still precedes the description
   await expect(description).toBeVisible({ timeout: 10_000 });
   const actions = page.getByTestId('book-actions');
   await expect(actions).toBeVisible();
+  const cover = page.locator('main [class*="coverWrap"]').first();
+  await expect(cover).toBeVisible();
+  const metaList = page.locator('main dl');
+  await expect(metaList).toContainText('Sentinel Publisher');
+  await settleBookLayout(page);
 
-  const descBox = (await description.boundingBox())!;
   const actionsBox = (await actions.boundingBox())!;
+  const coverBox = (await cover.boundingBox())!;
+  const descBox = (await description.boundingBox())!;
+  const metaBox = (await metaList.boundingBox())!;
   expect(
     actionsBox.y + actionsBox.height,
-    'desktop must keep the action row above the description',
+    'the action row must end above the cover/title block on desktop',
+  ).toBeLessThanOrEqual(coverBox.y + 1);
+  // On desktop the description lives in the info column beside the cover, so
+  // its height relative to the cover depends on how many attribute rows the
+  // book has (CI's first seed book has fewer than the dev rig's). What #1828
+  // pins is the column order: the description comes after the attribute list.
+  expect(
+    metaBox.y + metaBox.height,
+    'desktop keeps the description last in the info column, after the attribute list',
   ).toBeLessThanOrEqual(descBox.y + 1);
 });

@@ -44,7 +44,7 @@ from .helper import check_valid_domain, check_email, check_username, \
     send_registration_mail, check_send_to_ereader, check_read_formats, tags_filters, reset_password, valid_email, \
     edit_book_read_status, valid_password, get_kosync_progress_display
 from .pagination import Pagination
-from .sort_orders import BOOK_SORT_ORDERS, book_sort_order
+from .sort_orders import BOOK_SORT_ORDERS, book_sort_order, viewer_id
 from .custom_column_sort import (
     load_configured_columns,
     resolve_magic_shelf_sort,
@@ -653,8 +653,10 @@ def get_sort_function(sort_param, data):
             return BOOK_SORT_ORDERS["seriesasc"], "seriesasc"
         sort_param = "new"
     # The ORDER BY itself is shared with the new UI's /api/v1 lists so the two
-    # cannot disagree, and so every sort keeps its unique tiebreaker (#1331).
-    return book_sort_order(sort_param), sort_param
+    # cannot disagree, and so every sort keeps its unique tiebreaker (#1331) —
+    # including the per-user "recent", so a stored choice made in the new UI
+    # does not silently mean something else on a classic page.
+    return book_sort_order(sort_param, user_id=viewer_id(current_user)), sort_param
 
 
 def cwa_get_library_location() -> str:
@@ -3899,10 +3901,16 @@ def read_book(book_id, book_format):
                 log.debug("Start comic reader for %d", book_id)
                 return render_title_template('readcbr.html', comicfile=all_name, title=title,
                                              extension=fileExt, bookmark=bookmark)
-        log.debug("Selected book is unavailable. File does not exist or is not accessible")
-        flash(_("Oops! Selected book is unavailable. File does not exist or is not accessible"),
-              category="error")
-        return redirect(url_for("web.index"))
+        log.debug("Reader requested for an unsupported format: %s", book_format)
+        # 404, not a redirect to the library.
+        #
+        # This route is reachable from inside the web reader's own content frame:
+        # a link in an EPUB resolves against the section's path, so a stray
+        # request can arrive here with a format this reader cannot open. Answering
+        # with the library home page rendered THE APP inside the book frame — the
+        # user's book replaced by the catalogue. A reader frame must never be
+        # handed a page of the app, and a caller can recognise a status code.
+        abort(404)
 
 
 @web.route("/book/<int:book_id>")

@@ -8,6 +8,7 @@
  * parse that here. CSRF + session cookie are reused from api.ts. */
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, getCsrf, apiUrl } from './api';
+import type { DesignerState } from '../features/coverDesigner/contract';
 
 // ---- shapes (mirror cps/services/cover_picker.py + cover_url_validator.py) ----
 
@@ -57,12 +58,20 @@ export interface UrlValidation {
   size_bytes: number | null;
   width: number | null;
   height: number | null;
+  /** The URL the server will actually download when it differs from the typed
+   *  one (a Google Images results link unwrapped to the image behind it).
+   *  `url` stays the typed text so the stale-response guard keeps working. */
+  resolved_url?: string | null;
 }
 
 export interface CoverState {
   locked: boolean;
   ereader_enabled: boolean;
   ereader_defaults: { aspect: string; fill_mode: string; color: string };
+  /** "Design a cover" state; absent on a server that predates it. The v2 panel
+   *  renders only when `catalogue` is present (contract shape); a v1 server
+   *  carries the flat catalogue here and the panel stays hidden. */
+  designer?: DesignerState;
 }
 
 export interface ApplyResult { ok: boolean; cover_url?: string; error_message?: string }
@@ -194,10 +203,12 @@ export function useCoverState(id: string, personal = false) {
   return useQuery({ queryKey: ['cover-state', id, personal], queryFn: () => coverApi.state(id, personal) });
 }
 
-export function useCandidates(id: string, personal = false) {
+/** `query` empty = the server's default (title + author); anything else is the
+ *  user's own words, sent verbatim to every source. */
+export function useCandidates(id: string, personal = false, query = '') {
   return useQuery({
-    queryKey: ['cover-candidates', id, personal],
-    queryFn: () => coverApi.candidates(id, undefined, personal),
+    queryKey: ['cover-candidates', id, personal, query],
+    queryFn: () => coverApi.candidates(id, query || undefined, personal),
     staleTime: 60_000, // provider fan-out is slow; don't refetch on remount
     refetchOnWindowFocus: false,
   });

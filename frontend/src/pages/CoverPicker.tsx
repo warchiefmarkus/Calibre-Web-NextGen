@@ -2,15 +2,16 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Link } from 'wouter';
 import {
   ChevronLeft, Lock, Unlock, Upload as UploadIcon, Link2, RefreshCw, Check, X,
-  Image as ImageIcon, AlertTriangle, KeyRound, Smartphone, Loader2, Sparkles,
+  Image as ImageIcon, AlertTriangle, KeyRound, Smartphone, Loader2, Sparkles, Search as SearchIcon,
 } from 'lucide-react';
-import { useBook } from '../lib/queries';
+import { useBook, useClearMyCover, useMe } from '../lib/queries';
 import {
   useCoverState, useCandidates, useProviderKeys, coverApi,
   EREADER_ASPECTS, EREADER_FILL_MODES,
   type CoverCandidate, type ProviderStatus, type UrlValidation,
   type EreaderOptions, type ProviderKey,
 } from '../lib/coverPicker';
+import { CoverDesignerPanel } from '../features/coverDesigner/DesignerPanel';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { SpinnerCentered } from '../components/Spinner';
@@ -27,10 +28,26 @@ const isEmbedded = (c: CoverCandidate) => c.source_id === 'embedded' || c.candid
 export function CoverPicker({ id }: { id: string }) {
   const t = useT();
   const qc = useQueryClient();
-  const personal = new URLSearchParams(window.location.search).get('personal') === '1';
+  const me = useMe().data;
+  const clearMyCover = useClearMyCover(id);
+  // Library cover (shared, edit role required server-side) vs. the reader's own
+  // cover (private to them + their e-reader deliveries). The scope is switchable
+  // here — it used to be two separate entry points on the book page.
+  const [scope, setScope] = useState<'library' | 'personal'>(() =>
+    new URLSearchParams(window.location.search).get('personal') === '1' ? 'personal' : 'library');
+  const canEditLibrary = !!(me?.role?.edit || me?.role?.admin);
+  // Without the edit role every library-scope endpoint 403s
+  // (cps/cover_picker.py edit_required), so the only usable scope is personal.
+  const personal = scope === 'personal' || !canEditLibrary;
   const { data: book } = useBook(id);
   const { data: state } = useCoverState(id, personal);
-  const candidatesQ = useCandidates(id, personal);
+  // The sources are searched with the book's title and author by default;
+  // the toolbar lets the user re-run them with their own words (a different
+  // title, the original-language title, an ISBN they trust) without leaving
+  // the picker. `query` is what was submitted, `draft` what is being typed.
+  const [query, setQuery] = useState('');
+  const [draft, setDraft] = useState('');
+  const candidatesQ = useCandidates(id, personal, query);
 
   const [locked, setLocked] = useState(false);
   const [coverBust, setCoverBust] = useState<string | null>(null);
@@ -69,6 +86,33 @@ export function CoverPicker({ id }: { id: string }) {
     setBanner({ ok: false, text: err instanceof ApiError ? err.message : t('Something went wrong. Try again.') });
   }, [t]);
 
+  const switchScope = (next: 'library' | 'personal') => {
+    if (next === scope) return;
+    setScope(next);
+    setBanner(null);
+    setConfirm(null);
+    // An apply in the other scope must not bleed its cache-busted URL into
+    // this scope's "current cover" frame.
+    setCoverBust(null);
+    // Keep the URL honest, so a refresh or a copied link lands in this scope.
+    const params = new URLSearchParams(window.location.search);
+    if (next === 'personal') params.set('personal', '1');
+    else params.delete('personal');
+    const qs = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  };
+
+  const restoreLibraryCover = () => {
+    if (clearMyCover.isPending) return;
+    clearMyCover.mutate(undefined, {
+      onSuccess: () => {
+        setCoverBust(null); // the refetched book carries the library cover again
+        setBanner({ ok: true, text: t('The library cover is back for you.') });
+      },
+      onError,
+    });
+  };
+
   const toggleLock = async () => {
     const next = !locked;
     setLocked(next); // optimistic
@@ -92,6 +136,21 @@ export function CoverPicker({ id }: { id: string }) {
             ? t('Your cover appears only to you and on books delivered to your e-readers. The library cover stays unchanged for everyone else, and administrators manage it.')
             : t('Pick a cover from any source we support, paste a URL, upload a file, or use the cover embedded in the book itself.')}
         </p>
+        {canEditLibrary && (
+          <div className={styles.scopeSwitch} role="group" aria-label={t('Cover scope')}
+            data-testid="cover-scope-switch">
+            <button type="button" aria-pressed={!personal}
+              className={!personal ? styles.scopeOn : styles.scope}
+              onClick={() => switchScope('library')}>
+              {t('Library cover')}
+            </button>
+            <button type="button" aria-pressed={personal}
+              className={personal ? styles.scopeOn : styles.scope}
+              onClick={() => switchScope('personal')}>
+              {t('My own cover')}
+            </button>
+          </div>
+        )}
       </header>
 
       {banner && (
@@ -125,6 +184,15 @@ export function CoverPicker({ id }: { id: string }) {
             {!personal && <p className={styles.lockHelp}>
               {t('When locked, fetching metadata will not overwrite this cover.')}
             </p>}
+            {personal && book.using_my_cover && (
+              <button type="button" className={styles.restoreLibrary} onClick={restoreLibraryCover}
+                disabled={clearMyCover.isPending}>
+                {clearMyCover.isPending ? t('Restoring…') : t('Use the library cover')}
+              </button>
+            )}
+            {personal && <p className={styles.lockHelp}>
+              {t('Your own cover is private to you and your e-reader deliveries. The library cover stays unchanged for everyone else.')}
+            </p>}
           </div>
 
           <AddOwnPanel id={id} locked={locked} personal={personal} onApplied={onApplied} onError={onError} />
@@ -134,10 +202,23 @@ export function CoverPicker({ id }: { id: string }) {
           {state?.ereader_enabled && (
             <EreaderPanel onChange={setEreaderState} value={ereaderState} />
           )}
+          {state?.designer?.available && (
+            <CoverDesignerPanel id={id} designer={state.designer} locked={locked} personal={personal}
+                                onApplied={onApplied} onError={onError} />
+          )}
           {!personal && <ApiKeysPanel />}
 
           <div className={styles.gridToolbar}>
             <h2 className={styles.gridTitle}>{t('Choose a cover')}</h2>
+            <form className={styles.queryForm} role="search" onSubmit={(e) => { e.preventDefault(); setQuery(draft.trim()); }}>
+              <input type="search" className={`${styles.input} ${styles.queryInput}`} value={draft}
+                     onChange={(e) => setDraft(e.target.value)}
+                     placeholder={candidatesQ.data?.query || t('Search sources with different words')}
+                     aria-label={t('Search sources with different words')} />
+              <Button type="submit" variant="ghost" size="sm" disabled={candidatesQ.isFetching}>
+                <SearchIcon size={14} /> {t('Search')}
+              </Button>
+            </form>
             <ProviderSummary providers={candidatesQ.data?.providers} loading={candidatesQ.isFetching} />
             <Button variant="ghost" size="sm" onClick={() => candidatesQ.refetch()} disabled={candidatesQ.isFetching}>
               <span className={candidatesQ.isFetching ? styles.spin : ''}><RefreshCw size={14} /></span> {t('Refresh')}
@@ -278,6 +359,11 @@ function useEreaderPreviews(id: string, candidates: CoverCandidate[], s: Ereader
 
   return s.enabled ? previews : {};
 }
+
+
+// ============================================================================
+// "Design a cover" — moved to frontend/src/features/coverDesigner/ (v2).
+// ============================================================================
 
 // ============================================================================
 // Candidate grid + cards
@@ -425,28 +511,41 @@ function UrlTab({ id, locked, personal, onApplied, onError }: {
   const t = useT();
   const [url, setUrl] = useState('');
   const [valid, setValid] = useState<UrlValidation | null>(null);
+  // The check itself failed (non-2xx, network): shown in the same red line as
+  // a refusal, because a silently disabled button reads as "nothing happened".
+  const [checkError, setCheckError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
   const seq = useRef(0); // ignore stale validation responses that resolve out of order
 
   useEffect(() => {
     const v = url.trim();
-    if (!v) { setValid(null); setChecking(false); return; }
+    if (!v) { setValid(null); setCheckError(null); setChecking(false); return; }
     setChecking(true);
     const mySeq = ++seq.current;
     const h = setTimeout(async () => {
-      try { const r = await coverApi.validate(id, v, personal); if (mySeq === seq.current) setValid(r); }
-      catch { if (mySeq === seq.current) setValid(null); }
-      finally { if (mySeq === seq.current) setChecking(false); }
+      try {
+        const r = await coverApi.validate(id, v, personal);
+        if (mySeq === seq.current) { setValid(r); setCheckError(null); }
+      } catch (e) {
+        if (mySeq === seq.current) {
+          setValid(null);
+          setCheckError((e instanceof ApiError && e.message) || t('That URL is not a usable image.'));
+        }
+      } finally { if (mySeq === seq.current) setChecking(false); }
     }, 400);
     return () => clearTimeout(h);
-  }, [url, id, personal]);
+  }, [url, id, personal, t]);
+
+  // A Google Images results link validates as the image behind it; apply that
+  // one, while the stale-response guard keeps comparing `url` to the typed text.
+  const applyUrl = valid?.resolved_url ?? valid?.url;
 
   const apply = async () => {
     // Guard against applying a URL that's no longer the one shown/validated.
-    if (!valid?.valid || checking || valid?.url !== url.trim() || locked) return;
+    if (!valid?.valid || !applyUrl || checking || valid?.url !== url.trim() || locked) return;
     setApplying(true);
-    try { const r = await coverApi.applyUrl(id, valid.url, personal); onApplied(r.cover_url); setUrl(''); setValid(null); }
+    try { const r = await coverApi.applyUrl(id, applyUrl, personal); onApplied(r.cover_url); setUrl(''); setValid(null); }
     catch (e) { onError(e); }
     finally { setApplying(false); }
   };
@@ -456,15 +555,19 @@ function UrlTab({ id, locked, personal, onApplied, onError }: {
       <input className={styles.input} value={url} onChange={(e) => setUrl(e.target.value)}
              placeholder="https://…" inputMode="url" aria-label={t('Cover image URL')} />
       {checking && <div className={styles.feedbackMuted}>{t('Checking…')}</div>}
+      {!checking && !valid && checkError && (
+        <div className={styles.feedbackErr} role="alert">{checkError}</div>
+      )}
       {!checking && valid && !valid.valid && (
-        <div className={styles.feedbackErr}>{valid.error_message || t('That URL is not a usable image.')}</div>
+        <div className={styles.feedbackErr} role="alert">{valid.error_message || t('That URL is not a usable image.')}</div>
       )}
       {!checking && valid?.valid && (
         <div className={styles.urlOk}>
-          <img src={valid.url} alt="" className={styles.urlThumb} />
+          <img src={applyUrl} alt="" className={styles.urlThumb} />
           <div className={styles.urlMeta}>
             <span className={styles.feedbackOk}><Check size={13} /> {t('Looks good')}</span>
             {valid.width && valid.height ? <span>{valid.width}×{valid.height}</span> : null}
+            {valid.resolved_url ? <span className={styles.feedbackMuted}>{t('Using the image behind that Google link')}</span> : null}
           </div>
         </div>
       )}
