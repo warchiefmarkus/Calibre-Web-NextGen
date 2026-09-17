@@ -53,3 +53,35 @@ def test_payload_includes_unreferenced_assignable_devices_and_excludes_other_use
         if has_annotation:
             assert bounded["annotations"][0]["origin_device_id"] == "origin"
     engine.dispose()
+
+
+def test_payload_accepts_calibre_native_rows_without_device_routing_fields(monkeypatch):
+    """A native Calibre highlight must reload even though it has no CWNG device ids."""
+    from cps import annotations as ann, ub
+    from cps.services.calibre_annotations import NativeAnnotationRow
+
+    engine = create_engine("sqlite:///:memory:")
+    ub.Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as session:
+        monkeypatch.setattr(ub, "session", session)
+        monkeypatch.setattr(ann, "current_user", SimpleNamespace(id=1))
+        monkeypatch.setattr(ann, "_resolve_book_or_404", lambda _: SimpleNamespace(id=223))
+        row = NativeAnnotationRow(
+            annotation_id="native-highlight",
+            book_id=223,
+            highlighted_text="persist me",
+            cfi_range="epubcfi(/6/2!/4/2/1:0,/4/2/1:0,/4/2/1:7)",
+        )
+        monkeypatch.setattr(ann, "_load_user_annotations", lambda *_: [row])
+        monkeypatch.setattr(ann, "_resolve_annotation_anchor", lambda r, _book: (r.cfi_range, "ok"))
+        app = flask.Flask(__name__)
+        app.register_blueprint(ann.annotations_bp)
+        with app.test_request_context("/annotations/223/data.json?format=FB2"):
+            response = ann.annotations_data.__wrapped__(223)
+        body = response.get_json()
+        assert response.status_code == 200
+        assert body["annotation_count"] == 1
+        assert body["annotations"][0]["annotation_id"] == "native-highlight"
+        assert body["annotations"][0]["origin_device_id"] is None
+        assert body["annotations"][0]["assigned_device_id"] is None
+    engine.dispose()

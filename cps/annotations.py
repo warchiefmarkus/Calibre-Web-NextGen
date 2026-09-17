@@ -2280,10 +2280,18 @@ def annotations_data(book_id):
     except ValueError as e:
         return jsonify({"error": "bad_format", "message": str(e)}), 400
     rows = _load_user_annotations(current_user.id, book_id, fmt)
+    # Native Calibre annotations intentionally do not carry CWNG device-routing
+    # fields. Keep the reader payload adapter-neutral: SQL-backed Annotation
+    # rows can contribute device ids, while NativeAnnotationRow simply
+    # contributes none. Direct attribute access here made data.json return 500
+    # as soon as the first Calibre-native highlight existed.
     referenced_device_ids = {
         device_id
         for row in rows
-        for device_id in (row.origin_device_id, row.assigned_device_id)
+        for device_id in (
+            getattr(row, "origin_device_id", None),
+            getattr(row, "assigned_device_id", None),
+        )
         if device_id is not None
     }
     device_public_ids, devices = _annotation_device_payload(
