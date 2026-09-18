@@ -126,6 +126,37 @@ for that OpenCode model family: GPT uses Responses, Claude/Qwen/MiniMax use
 Messages where applicable, Gemini uses Generate Content, and the remaining
 open models use Chat Completions.
 
+The separate **OpenCode Zen (OpenCode CLI)** preset routes the same reader
+translation contract through an installed OpenCode CLI instead of calling the
+Zen inference endpoint directly. Its reserved endpoint path is `opencode-cli`.
+The backend starts `opencode serve` on an ephemeral loopback port, discovers
+models through OpenCode's local `/provider` API, and submits each translation
+through a temporary OpenCode session using provider `opencode`. This is useful
+for models whose Zen access is intentionally restricted to an OpenCode client.
+The runtime disables project configuration and default plugins. A private local
+guard plugin preserves OpenCode's native tool schema (required by some free Zen
+models) but rejects every `tool.execute.before` hook, so book text cannot cause
+shell, filesystem, web, task, MCP, or other tool side effects.
+
+Each CLI profile has an isolated runtime HOME and credential store. The Zen API
+key is decrypted only server-side and written into that private runtime while
+the process is active. Idle/crash shutdown scrubs the credential store,
+OpenCode session/message database, and runtime log while retaining only
+non-secret dependency/model caches for a faster next cold start. A systemd
+service stop/restart removes the complete runtime root. A monitor stops an
+inactive runtime after 10 minutes by default; the next request starts it again.
+Dead processes and changed credentials are also restarted automatically. Install the pinned CLI used by this deployment with:
+
+```bash
+deploy/install/35-install-opencode-cli.sh
+```
+
+The lifecycle can be tuned with `CWNG_OPENCODE_CLI_BIN`,
+`CWNG_OPENCODE_CLI_RUNTIME_DIR`, `CWNG_OPENCODE_CLI_IDLE_SECONDS`
+(default 600), `CWNG_OPENCODE_CLI_MONITOR_SECONDS` (default 30), and
+`CWNG_OPENCODE_CLI_STARTUP_SECONDS` (default 15). The managed loopback
+runtime does not require enabling arbitrary private translation endpoints.
+
 API keys are encrypted with the installation Fernet key and are never returned
 to the browser. Additional headers reject authorization, cookie, token, secret,
 and API-key style names; use the dedicated API-key field for credentials.

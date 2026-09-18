@@ -11,6 +11,7 @@ SupplementaryGroups=calibremutate
 WorkingDirectory=/root/calibre/CalibreWeb/current
 EnvironmentFile=/root/calibre/CalibreWeb/var/config/cwng.env
 ExecStart=/root/calibre/CalibreWeb/current/.venv/bin/python /root/calibre/CalibreWeb/current/cps.py -p /root/calibre/CalibreWeb/var/config/app.db -i 127.0.0.1 -o /root/calibre/CalibreWeb/var/logs/calibre-web.log
+ExecStopPost=/usr/bin/rm -rf /root/calibre/CalibreWeb/var/opencode-runtime
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30

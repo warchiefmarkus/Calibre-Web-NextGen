@@ -111,6 +111,7 @@ if $FULL; then
   systemctl daemon-reload
   bash "$ROOT/deploy/install/20-create-user-and-directories.sh"
   bash "$ROOT/deploy/install/30-create-python-venv.sh"
+  bash "$ROOT/deploy/install/35-install-opencode-cli.sh"
   bash "$ROOT/deploy/install/40-build-frontend.sh"
   "$MCP/.venv/bin/python" -m compileall -q "$MCP/src"
   systemctl start calibre-server.service calibremcp.service \

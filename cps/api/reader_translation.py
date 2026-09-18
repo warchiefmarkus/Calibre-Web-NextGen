@@ -29,6 +29,7 @@ from ..services.reader_translation import (
     translate_page,
     translation_request_hash,
 )
+from ..services.opencode_runtime import runtime_manager as opencode_runtime_manager
 from ..usermanagement import login_required_if_no_ano
 
 log = logger.create()
@@ -295,6 +296,7 @@ def delete_reader_translation_profile(profile_id):
     except Exception:
         ub.session.rollback()
         return _err("delete_failed", "Could not delete the translation profile.", 500)
+    opencode_runtime_manager().invalidate(profile_id)
     return "", 204
 
 

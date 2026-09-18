@@ -7,13 +7,16 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_opencode_zen_and_go_presets_enable_model_discovery():
+def test_opencode_zen_cli_and_go_presets_enable_model_discovery():
     source = (ROOT / "frontend/src/pages/reader/translation/ReaderTranslationSettings.tsx").read_text()
     assert "label: 'OpenCode Zen'" in source
     assert "base_url: 'https://opencode.ai/zen/v1'" in source
+    assert "label: 'OpenCode Zen (OpenCode CLI)'" in source
+    assert "endpoint_path: 'opencode-cli'" in source
+    assert "model: 'big-pickle'" in source
     assert "label: 'OpenCode Go'" in source
     assert "base_url: 'https://opencode.ai/zen/go/v1'" in source
-    assert source.count("discover: true") >= 2
+    assert source.count("discover: true") >= 3
     assert "modelsMutation.mutateAsync(savedProfile.id)" in source
 
 

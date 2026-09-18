@@ -23,6 +23,11 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from .. import cli_param, config_sql, cw_advocate, logger
 from . import parallel
+from .opencode_runtime import (
+    OpenCodeRuntimeError,
+    is_opencode_cli_profile,
+    runtime_manager as opencode_runtime_manager,
+)
 from ..cw_advocate.exceptions import UnacceptableAddressException
 
 log = logger.create()
@@ -289,6 +294,62 @@ def _profile_headers(profile: Any) -> dict[str, str]:
             headers["x-goog-api-key"] = api_key
     headers.update(normalize_extra_headers(profile.extra_headers or {}))
     return headers
+
+
+def _opencode_runtime_id(profile: Any) -> str:
+    return str(
+        getattr(profile, "profile_id", None)
+        or getattr(profile, "id", None)
+        or f"profile-{id(profile)}"
+    )
+
+
+def _opencode_cli_api_key(profile: Any) -> str:
+    api_key = decrypt_api_key(getattr(profile, "api_key_encrypted", None))
+    if not api_key:
+        raise ReaderTranslationError(
+            "OpenCode Zen API key is required for OpenCode CLI.",
+            code="missing_api_key", status=400,
+        )
+    return api_key
+
+
+def _opencode_cli_request(
+    profile: Any, method: str, path: str, *, timeout: float, retry_crash: bool = True,
+    **kwargs: Any,
+) -> requests.Response:
+    manager = opencode_runtime_manager()
+    runtime_id = _opencode_runtime_id(profile)
+    api_key = _opencode_cli_api_key(profile)
+
+    def _perform() -> requests.Response:
+        try:
+            with manager.lease(runtime_id, api_key) as base_url:
+                return requests.request(
+                    method, f"{base_url}{path}", timeout=timeout, **kwargs
+                )
+        except OpenCodeRuntimeError as exc:
+            raise ReaderTranslationError(
+                str(exc), code="opencode_cli_unavailable", status=502,
+            ) from exc
+        except requests.Timeout as exc:
+            raise ReaderTranslationError(
+                "The OpenCode CLI request timed out.",
+                code="provider_timeout", status=504,
+            ) from exc
+        except requests.RequestException as exc:
+            if retry_crash:
+                manager.invalidate(runtime_id)
+                return _opencode_cli_request(
+                    profile, method, path, timeout=timeout,
+                    retry_crash=False, **kwargs,
+                )
+            raise ReaderTranslationError(
+                f"Could not reach the OpenCode CLI runtime: {exc}",
+                code="provider_unreachable", status=502,
+            ) from exc
+
+    return parallel.run_blocking(_perform)
 
 
 def _endpoint_url(profile: Any) -> str:
@@ -838,6 +899,171 @@ def _split_translation_text(text: str, max_chars: int = _TRANSLATION_FRAGMENT_MA
     return parts
 
 
+def _opencode_cli_error(payload: dict[str, Any]) -> str:
+    info = payload.get("info")
+    error = info.get("error") if isinstance(info, dict) else None
+    if not isinstance(error, dict):
+        return ""
+    data = error.get("data")
+    if isinstance(data, dict):
+        message = data.get("message")
+        if message:
+            return str(message)
+    message = error.get("message") or error.get("name")
+    return str(message or "")
+
+
+def _opencode_cli_text(payload: dict[str, Any]) -> str:
+    error = _opencode_cli_error(payload)
+    if error:
+        raise ReaderTranslationError(
+            f"OpenCode CLI provider error: {error}",
+            code="provider_error", status=502,
+        )
+    parts = payload.get("parts")
+    if not isinstance(parts, list):
+        raise ReaderTranslationError(
+            "OpenCode CLI returned an unexpected message response.",
+            code="invalid_provider_response", status=502,
+        )
+    text = "\n".join(
+        str(part.get("text") or "")
+        for part in parts
+        if isinstance(part, dict) and part.get("type") == "text" and part.get("text")
+    ).strip()
+    if not text:
+        raise ReaderTranslationError(
+            "OpenCode CLI response contains no text.",
+            code="empty_provider_response", status=502,
+        )
+    return text
+
+
+def _opencode_cli_message(
+    profile: Any, *, system: str, user: str, model: str | None = None,
+) -> str:
+    manager = opencode_runtime_manager()
+    runtime_id = _opencode_runtime_id(profile)
+    api_key = _opencode_cli_api_key(profile)
+
+    def _attempt() -> str:
+        session_id: str | None = None
+        with manager.lease(runtime_id, api_key) as base_url:
+            try:
+                create = requests.post(
+                    f"{base_url}/session",
+                    timeout=min(10.0, _remaining_translation_timeout(profile)),
+                    json={"title": "Calibre Web translation"},
+                )
+                if not create.ok:
+                    raise ReaderTranslationError(
+                        f"OpenCode CLI session creation failed with HTTP {create.status_code}.",
+                        code="provider_error", status=502,
+                    )
+                try:
+                    session = create.json()
+                except ValueError as exc:
+                    raise ReaderTranslationError(
+                        "OpenCode CLI returned invalid session JSON.",
+                        code="invalid_provider_json", status=502,
+                    ) from exc
+                session_id = session.get("id") if isinstance(session, dict) else None
+                if not isinstance(session_id, str) or not session_id:
+                    raise ReaderTranslationError(
+                        "OpenCode CLI did not return a session id.",
+                        code="invalid_provider_response", status=502,
+                    )
+
+                response = requests.post(
+                    f"{base_url}/session/{session_id}/message",
+                    timeout=_remaining_translation_timeout(profile),
+                    json={
+                        "model": {
+                            "providerID": "opencode",
+                            "modelID": str(model or profile.model),
+                        },
+                        "system": system,
+                        # Keep OpenCode's native tool schema because Zen free
+                        # models validate that the request comes from OpenCode.
+                        # The isolated runtime guard plugin blocks every tool
+                        # in tool.execute.before, before side effects occur.
+                        "tools": {},
+                        "parts": [{"type": "text", "text": user}],
+                    },
+                )
+                if not response.ok:
+                    raise ReaderTranslationError(
+                        f"OpenCode CLI returned HTTP {response.status_code}: "
+                        f"{response.text[:500]}",
+                        code="provider_error", status=502,
+                    )
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise ReaderTranslationError(
+                        "OpenCode CLI returned invalid JSON.",
+                        code="invalid_provider_json", status=502,
+                    ) from exc
+                if not isinstance(payload, dict):
+                    raise ReaderTranslationError(
+                        "OpenCode CLI returned an unexpected response.",
+                        code="invalid_provider_response", status=502,
+                    )
+                return _opencode_cli_text(payload)
+            finally:
+                if session_id:
+                    try:
+                        requests.delete(
+                            f"{base_url}/session/{session_id}", timeout=3.0
+                        )
+                    except requests.RequestException:
+                        log.debug(
+                            "Could not delete temporary OpenCode CLI session %s",
+                            session_id,
+                        )
+
+    def _perform() -> str:
+        for attempt in range(2):
+            try:
+                return _attempt()
+            except OpenCodeRuntimeError as exc:
+                raise ReaderTranslationError(
+                    str(exc), code="opencode_cli_unavailable", status=502,
+                ) from exc
+            except requests.Timeout as exc:
+                raise ReaderTranslationError(
+                    "The OpenCode CLI request timed out.",
+                    code="provider_timeout", status=504,
+                ) from exc
+            except requests.RequestException as exc:
+                manager.invalidate(runtime_id)
+                if attempt == 0:
+                    continue
+                raise ReaderTranslationError(
+                    f"Could not reach the OpenCode CLI runtime: {exc}",
+                    code="provider_unreachable", status=502,
+                ) from exc
+        raise AssertionError("unreachable")
+
+    return parallel.run_blocking(_perform)
+
+
+def _translate_batch_once_opencode_cli(
+    profile: Any, *, source_language: str, target_language: str,
+    prompt: str, blocks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    chat = _chat_payload(
+        profile, source_language=source_language, target_language=target_language,
+        prompt=prompt, blocks=blocks, json_mode=False,
+    )
+    content = _opencode_cli_message(
+        profile,
+        system=chat["messages"][0]["content"],
+        user=chat["messages"][1]["content"],
+    )
+    return parse_translation_content(content, blocks)
+
+
 def _request_translation_completion(
     profile: Any, *, headers: dict[str, str], payload: dict[str, Any],
     retry_timeout: bool = True,
@@ -857,6 +1083,15 @@ def _request_translation_completion(
 
 def _translate_batch_once(profile: Any, *, source_language: str, target_language: str,
                           prompt: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if is_opencode_cli_profile(profile):
+        return _translate_batch_once_opencode_cli(
+            profile,
+            source_language=source_language,
+            target_language=target_language,
+            prompt=prompt,
+            blocks=blocks,
+        )
+
     endpoint = normalize_endpoint_path(profile.endpoint_path).lower()
     responses_mode = endpoint.endswith("responses")
     messages_mode = endpoint.endswith("messages")
@@ -1141,6 +1376,19 @@ def check_model(profile: Any, *, model: str, endpoint_path: str | None = None) -
     started = time.monotonic()
 
     try:
+        if is_opencode_cli_profile(candidate):
+            content = _opencode_cli_message(
+                candidate,
+                system="You are a connection test. Reply briefly and do not use tools.",
+                user="Hello",
+                model=normalized_model,
+            )
+            return {
+                "ok": True,
+                "model": normalized_model,
+                "latency_ms": max(0, round((time.monotonic() - started) * 1000)),
+                "preview": content[:160],
+            }
         if endpoint.endswith("responses"):
             request_payload = {
                 "model": normalized_model,
@@ -1207,12 +1455,55 @@ def test_profile(profile: Any) -> dict[str, Any]:
 
 
 def list_model_catalog(profile: Any) -> list[dict[str, Any]]:
-    """Return normalized model discovery metadata from OpenAI-compatible feeds.
+    """Return normalized model discovery metadata for the configured provider."""
+    if is_opencode_cli_profile(profile):
+        response = _opencode_cli_request(
+            profile, "GET", "/provider",
+            timeout=max(5, min(60, int(profile.timeout_seconds or 60))),
+        )
+        if not response.ok:
+            raise ReaderTranslationError(
+                f"OpenCode CLI returned HTTP {response.status_code} while listing models.",
+                code="provider_error", status=502,
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ReaderTranslationError(
+                "OpenCode CLI returned invalid provider JSON.",
+                code="invalid_provider_json", status=502,
+            ) from exc
+        providers = payload.get("all", []) if isinstance(payload, dict) else []
+        provider = next(
+            (
+                item for item in providers
+                if isinstance(item, dict) and item.get("id") == "opencode"
+            ),
+            None,
+        )
+        models = provider.get("models", {}) if isinstance(provider, dict) else {}
+        if not isinstance(models, dict):
+            return []
+        catalog = []
+        for model_id, item in models.items():
+            if not isinstance(model_id, str) or not model_id.strip():
+                continue
+            details = item if isinstance(item, dict) else {}
+            normalized: dict[str, Any] = {
+                "id": model_id.strip(),
+                "owner": "opencode",
+            }
+            limit = details.get("limit")
+            if isinstance(limit, dict):
+                context = limit.get("context")
+                if isinstance(context, int) and context > 0:
+                    normalized["context_length"] = context
+            name = details.get("name")
+            if isinstance(name, str) and name.strip() and name.strip() != model_id.strip():
+                normalized["description"] = name.strip()[:500]
+            catalog.append(normalized)
+        return sorted(catalog, key=lambda item: item["id"].casefold())[:1000]
 
-    NVIDIA's hosted NIM endpoint currently exposes id/owned_by/created, while
-    self-hosted NIMs and some gateways may additionally expose context length or
-    descriptions. Preserve those optional fields without inventing capabilities.
-    """
     response = _request(
         "GET", _models_url(profile), headers=_profile_headers(profile),
         timeout=max(5, min(60, int(profile.timeout_seconds or 60))),

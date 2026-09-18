@@ -928,3 +928,129 @@ def test_gpt_oss_timeout_does_not_split_provider_batch(monkeypatch):
         )
     assert exc.value.code == "provider_timeout"
     assert calls == [[f"b{index}" for index in range(6)]]
+
+
+def test_opencode_cli_endpoint_routes_translation_through_runtime(monkeypatch):
+    from cps.services import reader_translation as service
+
+    profile = _profile(endpoint_path="opencode-cli", timeout_seconds=30)
+    seen = {}
+
+    def fake_message(profile, *, system, user, model=None):
+        seen.update(system=system, user=user, model=model)
+        return '{"blocks":[{"id":"a","text":"Привіт"}]}'
+
+    monkeypatch.setattr(service, "_opencode_cli_message", fake_message)
+    result = service._translate_batch_once(
+        profile, source_language="en", target_language="uk", prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": "Hello"}],
+    )
+    assert result == [{"id": "a", "tag": "p", "text": "Привіт"}]
+    assert "literary translator" in seen["system"]
+    assert '"id": "a"' in seen["user"]
+
+
+def test_opencode_cli_catalog_uses_opencode_provider(monkeypatch):
+    from cps.services import reader_translation as service
+
+    class Response:
+        ok = True
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "all": [{
+                    "id": "opencode",
+                    "models": {
+                        "big-pickle": {
+                            "name": "Big Pickle",
+                            "limit": {"context": 200000},
+                        }
+                    },
+                }]
+            }
+
+    seen = {}
+    monkeypatch.setattr(
+        service, "_opencode_cli_request",
+        lambda profile, method, path, **kwargs: (
+            seen.update(method=method, path=path) or Response()
+        ),
+    )
+    profile = _profile(endpoint_path="opencode-cli", timeout_seconds=30)
+    assert service.list_model_catalog(profile) == [{
+        "id": "big-pickle",
+        "owner": "opencode",
+        "context_length": 200000,
+        "description": "Big Pickle",
+    }]
+    assert seen == {"method": "GET", "path": "/provider"}
+
+
+def test_opencode_cli_text_surfaces_embedded_provider_error():
+    from cps.services.reader_translation import _opencode_cli_text
+
+    with pytest.raises(ReaderTranslationError) as exc:
+        _opencode_cli_text({
+            "info": {"error": {"data": {"message": "Invalid API key."}}},
+            "parts": [],
+        })
+    assert exc.value.code == "provider_error"
+    assert "Invalid API key" in str(exc.value)
+
+
+def test_opencode_cli_message_keeps_native_tools_for_guarded_runtime(monkeypatch):
+    import contextlib
+    from cps.services import reader_translation as service
+
+    profile = _profile(
+        endpoint_path="opencode-cli",
+        timeout_seconds=30,
+        profile_id="profile-a",
+        api_key_encrypted="encrypted",
+    )
+    seen = {}
+
+    class Manager:
+        @contextlib.contextmanager
+        def lease(self, runtime_id, api_key):
+            assert runtime_id == "profile-a"
+            assert api_key == "secret"
+            yield "http://127.0.0.1:4096"
+
+        def invalidate(self, runtime_id):
+            seen["invalidated"] = runtime_id
+
+    class Response:
+        def __init__(self, payload):
+            self.ok = True
+            self.status_code = 200
+            self._payload = payload
+            self.text = ""
+
+        def json(self):
+            return self._payload
+
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        if url.endswith("/session"):
+            return Response({"id": "session-a"})
+        return Response({
+            "info": {},
+            "parts": [{"type": "text", "text": "Hello"}],
+        })
+
+    monkeypatch.setattr(service, "opencode_runtime_manager", lambda: Manager())
+    monkeypatch.setattr(service, "_opencode_cli_api_key", lambda profile: "secret")
+    monkeypatch.setattr(service.parallel, "run_blocking", lambda fn: fn())
+    monkeypatch.setattr(service.requests, "post", fake_post)
+    monkeypatch.setattr(service.requests, "delete", lambda *args, **kwargs: Response({}))
+
+    assert service._opencode_cli_message(
+        profile, system="system", user="user",
+    ) == "Hello"
+    message_payload = calls[1][1]["json"]
+    assert message_payload["tools"] == {}

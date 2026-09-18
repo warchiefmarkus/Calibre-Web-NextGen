@@ -25,6 +25,10 @@ const PROVIDERS = {
     label: 'OpenCode Zen', base_url: 'https://opencode.ai/zen/v1', endpoint_path: 'chat/completions',
     model: 'deepseek-v4-flash-free', discover: true,
   },
+  opencode_zen_cli: {
+    label: 'OpenCode Zen (OpenCode CLI)', base_url: 'https://opencode.ai/zen/v1', endpoint_path: 'opencode-cli',
+    model: 'big-pickle', discover: true,
+  },
   opencode_go: {
     label: 'OpenCode Go', base_url: 'https://opencode.ai/zen/go/v1', endpoint_path: 'chat/completions',
     model: 'glm-5.2', discover: true,
@@ -144,8 +148,11 @@ function profileToForm(profile: ReaderTranslationProfile): ReaderTranslationProf
   };
 }
 
-function providerFor(baseUrl: string): ProviderKey {
-  const found = Object.entries(PROVIDERS).find(([, value]) => value.base_url === baseUrl);
+function providerFor(baseUrl: string, endpointPath = ''): ProviderKey {
+  if (endpointPath === 'opencode-cli') return 'opencode_zen_cli';
+  const found = Object.entries(PROVIDERS).find(([, value]) => (
+    value.base_url === baseUrl && value.endpoint_path !== 'opencode-cli'
+  ));
   return (found?.[0] as ProviderKey | undefined) ?? 'custom';
 }
 
@@ -241,6 +248,7 @@ function endpointForModel(provider: ProviderKey, model: string, fallback: string
   // configure mixed Responses, Messages, Gemini, and Chat Completions models.
   const id = model.trim().toLowerCase();
   if (!id) return fallback;
+  if (provider === 'opencode_zen_cli') return 'opencode-cli';
   if (provider === 'opencode_zen') {
     if (id.startsWith('gpt-')) return 'responses';
     if (id.startsWith('claude-') || id.startsWith('qwen')) return 'messages';
@@ -349,7 +357,7 @@ export function ReaderTranslationSettings({ settings, update }: {
   ), [modelDetails, sortedModelChecks]);
 
   const selectedProviderLabel = selectedProfile
-    ? PROVIDERS[providerFor(selectedProfile.base_url)].label
+    ? PROVIDERS[providerFor(selectedProfile.base_url, selectedProfile.endpoint_path)].label
     : '';
   const selectedModelOwner = selectedProfile
     ? modelDetails.find((item) => item.id === selectedProfile.model)?.owner
@@ -397,7 +405,7 @@ export function ReaderTranslationSettings({ settings, update }: {
   const beginEdit = () => {
     if (!selectedProfile) return;
     setEditingId(selectedProfile.id);
-    setProvider(providerFor(selectedProfile.base_url));
+    setProvider(providerFor(selectedProfile.base_url, selectedProfile.endpoint_path));
     setForm(profileToForm(selectedProfile));
     setHeadersText(JSON.stringify(selectedProfile.extra_headers ?? {}, null, 2));
     setFormError(null);
@@ -534,7 +542,9 @@ export function ReaderTranslationSettings({ settings, update }: {
     if (!selectedProfile || model === selectedProfile.model || updateProfile.isPending) return;
     setNotice(null);
     setFormError(null);
-    const selectedProvider = providerFor(selectedProfile.base_url);
+    const selectedProvider = providerFor(
+      selectedProfile.base_url, selectedProfile.endpoint_path,
+    );
     try {
       await updateProfile.mutateAsync({
         id: selectedProfile.id,
@@ -593,7 +603,7 @@ export function ReaderTranslationSettings({ settings, update }: {
       let checks: ModelCheckItem[] = catalogModels.map((model) => ({ model, status: 'pending' }));
       applyModelCatalog(profile.id, catalogModels, catalogDetails, checks, null);
 
-      const providerKey = providerFor(profile.base_url);
+      const providerKey = providerFor(profile.base_url, profile.endpoint_path);
       for (const model of catalogModels) {
         if (modelCheckRunRef.current !== runId) return;
         checks = checks.map((item) => item.model === model
