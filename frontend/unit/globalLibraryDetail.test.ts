@@ -21,8 +21,8 @@ test('non-member detail keeps global editing and hides member-only controls', ()
   // Membership stays in the upstream More-actions menu; unified progress
   // remains the fork's cross-reader source of truth.
   assert.match(detail, /if \(selectionMode\)/);
-  assert.match(detail, /label: t\('Remove from library'\)/);
-  assert.match(detail, /else if \(me\?\.role\?\.browse_global\)[\s\S]*label: t\('Add to library'\)/);
+  assert.match(detail, /selectionMode && inLibrary[\s\S]*onClick=\{removeMembership\}[\s\S]*data-testid="remove-from-my-library"/);
+  assert.match(detail, /!inLibrary && me\?\.role\?\.browse_global[\s\S]*id: 'add-to-library'[\s\S]*addToLibrary\.mutate/);
   assert.match(detail, /label: t\('Not in your library'\)/);
   assert.match(detail, /\{inLibrary && \(unifiedProgress != null \|\| book\.in_progress\) && \(/);
   assert.match(detail, /\{inLibrary && \([\s\S]*<AddToShelf/);

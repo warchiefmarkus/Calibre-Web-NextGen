@@ -457,6 +457,89 @@
   gap: 4px;
 }
 
+.placesPanelBody {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+.placesIntro {
+  margin: 0 0 12px;
+  color: var(--reader-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.placesList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.place,
+.placeSelected {
+  padding: 12px;
+  border: 1px solid var(--reader-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--reader-panel) 86%, var(--reader-bg));
+}
+.placeSelected {
+  border-color: var(--reader-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--reader-accent) 22%, transparent);
+}
+.placeHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.placeHeading > span {
+  color: var(--reader-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.placeTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.placeTags span {
+  padding: 2px 7px;
+  border: 1px solid var(--reader-border);
+  border-radius: 999px;
+  color: var(--reader-muted);
+  font-size: 11px;
+}
+.place small,
+.placeSelected small {
+  display: block;
+  margin-top: 7px;
+  color: var(--reader-muted);
+}
+.placeOpen {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border: 1px solid var(--reader-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--reader-accent) 12%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+.placeOpen:disabled { cursor: wait; opacity: .6; }
+.placesError {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #b43c3c 12%, transparent);
+  color: #b43c3c;
+}
+.placesFootnote {
+  margin: 12px 0 0;
+  color: var(--reader-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .listButton,
 .searchResult {
   border: 0;
@@ -1398,6 +1481,11 @@
   color: var(--text);
   box-shadow: 0 2px 12px #0003;
 }
+.resumeNotice > span {
+  align-self: center;
+  padding: 10px 12px;
+  font-size: 13px;
+}
 .resumeNotice button {
   background: transparent;
   color: inherit;
@@ -1406,9 +1494,25 @@
   min-height: 44px;
   cursor: pointer;
 }
+.resumeNotice button + button {
+  border-left: 1px solid var(--reader-border);
+}
 .resumeNotice button:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: -3px;
+}
+
+@media (max-width: 600px) {
+  .resumeNotice {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    flex-wrap: wrap;
+    width: calc(100% - 24px);
+  }
+  .resumeNotice > span { flex: 1 0 100%; }
+  .resumeNotice button {
+    flex: 1 1 auto;
+    border-top: 1px solid var(--reader-border);
+  }
 }
 
 

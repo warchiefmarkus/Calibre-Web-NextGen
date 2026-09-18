@@ -1,6 +1,6 @@
 import { Link } from 'wouter';
 import {
-  Bookmark, BookOpen, Languages, List, Maximize, Minimize, Search, Settings,
+  Bookmark, BookOpen, Languages, List, MapPin, Maximize, Minimize, Search, Settings,
   Square, StickyNote, Volume2, X,
 } from 'lucide-react';
 import type { ReaderSettings } from '../../lib/queries';
@@ -18,6 +18,7 @@ export function ReaderToolbar(props: {
   addBookmark: () => void;
   speaking: boolean;
   toggleSpeech: () => void;
+  readingPlacesAvailable: boolean;
   settings: ReaderSettings | null;
   updateSettings: (patch: Partial<ReaderSettings>) => void;
   translationSkipped: boolean;
@@ -50,6 +51,10 @@ export function ReaderToolbar(props: {
         title={t('Bookmarks')} aria-pressed={props.panel === 'bookmarks'}><BookOpen size={19} aria-hidden="true" /></button>
       <button className={styles.iconButton} onClick={() => togglePanel('notes')}
         title={t('Highlights and notes')} aria-pressed={props.panel === 'notes'}><StickyNote size={19} aria-hidden="true" /></button>
+      {props.readingPlacesAvailable && <button className={styles.iconButton} onClick={() => togglePanel('places')}
+        title={t('Reading places')} aria-label={t('Reading places')} aria-pressed={props.panel === 'places'}>
+        <MapPin size={19} aria-hidden="true" />
+      </button>}
       <button className={styles.iconButton} onClick={props.toggleSpeech}
         title={props.speaking ? t('Stop reading aloud') : t('Read aloud')} aria-pressed={props.speaking}>
         {props.speaking ? <Square size={18} aria-hidden="true" /> : <Volume2 size={19} aria-hidden="true" />}

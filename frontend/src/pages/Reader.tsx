@@ -5,13 +5,13 @@ import { SpinnerCentered } from '../components/Spinner';
 import { apiDelete, apiGet, apiPatch, apiPost, resourceUrl } from '../lib/api';
 import {
   useBook, useBookmark, useCreateReaderBookmark, useDeleteReaderBookmark,
-  useReaderBookmarks, useReaderBookState, useReaderSettings, useReaderTranslationProfiles,
+  useReaderBookmarks, useReaderBookState, useReaderSettings, useReaderTranslationProfiles, useReadingSources,
   useSaveReaderBookState, useSaveReaderSettings, translateReaderPage, type ReaderBookmark, type ReaderSettings,
-  type ReaderTranslationBlock, type ReaderTranslationResponse,
+  type ReaderTranslationBlock, type ReaderTranslationResponse, type ReadingSource,
 } from '../lib/queries';
 import { useT } from '../lib/i18n';
 import { formatReadingProgress, parseFb2ScrollBookmark, useReadingPositionSaver } from '../lib/readerProgress';
-import { resumeForArchive } from '../lib/readerResume';
+import { archiveMatchesFingerprint, resumeForArchive } from '../lib/readerResume';
 import {
   classifyHref, inBookTarget, isNoteElement, isNoterefAnchor, isOpenableHref, sanitizeNoteElement,
 } from '../lib/readerLinks';
@@ -100,6 +100,10 @@ function chatGptSelectedTextUrl(text: string): string {
 
 export function Reader({ id, format }: { id: string; format?: string }) {
   const t = useT();
+  const requestedSource = useMemo(
+    () => new URLSearchParams(window.location.search).get('source'),
+    [],
+  );
   const bookQuery = useBook(id);
   const requested = format?.toUpperCase();
   const selectedFormat = useMemo(() => {
@@ -118,6 +122,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const translationProfilesQuery = useReaderTranslationProfiles();
   const positionQuery = useBookmark(id, fmt);
   const bookmarksQuery = useReaderBookmarks(id, fmt);
+  const readingPlacesAvailable = fmt === 'epub';
   const saveSettings = useSaveReaderSettings();
   const saveBookState = useSaveReaderBookState(id, fmt);
   const createBookmark = useCreateReaderBookmark(id, fmt);
@@ -167,12 +172,20 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const inlineTranslationPatchesRef = useRef<InlineTranslationPatch[]>([]);
   const dismissSelectionActionRef = useRef<() => void>(() => undefined);
   const restoreInlineTranslationsActionRef = useRef<() => void>(() => undefined);
+  const archiveRef = useRef<ArrayBuffer | null>(null);
+  const shareWithDevicesRef = useRef(true);
+  const previewSourceRef = useRef<ReadingSource | null>(null);
 
   const { fullscreenSupported, isFullscreen, toggleFullscreen } = useReaderFullscreen(shellRef);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReaderPanel>(null);
+  const readingSourcesQuery = useReadingSources(
+    id, readingPlacesAvailable && (panel === 'places' || !!requestedSource),
+  );
+  const [openingReadingSource, setOpeningReadingSource] = useState<string | null>(null);
+  const [previewReadingSource, setPreviewReadingSource] = useState<ReadingSource | null>(null);
   const [title, setTitle] = useState('');
   const [bookLanguage, setBookLanguage] = useState('');
   const [bookRtl, setBookRtl] = useState(false);
@@ -202,6 +215,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const [translationSkipped, setTranslationSkipped] = useState(false);
   const [selectionTranslationLoading, setSelectionTranslationLoading] = useState(false);
   const [selectionTranslationError, setSelectionTranslationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (ready && requestedSource && readingPlacesAvailable) setPanel('places');
+  }, [ready, requestedSource, readingPlacesAvailable]);
 
   const closePanel = useCallback(() => setPanel(null), []);
   const closeAnnotationEditor = useCallback(() => setAnnotationEditor(null), []);
@@ -682,6 +699,59 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, []);
   dismissSelectionActionRef.current = dismissSelection;
   restoreInlineTranslationsActionRef.current = restoreInlineTranslations;
+
+  const openReadingSource = useCallback(async (source: ReadingSource) => {
+    const view = viewRef.current;
+    const archive = archiveRef.current;
+    if (!view || !archive) return;
+    setOpeningReadingSource(source.id);
+    try {
+      resetReadingMovement();
+      restoreInlineTranslations();
+      dismissSelection();
+      const hint = source.resume;
+      let opened = false;
+      if (hint.cfi) {
+        if (hint.epub_sha256) {
+          const validated = await resumeForArchive({
+            percentage: hint.percentage ?? 0,
+            synced_at: source.observed_at ?? '',
+            mode: 'automatic',
+            cfi: hint.cfi,
+            epub_sha256: hint.epub_sha256,
+          }, archive);
+          if (validated?.cfi) {
+            await view.goTo(validated.cfi);
+            opened = true;
+          }
+        } else {
+          try {
+            await view.goTo(hint.cfi);
+            opened = true;
+          } catch { /* fall through to portable position */ }
+        }
+      }
+      if (!opened && hint.href && hint.epub_sha256
+          && await archiveMatchesFingerprint(archive, hint.epub_sha256)) {
+        try {
+          await view.goTo(hint.href);
+          opened = true;
+        } catch { /* fall through to percentage */ }
+      }
+      if (!opened && typeof hint.percentage === 'number' && Number.isFinite(hint.percentage)) {
+        await view.goToFraction(Math.max(0, Math.min(1, hint.percentage / 100)));
+        opened = true;
+      }
+      if (!opened) return;
+      shareWithDevicesRef.current = false;
+      previewSourceRef.current = source;
+      setPreviewReadingSource(source);
+      setRemoteResume(null);
+      setPanel(null);
+    } finally {
+      setOpeningReadingSource(null);
+    }
+  }, [dismissSelection, resetReadingMovement, restoreInlineTranslations]);
 
   const navigate = useCallback(async (action: 'prev' | 'next' | 'left' | 'right') => {
     restoreInlineTranslations();
@@ -1192,6 +1262,9 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setBookLanguage('');
     setBookRtl(false);
     setRemoteResume(null);
+    shareWithDevicesRef.current = true;
+    previewSourceRef.current = null;
+    setPreviewReadingSource(null);
     const initialSettings: ReaderSettings = {
       ...settingsQuery.data.reader,
       translationEnabled: bookStateQuery.data.translationEnabled,
@@ -1221,7 +1294,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       scheduleLinkSync();
       if (detail.cfi && !restoringInitialPosition && readingMovementRef.current) {
         const anchorText = detail.range?.toString().replace(/\s+/gu, ' ').trim().slice(0, 1000);
-        schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText || undefined);
+        schedulePosition(detail.cfi, detail.fraction ?? 0, anchorText || undefined, shareWithDevicesRef.current);
       }
     };
 
@@ -1395,6 +1468,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         if (!response.ok) throw new Error(t('Could not load the book file ({status})', { status: response.status }));
         const data = await response.arrayBuffer();
         if (cancelled) return;
+        archiveRef.current = data;
         await view.open(new File([data], readerFileName(formatName), { type: readerMime(formatName) }));
         if (cancelled) return;
         applySettings(initialSettings);
@@ -1508,6 +1582,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       view.removeEventListener('create-overlay', redrawAnnotations);
       view.close();
       view.remove();
+      archiveRef.current = null;
+      previewSourceRef.current = null;
       if (viewRef.current === view) viewRef.current = null;
     };
   }, [applySettings, bookQuery.data?.title, fmt, id, positionQuery.data?.bookmark,
@@ -1829,6 +1905,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         bookId={id} title={title || bookQuery.data?.title || t('Untitled')} format={selectedFormat.format}
         panel={panel} setPanel={setPanel} canBookmark={!!location.cfi && !createBookmark.isPending}
         addBookmark={addReaderBookmark} speaking={speaking} toggleSpeech={toggleSpeech}
+        readingPlacesAvailable={readingPlacesAvailable}
         settings={settings} updateSettings={updateSettings}
         translationSkipped={translationSkipped} translationActivity={translationActivity}
         translationLoading={translationLoading} translationPreloading={translationPreloading}
@@ -1861,6 +1938,27 @@ export function Reader({ id, format }: { id: string; format?: string }) {
             })}
           </button>
           <button type="button" onClick={() => setRemoteResume(null)} aria-label={t('Dismiss')}>×</button>
+        </div>
+      )}
+
+      {previewReadingSource && (
+        <div className={styles.resumeNotice} role="status">
+          <span>{t('Previewing {source}. Its saved position will not change.', {
+            source: previewReadingSource.label,
+          })}</span>
+          <button type="button" onClick={() => {
+            const current = currentRef.current;
+            const cfi = current.cfi;
+            shareWithDevicesRef.current = false;
+            previewSourceRef.current = null;
+            setPreviewReadingSource(null);
+            markReadingMovement();
+            if (cfi) {
+              const anchorText = current.range?.toString().replace(/\s+/gu, ' ').trim().slice(0, 1000);
+              schedulePosition(cfi, current.fraction ?? 0, anchorText || undefined, false);
+            }
+          }}>{t('Read from here')}</button>
+          <button type="button" onClick={() => setPanel('places')}>{t('Choose another place')}</button>
         </div>
       )}
 
@@ -1904,6 +2002,16 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           searching={searching} searchProgress={searchProgress} searchResults={searchResults}
           bookmarks={bookmarks} openBookmark={openReaderBookmark}
           deleteBookmark={(bookmarkId) => deleteBookmark.mutate(bookmarkId)}
+          readingSources={readingSourcesQuery.data?.sources ?? []}
+          readingSourcesLoading={readingSourcesQuery.isLoading}
+          readingSourcesError={!!readingSourcesQuery.error}
+          readingSourcesStorytellerUnavailable={
+            !!readingSourcesQuery.data?.integrations.storyteller.configured
+            && readingSourcesQuery.data.integrations.storyteller.reachable === false
+          }
+          openingReadingSource={openingReadingSource}
+          previewReadingSource={previewReadingSource}
+          openReadingSource={(source) => { void openReadingSource(source); }}
           annotations={annotations}
           createStandaloneNote={openStandaloneNote}
           showAnnotation={(annotation) => {

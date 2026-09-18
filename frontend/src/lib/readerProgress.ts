@@ -10,6 +10,7 @@ export interface PendingReadingPosition {
   bookmark: string;
   positionFraction: number;
   anchorText?: string;
+  shareWithDevices?: boolean;
 }
 
 export function createReaderDeviceId(): string {
@@ -102,6 +103,7 @@ export function useReadingPositionSaver(
         percentage: fraction * 100,
         device: readerDevice(),
         position_anchor: pending.anchorText || undefined,
+        share_with_devices: pending.shareWithDevices,
       }, { keepalive });
       const canonical = Number(saved?.position_fraction);
       if (Number.isFinite(canonical) && mountedRef.current) {
@@ -142,13 +144,19 @@ export function useReadingPositionSaver(
     }
   }, [bookId, format]);
 
-  const schedule = useCallback((bookmark: string, positionFraction: number, anchorText?: string) => {
+  const schedule = useCallback((
+    bookmark: string,
+    positionFraction: number,
+    anchorText?: string,
+    shareWithDevices = true,
+  ) => {
     retryCountRef.current = 0;
     setSaveState('pending');
     pendingRef.current = {
       bookmark,
       positionFraction: clampReadingFraction(positionFraction),
       anchorText: anchorText ? anchorText.replace(/\s+/gu, ' ').trim().slice(0, 1000) : undefined,
+      shareWithDevices,
     };
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
