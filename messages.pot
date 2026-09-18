@@ -15743,3 +15743,23 @@ msgstr ""
 
 msgid "Testing…"
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "Provider catalogs"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Model catalog"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Enter a model ID manually or select one from the model catalog after saving the profile."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Browse models through configured profiles. Provider rows below are catalog sources, not profiles; edit or delete profiles above."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Providers"
+msgstr ""

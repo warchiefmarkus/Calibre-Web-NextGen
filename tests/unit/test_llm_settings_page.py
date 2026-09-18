@@ -11,6 +11,7 @@ SIDEBAR = (ROOT / "frontend/src/components/Sidebar.tsx").read_text(encoding="utf
 TRANSLATION = (
     ROOT / "frontend/src/pages/reader/translation/ReaderTranslationSettings.tsx"
 ).read_text(encoding="utf-8")
+QUERIES = (ROOT / "frontend/src/lib/queries.ts").read_text(encoding="utf-8")
 
 
 def _manager_source() -> str:
@@ -73,3 +74,41 @@ def test_provider_and_model_brand_icons_use_models_dev_with_fallbacks():
     assert "translationBrandFallback" in TRANSLATION
     assert "modelLogoId(item.model" in manager
     assert "providerLogoId(providerFor(profile.base_url))" in manager
+
+
+def test_llm_model_browser_has_provider_and_model_columns():
+    manager = _manager_source()
+    assert "styles.translationProviderModelGrid" in manager
+    assert "styles.translationProviderBrowser" in manager
+    assert "styles.translationProviderList" in manager
+    assert "selectConfiguredProvider(group.key)" in manager
+    assert "styles.translationModelsBrowser" in manager
+    assert "configuredProviders.map((group)" in manager
+
+
+def test_model_catalog_is_explicitly_not_a_second_profile_list():
+    manager = _manager_source()
+    assert "t('Model catalog')" in manager
+    assert "t('Provider catalogs')" in manager
+    assert "Provider rows below are catalog sources, not profiles" in manager
+    assert "Enter a model ID manually or select one from the model catalog" in manager
+
+
+def test_opencode_cli_is_preserved_as_transport_when_catalog_model_changes():
+    manager = _manager_source()
+    assert "if (profile.endpoint_path === 'opencode-cli') return 'opencode-cli';" in TRANSLATION
+    assert "endpointForProfileModel(" in manager
+    assert "profileEndpointLabel(profile)" in manager
+
+
+def test_rag_search_controls_live_in_a_separate_panel():
+    assert "styles.ragSearchPanel" in AI
+
+
+def test_profile_delete_removes_client_cache_immediately():
+    block = QUERIES.split("export function useDeleteReaderTranslationProfile", 1)[1].split(
+        "export function useTestReaderTranslationProfile", 1
+    )[0]
+    assert "onSuccess: (_data, id)" in block
+    assert "current.profiles.filter((profile) => profile.id !== id)" in block
+    assert "invalidateQueries({ queryKey: readerTranslationProfilesKey })" in block

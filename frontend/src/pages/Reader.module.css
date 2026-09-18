@@ -1240,6 +1240,141 @@
   gap: 9px;
 }
 
+/* Provider/model browser is deliberately separate from the profile CRUD list.
+   A profile stores credentials/defaults; a provider is the model catalogue
+   source. Two equal columns make that distinction visible instead of making
+   the catalogue look like an undeletable second profile. */
+.translationCatalogSection {
+  display: grid;
+  gap: 9px;
+}
+
+.translationCatalogHeader h3,
+.translationCatalogHeader p {
+  margin: 0;
+}
+
+.translationCatalogHeader h3 {
+  font-size: 15px;
+}
+
+.translationCatalogHeader p {
+  margin-top: 3px;
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.translationFieldHint {
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.translationProviderModelGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 12px;
+}
+
+.translationProviderBrowser {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--reader-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--reader-panel) 72%, transparent);
+}
+
+.translationModelsBrowser {
+  min-width: 0;
+  height: 100%;
+}
+
+.translationBrowserHeading {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--reader-border);
+}
+
+.translationBrowserHeading strong {
+  font-size: 13px;
+}
+
+.translationBrowserHeading span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--reader-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translationProviderList {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow: auto;
+}
+
+.translationProviderRow {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid var(--reader-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--reader-bg) 62%, transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.translationProviderRow:hover {
+  background: color-mix(in srgb, var(--reader-accent) 7%, transparent);
+}
+
+.translationProviderRow[data-selected='true'] {
+  border-color: var(--reader-accent);
+  background: color-mix(in srgb, var(--reader-accent) 11%, transparent);
+}
+
+.translationProviderRow > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.translationProviderRow strong,
+.translationProviderRow small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translationProviderRow strong {
+  font-size: 12px;
+}
+
+.translationProviderRow small {
+  color: var(--reader-muted);
+  font-size: 10px;
+}
+
 .translationModelHealth {
   display: grid;
   gap: 8px;
@@ -1544,6 +1679,9 @@
     width: 100%;
   }
   .translationProfileGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .translationProviderModelGrid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

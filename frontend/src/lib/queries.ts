@@ -1540,7 +1540,20 @@ export function useDeleteReaderTranslationProfile() {
   return useMutation({
     mutationFn: (id: string) =>
       apiDelete(`/api/v1/reader/translation/profiles/${encodeURIComponent(id)}`),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey }),
+    onSuccess: (_data, id) => {
+      // Remove the profile synchronously from the client cache. The model-catalog
+      // provider column is derived from this same list, so its last provider row
+      // disappears in the same paint instead of looking like an undeletable
+      // second profile while the verification refetch is still in flight.
+      qc.setQueryData<{
+        profiles: ReaderTranslationProfile[];
+        private_endpoints_allowed: boolean;
+      }>(readerTranslationProfilesKey, (current) => current ? {
+        ...current,
+        profiles: current.profiles.filter((profile) => profile.id !== id),
+      } : current);
+      void qc.invalidateQueries({ queryKey: readerTranslationProfilesKey });
+    },
   });
 }
 

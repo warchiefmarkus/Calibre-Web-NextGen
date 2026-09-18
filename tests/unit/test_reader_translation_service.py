@@ -928,3 +928,59 @@ def test_gpt_oss_timeout_does_not_split_provider_batch(monkeypatch):
         )
     assert exc.value.code == "provider_timeout"
     assert calls == [[f"b{index}" for index in range(6)]]
+
+def test_opencode_cli_transport_is_never_appended_to_provider_url(monkeypatch):
+    from cps.services import reader_translation as service
+
+    profile = _profile(
+        base_url="https://opencode.ai/zen/v1",
+        endpoint_path="opencode-cli",
+        model="big-pickle",
+        api_key_encrypted=None,
+        extra_headers={},
+        timeout_seconds=30,
+    )
+    with pytest.raises(ReaderTranslationError) as exc:
+        service._endpoint_url(profile)
+    assert exc.value.code == "invalid_endpoint"
+
+    seen = {}
+
+    def fake_cli(candidate, payload):
+        seen["model"] = candidate.model
+        seen["payload"] = payload
+        return '{"blocks":[{"id":"a","text":"Переклад"}]}'
+
+    monkeypatch.setattr(service, "_opencode_cli_completion", fake_cli)
+    monkeypatch.setattr(
+        service, "_request",
+        lambda *_args, **_kwargs: pytest.fail("OpenCode CLI transport must not use provider HTTP endpoint"),
+    )
+    result = service.translate_page(
+        profile,
+        source_language="en",
+        target_language="uk",
+        prompt="",
+        blocks=[{"id": "a", "tag": "p", "text": "Source"}],
+    )
+    assert result[0]["text"] == "Переклад"
+    assert seen["model"] == "big-pickle"
+    assert seen["payload"]["model"] == "big-pickle"
+
+
+def test_opencode_cli_model_check_uses_local_transport(monkeypatch):
+    from cps.services import reader_translation as service
+
+    profile = _profile(
+        base_url="https://opencode.ai/zen/v1",
+        endpoint_path="opencode-cli",
+        model="big-pickle",
+        api_key_encrypted=None,
+        extra_headers={},
+        timeout_seconds=30,
+    )
+    monkeypatch.setattr(service, "_opencode_cli_completion", lambda _profile, _payload: "OK")
+    result = service.check_model(profile, model="mimo-v2.5-free", endpoint_path="opencode-cli")
+    assert result["ok"] is True
+    assert result["model"] == "mimo-v2.5-free"
+    assert result["preview"] == "OK"

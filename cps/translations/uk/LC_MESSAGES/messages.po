@@ -16202,6 +16202,34 @@ msgstr ""
 msgid "Testing…"
 msgstr "Тестування…"
 
+#: cps/spa_strings.py
+msgid "Providers"
+msgstr "Провайдери"
+
+#: cps/spa_strings.py
+msgid "Model catalog"
+msgstr "Каталог моделей"
+
+#: cps/spa_strings.py
+msgid "Provider catalogs"
+msgstr "Каталоги провайдерів"
+
+#: cps/spa_strings.py
+msgid ""
+"Enter a model ID manually or select one from the model catalog after saving "
+"the profile."
+msgstr ""
+"Введіть ID моделі вручну або виберіть її з каталогу моделей після збереження"
+" профілю."
+
+#: cps/spa_strings.py
+msgid ""
+"Browse models through configured profiles. Provider rows below are catalog "
+"sources, not profiles; edit or delete profiles above."
+msgstr ""
+"Переглядайте моделі через налаштовані профілі. Рядки провайдерів нижче — це "
+"джерела каталогів, а не профілі; редагуйте або видаляйте профілі вище."
+
 #, fuzzy
 #~ msgid "New interface available"
 #~ msgstr "Оновлення неуспішне:"

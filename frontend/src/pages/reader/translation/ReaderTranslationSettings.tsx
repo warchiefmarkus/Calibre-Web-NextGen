@@ -180,11 +180,21 @@ const MODEL_LOGO_BY_FAMILY: Record<string, string> = {
   nova: 'amazon',
   jamba: 'ai21',
   phi: 'microsoft',
+  mimo: 'xiaomi',
+  jina: 'jinaai',
+  perplexity: 'perplexity',
 };
 
 function brandLogoUrl(id: string): string {
+  // OllamaProxy uses LM Studio's official color mark because models.dev does
+  // not provide an equivalent brand asset. Other providers use the shared
+  // models.dev logo catalogue and fall back to initials on any load failure.
+  if (id === 'lmstudio') {
+    return 'https://lmstudio.ai/assets/marketing/brand/download/logos/lm-studio-icon-color.png';
+  }
   return `https://models.dev/logos/${encodeURIComponent(id)}.svg`;
 }
+
 
 function BrandMark({ id, label, small = false }: { id: string; label: string; small?: boolean }) {
   const [failed, setFailed] = useState(false);
@@ -228,6 +238,10 @@ interface ModelFamilyGroup<T> {
 }
 
 const MODEL_FAMILIES: ModelFamilyDefinition[] = [
+  { key: 'bigpickle', title: 'Big Pickle', patterns: [/(^|[\/_.:-])big-pickle([\/_.:-]|$)/, /(^|[\/_.:-])big pickle([\/_.:-]|$)/] },
+  { key: 'mimo', title: 'MiMo / Xiaomi', patterns: [/(^|[\/_.:-])mimo([\/_.:-]|$)/, /(^|[\/_.:-])xiaomi([\/_.:-]|$)/] },
+  { key: 'jina', title: 'Jina AI', patterns: [/(^|[\/_.:-])jina([\/_.:-]|$)/] },
+  { key: 'perplexity', title: 'Perplexity', patterns: [/(^|[\/_.:-])(perplexity|sonar)([\/_.:-]|$)/] },
   { key: 'gpt', title: 'GPT / OpenAI', patterns: [/(^|[\/_.:-])(openai|chatgpt|codex)([\/_.:-]|$)/, /(^|[\/_.:-])gpt(?:\d|[\/_.:-]|$)/, /(^|[\/_.:-])o[134]([\/_.:-]|$)/] },
   { key: 'claude', title: 'Claude', patterns: [/(^|[\/_.:-])anthropic([\/_.:-]|$)/, /(^|[\/_.:-])claude(?:\d|[\/_.:-]|$)/] },
   { key: 'gemini', title: 'Gemini', patterns: [/(^|[\/_.:-])gemini(?:\d|[\/_.:-]|$)/] },
@@ -316,6 +330,22 @@ function endpointForModel(provider: ProviderKey, model: string, fallback: string
   return fallback;
 }
 
+function endpointForProfileModel(
+  profile: ReaderTranslationProfile,
+  provider: ProviderKey,
+  model: string,
+): string {
+  if (profile.endpoint_path === 'opencode-cli') return 'opencode-cli';
+  return endpointForModel(provider, model, profile.endpoint_path);
+}
+
+function profileEndpointLabel(profile: ReaderTranslationProfile): string {
+  if (profile.endpoint_path === 'opencode-cli') {
+    return profile.base_url + ' · OpenCode CLI';
+  }
+  return profile.base_url + (profile.endpoint_path ? '/' + profile.endpoint_path : '');
+}
+
 export function LlmProfileSettings({ settings, update }: {
   settings: ReaderSettings;
   update: (patch: Partial<ReaderSettings>) => void;
@@ -356,6 +386,24 @@ export function LlmProfileSettings({ settings, update }: {
       ?? null,
     [managedProfileId, profiles, settings.translationProfileId],
   );
+
+  const configuredProviders = useMemo(() => (
+    (Object.keys(PROVIDERS) as ProviderKey[]).flatMap((key) => {
+      const providerProfiles = profiles.filter((profile) => providerFor(profile.base_url) === key);
+      return providerProfiles.length ? [{ key, profiles: providerProfiles }] : [];
+    })
+  ), [profiles]);
+
+  const selectedProviderKey = selectedProfile ? providerFor(selectedProfile.base_url) : null;
+
+  const selectConfiguredProvider = (key: ProviderKey) => {
+    const group = configuredProviders.find((item) => item.key === key);
+    if (!group?.profiles.length) return;
+    const preferred = group.profiles.find((profile) => profile.id === settings.translationProfileId)
+      ?? group.profiles.find((profile) => profile.id === managedProfileId)
+      ?? group.profiles[0];
+    setManagedProfileId(preferred.id);
+  };
 
   useEffect(() => {
     if (!profiles.length) {
@@ -664,8 +712,8 @@ export function LlmProfileSettings({ settings, update }: {
         id: selectedProfile.id,
         payload: {
           model,
-          endpoint_path: endpointForModel(
-            selectedProvider, model, selectedProfile.endpoint_path,
+          endpoint_path: endpointForProfileModel(
+            selectedProfile, selectedProvider, model,
           ),
           max_output_tokens: maxOutputTokensForModel(
             model, selectedProfile.max_output_tokens,
@@ -736,7 +784,7 @@ export function LlmProfileSettings({ settings, update }: {
           const response = await checkModel.mutateAsync({
             id: profile.id,
             model,
-            endpointPath: endpointForModel(providerKey, model, profile.endpoint_path),
+            endpointPath: endpointForProfileModel(profile, providerKey, model),
           });
           checks = checks.map((item) => item.model === model
             ? {
@@ -828,7 +876,7 @@ export function LlmProfileSettings({ settings, update }: {
                     </span>
                   </span>
                   <span className={styles.translationProfileEndpoint}>
-                    {profile.base_url}{profile.endpoint_path ? `/${profile.endpoint_path}` : ''}
+                    {profileEndpointLabel(profile)}
                   </span>
                 </button>
                 <div className={styles.translationProfileRowActions}>
@@ -905,6 +953,9 @@ export function LlmProfileSettings({ settings, update }: {
                   endpoint_path: endpointForModel(provider, model, current.endpoint_path),
                 }));
               }} />
+            <small className={styles.translationFieldHint}>
+              {t('Enter a model ID manually or select one from the model catalog after saving the profile.')}
+            </small>
           </label>
           <div className={styles.translationProfileGrid}>
             <label>{t('Temperature')}
@@ -942,7 +993,56 @@ export function LlmProfileSettings({ settings, update }: {
       )}
 
       {selectedProfile && (
-        <section className={styles.translationModelHealth} aria-label={t('Models')}>
+        <section className={styles.translationCatalogSection} aria-labelledby="llm-model-catalog-heading">
+          <div className={styles.translationCatalogHeader}>
+            <div>
+              <h3 id="llm-model-catalog-heading">{t('Model catalog')}</h3>
+              <p>
+                {t('Browse models through configured profiles. Provider rows below are catalog sources, not profiles; edit or delete profiles above.')}
+              </p>
+            </div>
+          </div>
+          <div className={styles.translationProviderModelGrid}
+            aria-label={t('Models')}>
+          <aside className={styles.translationProviderBrowser}>
+            <div className={styles.translationBrowserHeading}>
+              <strong>{t('Provider catalogs')}</strong>
+              <span>{configuredProviders.length}</span>
+            </div>
+            <div className={styles.translationProviderList} role="list">
+              {configuredProviders.map((group) => {
+                const selected = selectedProviderKey === group.key;
+                const preferred = group.profiles.find(
+                  (profile) => profile.id === settings.translationProfileId,
+                ) ?? group.profiles.find(
+                  (profile) => profile.id === managedProfileId,
+                ) ?? group.profiles[0];
+                return (
+                  <button type="button" role="listitem" key={group.key}
+                    className={styles.translationProviderRow}
+                    data-selected={selected ? 'true' : 'false'}
+                    aria-pressed={selected}
+                    onClick={() => selectConfiguredProvider(group.key)}>
+                    <BrandMark id={providerLogoId(group.key)} label={PROVIDERS[group.key].label} />
+                    <span>
+                      <strong>{PROVIDERS[group.key].label}</strong>
+                      <small>
+                        {group.profiles.length > 1
+                          ? group.profiles.length + ' · ' + preferred.name
+                          : preferred.name}
+                      </small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+          <div className={[styles.translationModelHealth, styles.translationModelsBrowser].join(' ')}
+            aria-label={t('Models')}>
+            <div className={styles.translationBrowserHeading}>
+              <strong>{t('Models')}</strong>
+              <span>{selectedProviderLabel}</span>
+            </div>
           <div className={styles.translationModelHealthHeader}>
             <div className={styles.translationModelCatalogIdentity}>
               <BrandMark id={providerLogoId(providerFor(selectedProfile.base_url))}
@@ -1058,6 +1158,8 @@ export function LlmProfileSettings({ settings, update }: {
               {t('No models loaded. The check will load them first.')}
             </p>
           )}
+          </div>
+          </div>
         </section>
       )}
 

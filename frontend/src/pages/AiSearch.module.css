@@ -68,6 +68,32 @@
   color: var(--text);
 }
 
+.ragSearchPanel {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  box-shadow: var(--elev-1);
+}
+
+.ragSearchPanel .header {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.ragSearchPanel .form {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .header {
   display: flex;
   align-items: flex-start;
