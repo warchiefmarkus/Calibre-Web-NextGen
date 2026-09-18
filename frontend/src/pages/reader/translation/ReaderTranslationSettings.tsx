@@ -255,7 +255,7 @@ function endpointForModel(provider: ProviderKey, model: string, fallback: string
   return fallback;
 }
 
-export function ReaderTranslationSettings({ settings, update }: {
+export function LlmProfileSettings({ settings, update }: {
   settings: ReaderSettings;
   update: (patch: Partial<ReaderSettings>) => void;
 }) {
@@ -269,6 +269,9 @@ export function ReaderTranslationSettings({ settings, update }: {
   const checkModel = useCheckReaderTranslationModel();
   const profiles = profilesQuery.data?.profiles ?? [];
 
+  const [managedProfileId, setManagedProfileId] = useState<string | null>(null);
+  const [testingProfileId, setTestingProfileId] = useState<string | null>(null);
+  const [profileTestResults, setProfileTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
   const [provider, setProvider] = useState<ProviderKey>('custom');
   const [form, setForm] = useState<ReaderTranslationProfileInput>(EMPTY_PROFILE);
@@ -287,15 +290,26 @@ export function ReaderTranslationSettings({ settings, update }: {
   const [promptDraft, setPromptDraft] = useState(settings.translationPrompt);
 
   const selectedProfile = useMemo(
-    () => profiles.find((item) => item.id === settings.translationProfileId) ?? null,
-    [profiles, settings.translationProfileId],
+    () => profiles.find((item) => item.id === managedProfileId)
+      ?? profiles.find((item) => item.id === settings.translationProfileId)
+      ?? profiles[0]
+      ?? null,
+    [managedProfileId, profiles, settings.translationProfileId],
   );
 
   useEffect(() => {
-    if (profiles.length && !settings.translationProfileId) {
-      update({ translationProfileId: profiles[0].id });
+    if (!profiles.length) {
+      setManagedProfileId(null);
+      return;
     }
-  }, [profiles, settings.translationProfileId, update]);
+    if (!managedProfileId || !profiles.some((item) => item.id === managedProfileId)) {
+      setManagedProfileId(
+        profiles.some((item) => item.id === settings.translationProfileId)
+          ? settings.translationProfileId
+          : profiles[0].id,
+      );
+    }
+  }, [managedProfileId, profiles, settings.translationProfileId]);
 
   useEffect(() => {
     setPromptDraft(settings.translationPrompt);
@@ -394,18 +408,6 @@ export function ReaderTranslationSettings({ settings, update }: {
     setEditorModelDetails([]);
   };
 
-  const beginEdit = () => {
-    if (!selectedProfile) return;
-    setEditingId(selectedProfile.id);
-    setProvider(providerFor(selectedProfile.base_url));
-    setForm(profileToForm(selectedProfile));
-    setHeadersText(JSON.stringify(selectedProfile.extra_headers ?? {}, null, 2));
-    setFormError(null);
-    setNotice(null);
-    setEditorModels(models);
-    setEditorModelDetails(modelDetails);
-  };
-
   const chooseProvider = (key: ProviderKey) => {
     setProvider(key);
     const preset = PROVIDERS[key];
@@ -467,7 +469,8 @@ export function ReaderTranslationSettings({ settings, update }: {
       if (editingId === 'new') {
         const response = await createProfile.mutateAsync(payload);
         savedProfile = response.profile;
-        update({ translationProfileId: response.profile.id });
+        setManagedProfileId(response.profile.id);
+        if (!settings.translationProfileId) update({ translationProfileId: response.profile.id });
       } else if (editingId) {
         const response = await updateProfile.mutateAsync({ id: editingId, payload });
         savedProfile = response.profile;
@@ -501,17 +504,20 @@ export function ReaderTranslationSettings({ settings, update }: {
     }
   };
 
-  const remove = async () => {
-    if (!selectedProfile || !window.confirm(t('Delete this translation profile?'))) return;
+  const removeProfile = async (profile: ReaderTranslationProfile) => {
+    if (!window.confirm(t('Delete this translation profile?'))) return;
     try {
-      await deleteProfile.mutateAsync(selectedProfile.id);
+      await deleteProfile.mutateAsync(profile.id);
       try {
-        localStorage.removeItem(modelCheckCacheKey(selectedProfile.id));
+        localStorage.removeItem(modelCheckCacheKey(profile.id));
       } catch {
         // Ignore unavailable browser storage.
       }
-      const replacement = profiles.find((item) => item.id !== selectedProfile.id);
-      update({ translationProfileId: replacement?.id ?? '', translationEnabled: false });
+      const replacement = profiles.find((item) => item.id !== profile.id);
+      if (selectedProfile?.id === profile.id) setManagedProfileId(replacement?.id ?? null);
+      if (settings.translationProfileId === profile.id) {
+        update({ translationProfileId: replacement?.id ?? '', translationEnabled: false });
+      }
       setNotice(t('Translation profile deleted.'));
     } catch (error) {
       setFormError(error instanceof Error ? error.message : t('Could not delete the translation profile.'));
@@ -527,6 +533,32 @@ export function ReaderTranslationSettings({ settings, update }: {
       setNotice(`${t('Connection successful.')} ${response.preview}`);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : t('Connection test failed.'));
+    }
+  };
+
+  const testListedProfile = async (profile: ReaderTranslationProfile) => {
+    setTestingProfileId(profile.id);
+    setProfileTestResults((current) => {
+      const next = { ...current };
+      delete next[profile.id];
+      return next;
+    });
+    try {
+      const response = await testProfile.mutateAsync(profile.id);
+      setProfileTestResults((current) => ({
+        ...current,
+        [profile.id]: { ok: true, message: response.preview || t('Connection successful.') },
+      }));
+    } catch (error) {
+      setProfileTestResults((current) => ({
+        ...current,
+        [profile.id]: {
+          ok: false,
+          message: error instanceof Error ? error.message : t('Connection test failed.'),
+        },
+      }));
+    } finally {
+      setTestingProfileId((current) => current === profile.id ? null : current);
     }
   };
 
@@ -661,73 +693,83 @@ export function ReaderTranslationSettings({ settings, update }: {
 
   return (
     <div className={styles.translationSettings}>
-      <label className={styles.checkboxLabel} title={t('Automatically translate the current page')}>
-        <input type="checkbox" checked={settings.translationEnabled}
-          disabled={!settings.translationProfileId}
-          onChange={(event) => update({
-            translationEnabled: event.target.checked,
-            translationView: event.target.checked ? 'translated' : 'original',
-          })} />
-        {t('Auto')}
-      </label>
-
-      <label className={styles.translationSwitch}
-        title={t('Preserve page structure, images, and inline formatting')}>
-        <span>{t('Structure')}</span>
-        <input type="checkbox" role="switch"
-          checked={settings.translationMode === 'structured'}
-          onChange={(event) => update({
-            translationMode: event.target.checked ? 'structured' : 'simple',
-          })} />
-        <span className={styles.translationSwitchTrack} aria-hidden="true" />
-      </label>
-
-      <label className={styles.checkboxLabel} title={t('Cache full translated pages')}>
-        <input type="checkbox" checked={settings.translationCacheEnabled}
-          onChange={(event) => update({ translationCacheEnabled: event.target.checked })} />
-        {t('Cache')}
-      </label>
-
-      <label className={styles.checkboxLabel} title={t('Preload one translated page ahead')}>
-        <input type="checkbox" checked={settings.translationPreloadNextPage}
-          disabled={!settings.translationEnabled || !settings.translationCacheEnabled}
-          onChange={(event) => update({ translationPreloadNextPage: event.target.checked })} />
-        {t('Next page')}
-      </label>
-
-      <label>{t('From')}
-        <select value={settings.translationSourceLanguage}
-          onChange={(event) => update({ translationSourceLanguage: event.target.value })}>
-          <option value="auto">{t('Detect automatically')}</option>
-          {LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-        </select>
-      </label>
-      <label>{t('To')}
-        <select value={settings.translationTargetLanguage}
-          onChange={(event) => update({ translationTargetLanguage: event.target.value })}>
-          {LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-        </select>
-      </label>
-
-      <label>{t('Profile')}
-        <select value={settings.translationProfileId}
-          onChange={(event) => update({ translationProfileId: event.target.value })}>
-          <option value="">{t('No profile selected')}</option>
-          {profiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>{profile.name} · {profile.model}</option>
-          ))}
-        </select>
-      </label>
-
-      <div className={styles.translationProfileActions}>
-        <button type="button" onClick={beginNew}><Plus size={15} /> {t('Add')}</button>
-        <button type="button" onClick={beginEdit} disabled={!selectedProfile}>
-          <Pencil size={15} /> {t('Edit')}
-        </button>
-        <button type="button" onClick={() => void remove()} disabled={!selectedProfile}>
-          <Trash2 size={15} /> {t('Delete')}
+      <div className={styles.translationManagerHeader}>
+        <div>
+          <h2>{t('LLM profiles')}</h2>
+          <p>{t('Configure, test, and inspect the LLM endpoints used by reader translation.')}</p>
+        </div>
+        <button type="button" className={styles.translationManagerAdd} onClick={beginNew}>
+          <Plus size={15} /> {t('Add profile')}
         </button>
       </div>
+
+      {profilesQuery.isLoading ? (
+        <p className={styles.muted}>{t('Loading translation profiles…')}</p>
+      ) : profiles.length === 0 ? (
+        <div className={styles.translationProfileEmpty}>
+          <p>{t('No LLM profiles yet.')}</p>
+          <button type="button" onClick={beginNew}><Plus size={15} /> {t('Add profile')}</button>
+        </div>
+      ) : (
+        <div className={styles.translationProfileList} role="list" aria-label={t('LLM profiles')}>
+          {profiles.map((profile) => {
+            const selected = selectedProfile?.id === profile.id;
+            const active = settings.translationProfileId === profile.id;
+            const providerLabel = PROVIDERS[providerFor(profile.base_url)].label;
+            const testResult = profileTestResults[profile.id];
+            return (
+              <article key={profile.id}
+                className={selected ? styles.translationProfileCardSelected : styles.translationProfileCard}
+                role="listitem">
+                <button type="button" className={styles.translationProfileSelect}
+                  aria-pressed={selected} onClick={() => setManagedProfileId(profile.id)}>
+                  <span className={styles.translationProfileName}>
+                    <strong>{profile.name}</strong>
+                    {active && <span className={styles.translationProfileActive}>{t('Active in reader')}</span>}
+                  </span>
+                  <span className={styles.translationProfileMeta}>
+                    {providerLabel} · {profile.model || t('No model')}
+                  </span>
+                  <span className={styles.translationProfileEndpoint}>
+                    {profile.base_url}{profile.endpoint_path ? `/${profile.endpoint_path}` : ''}
+                  </span>
+                </button>
+                <div className={styles.translationProfileRowActions}>
+                  <button type="button" onClick={() => {
+                    setManagedProfileId(profile.id);
+                    setEditingId(profile.id);
+                    setProvider(providerFor(profile.base_url));
+                    setForm(profileToForm(profile));
+                    setHeadersText(JSON.stringify(profile.extra_headers ?? {}, null, 2));
+                    setFormError(null);
+                    setNotice(null);
+                    const cached = readModelCheckCache(profile.id);
+                    setEditorModels(cached?.models ?? []);
+                    setEditorModelDetails(cached?.details ?? []);
+                  }}>
+                    <Pencil size={14} /> {t('Edit')}
+                  </button>
+                  <button type="button" onClick={() => void testListedProfile(profile)}
+                    disabled={testingProfileId !== null}>
+                    <CheckCircle2 size={14} />
+                    {testingProfileId === profile.id ? t('Testing…') : t('Test')}
+                  </button>
+                  <button type="button" onClick={() => void removeProfile(profile)}
+                    disabled={deleteProfile.isPending}>
+                    <Trash2 size={14} /> {t('Delete')}
+                  </button>
+                </div>
+                {testResult && (
+                  <p className={testResult.ok ? styles.translationProfileTestOk : styles.translationProfileTestError}
+                    role="status">
+                    {testResult.ok ? '✓ ' : '× '}{testResult.message}
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
 
       {editingId && (
         <div className={styles.translationProfileEditor}>
@@ -919,9 +961,89 @@ export function ReaderTranslationSettings({ settings, update }: {
           }} />
       </label>
 
-      {profilesQuery.isLoading && <p className={styles.muted}>{t('Loading translation profiles…')}</p>}
       {formError && <p className={styles.translationError} role="alert">{formError}</p>}
       {notice && <p className={styles.translationNotice}>{notice}</p>}
+    </div>
+  );
+}
+
+export function ReaderTranslationSettings({ settings, update }: {
+  settings: ReaderSettings;
+  update: (patch: Partial<ReaderSettings>) => void;
+}) {
+  const t = useT();
+  const profilesQuery = useReaderTranslationProfiles();
+  const profiles = profilesQuery.data?.profiles ?? [];
+
+  useEffect(() => {
+    if (profiles.length && !settings.translationProfileId) {
+      update({ translationProfileId: profiles[0].id });
+    }
+  }, [profiles, settings.translationProfileId, update]);
+
+  return (
+    <div className={styles.translationSettings}>
+      <label className={styles.checkboxLabel} title={t('Automatically translate the current page')}>
+        <input type="checkbox" checked={settings.translationEnabled}
+          disabled={!settings.translationProfileId}
+          onChange={(event) => update({
+            translationEnabled: event.target.checked,
+            translationView: event.target.checked ? 'translated' : 'original',
+          })} />
+        {t('Auto')}
+      </label>
+      <label className={styles.translationSwitch}
+        title={t('Preserve page structure, images, and inline formatting')}>
+        <span>{t('Structure')}</span>
+        <input type="checkbox" role="switch"
+          checked={settings.translationMode === 'structured'}
+          onChange={(event) => update({
+            translationMode: event.target.checked ? 'structured' : 'simple',
+          })} />
+        <span className={styles.translationSwitchTrack} aria-hidden="true" />
+      </label>
+
+      <label className={styles.checkboxLabel} title={t('Cache full translated pages')}>
+        <input type="checkbox" checked={settings.translationCacheEnabled}
+          onChange={(event) => update({ translationCacheEnabled: event.target.checked })} />
+        {t('Cache')}
+      </label>
+
+      <label className={styles.checkboxLabel} title={t('Preload one translated page ahead')}>
+        <input type="checkbox" checked={settings.translationPreloadNextPage}
+          disabled={!settings.translationEnabled || !settings.translationCacheEnabled}
+          onChange={(event) => update({ translationPreloadNextPage: event.target.checked })} />
+        {t('Next page')}
+      </label>
+      <label>{t('From')}
+        <select value={settings.translationSourceLanguage}
+          onChange={(event) => update({ translationSourceLanguage: event.target.value })}>
+          <option value="auto">{t('Detect automatically')}</option>
+          {LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+        </select>
+      </label>
+      <label>{t('To')}
+        <select value={settings.translationTargetLanguage}
+          onChange={(event) => update({ translationTargetLanguage: event.target.value })}>
+          {LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+        </select>
+      </label>
+
+      <label>{t('LLM Profile')}
+        <select value={settings.translationProfileId}
+          onChange={(event) => update({ translationProfileId: event.target.value })}>
+          <option value="">{t('No profile selected')}</option>
+          {profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>{profile.name}</option>
+          ))}
+        </select>
+      </label>
+      {profilesQuery.isLoading && <p className={styles.muted}>{t('Loading translation profiles…')}</p>}
+      {!profilesQuery.isLoading && profiles.length === 0 && (
+        <p className={styles.translationWarning}>
+          {t('No LLM profiles are configured. Add one in LLM Settings.')}
+        </p>
+      )}
     </div>
   );
 }

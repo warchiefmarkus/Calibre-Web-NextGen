@@ -107,7 +107,7 @@ export function Sidebar({ open, onClose, onNavigate }: SidebarProps) {
   const canEdit = !!me?.role?.edit;
   const isAdmin = !!me?.role?.admin;
   const isAuthed = !!me?.id;
-  const showAiSearch = !!me?.features?.rag_search && !me?.role?.anonymous;
+  const showLlm = !!me?.id && !me?.role?.anonymous;
   const personalLibrary = me?.library_mode === 'personal_library';
   const showGlobalLibrary = personalLibrary && !!me?.role?.browse_global;
   const pinActive = isDesktopRail && sidebarPinned;
@@ -331,7 +331,7 @@ export function Sidebar({ open, onClose, onNavigate }: SidebarProps) {
                   <span>{t(personalLibrary ? 'My Library' : 'Library')}</span>
                 </Link>
               </li>
-              {showAiSearch && (
+              {showLlm && (
                 <li>
                   <Link
                     href="/ai-search"
@@ -340,7 +340,7 @@ export function Sidebar({ open, onClose, onNavigate }: SidebarProps) {
                     onClick={onNavigate}
                   >
                     <Sparkles size={18} className={styles.icon} aria-hidden="true" focusable={false} />
-                    <span>{t('RAG search')}</span>
+                    <span>{t('LLM')}</span>
                   </Link>
                 </li>
               )}

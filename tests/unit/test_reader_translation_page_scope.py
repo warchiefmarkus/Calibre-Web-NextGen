@@ -110,7 +110,7 @@ def test_translation_activity_uses_the_toolbar_icon_ring():
 
 
 def test_translation_settings_have_a_dedicated_side_panel():
-    assert "type ReaderPanel = 'toc' | 'search' | 'bookmarks' | 'notes' | 'settings' | 'translation' | null" in SIDE_PANEL
+    assert "type ReaderPanel = 'toc' | 'search' | 'bookmarks' | 'notes' | 'places' | 'settings' | 'translation' | null" in SIDE_PANEL
     assert "props.panel === 'translation'" in SIDE_PANEL
     assert "title={t('Page translation')}" in TOOLBAR
     assert 'ReaderTranslationSettings' not in SETTINGS_PANEL

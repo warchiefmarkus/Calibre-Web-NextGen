@@ -16156,6 +16156,52 @@ msgid ""
 "book sees it."
 msgstr ""
 
+msgid "LLM"
+msgstr "LLM"
+
+msgid "LLM Profile"
+msgstr "LLM-профіль"
+
+msgid "LLM profiles"
+msgstr "LLM-профілі"
+
+msgid "Active in reader"
+msgstr "Активний у читалці"
+
+msgid "Add profile"
+msgstr "Додати профіль"
+
+msgid ""
+"Configure, test, and inspect the LLM endpoints used by reader translation."
+msgstr ""
+"Налаштовуйте, тестуйте й перевіряйте LLM-ендпоінти, які використовує "
+"переклад у читалці."
+
+msgid "Could not load LLM settings."
+msgstr "Не вдалося завантажити налаштування LLM."
+
+msgid "No LLM profiles are configured. Add one in LLM Settings."
+msgstr "LLM-профілі не налаштовані. Додайте профіль у налаштуваннях LLM."
+
+msgid "No LLM profiles yet."
+msgstr "LLM-профілів ще немає."
+
+msgid "No model"
+msgstr "Модель не вибрана"
+
+msgid "RAG"
+msgstr "RAG"
+
+msgid ""
+"Search indexed books with RAG and manage LLM profiles used by reader "
+"translation."
+msgstr ""
+"Шукайте в індексованих книгах через RAG і керуйте LLM-профілями для "
+"перекладу в читалці."
+
+msgid "Testing…"
+msgstr "Тестування…"
+
 #, fuzzy
 #~ msgid "New interface available"
 #~ msgstr "Оновлення неуспішне:"

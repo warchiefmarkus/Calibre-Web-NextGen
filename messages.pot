@@ -15698,3 +15698,42 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Recommend similar books in ChatGPT"
 msgstr ""
+
+msgid "LLM"
+msgstr ""
+
+msgid "LLM Profile"
+msgstr ""
+
+msgid "LLM profiles"
+msgstr ""
+
+msgid "Active in reader"
+msgstr ""
+
+msgid "Add profile"
+msgstr ""
+
+msgid "Configure, test, and inspect the LLM endpoints used by reader translation."
+msgstr ""
+
+msgid "Could not load LLM settings."
+msgstr ""
+
+msgid "No LLM profiles are configured. Add one in LLM Settings."
+msgstr ""
+
+msgid "No LLM profiles yet."
+msgstr ""
+
+msgid "No model"
+msgstr ""
+
+msgid "RAG"
+msgstr ""
+
+msgid "Search indexed books with RAG and manage LLM profiles used by reader translation."
+msgstr ""
+
+msgid "Testing…"
+msgstr ""

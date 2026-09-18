@@ -7,12 +7,13 @@ import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { Spinner, SpinnerCentered } from '../components/Spinner';
 import {
-  useMe, useRagOcrConfig, useRagSearch, useRagStatus,
-  useSearchOptions, useUpdateRagOcrConfig,
+  useMe, useRagOcrConfig, useRagSearch, useRagStatus, useReaderSettings,
+  useSaveReaderSettings, useSearchOptions, useUpdateRagOcrConfig, type ReaderSettings,
 } from '../lib/queries';
 import type { RagSearchMode, RagSearchResult } from '../lib/api';
 import { useT, type TFunction } from '../lib/i18n';
 import { formatAuthors } from '../lib/authors';
+import { LlmProfileSettings } from './reader/translation/ReaderTranslationSettings';
 import styles from './AiSearch.module.css';
 
 const LIMITS = [6, 12, 20];
@@ -59,7 +60,13 @@ export function AiSearch() {
   const canConfigureOcr = enabled && !!me?.role?.edit;
   const ocrConfig = useRagOcrConfig(canConfigureOcr);
   const updateOcrConfig = useUpdateRagOcrConfig();
+  const readerSettingsQuery = useReaderSettings();
+  const saveReaderSettings = useSaveReaderSettings();
 
+  const [activeTab, setActiveTab] = useState<'rag' | 'settings'>(() => (
+    new URLSearchParams(window.location.search).get('tab') === 'settings' ? 'settings' : 'rag'
+  ));
+  const [llmReaderSettings, setLlmReaderSettings] = useState<ReaderSettings | null>(null);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<RagSearchMode>('hybrid');
   const [limit, setLimit] = useState(12);
@@ -76,10 +83,70 @@ export function AiSearch() {
     }
   }, [ocrConfig.data?.ocr_max_pages]);
 
+  useEffect(() => {
+    if (readerSettingsQuery.data?.reader) {
+      setLlmReaderSettings(readerSettingsQuery.data.reader);
+    }
+  }, [readerSettingsQuery.data?.reader]);
+
+  const selectTab = (tab: 'rag' | 'settings') => {
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === 'settings') url.searchParams.set('tab', 'settings');
+    else url.searchParams.delete('tab');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  };
+
+  const updateLlmReaderSettings = (patch: Partial<ReaderSettings>) => {
+    setLlmReaderSettings((current) => current ? { ...current, ...patch } : current);
+    saveReaderSettings.mutate(patch);
+  };
+
+  const pageHeader = (
+    <>
+      <header className={styles.llmHeader}>
+        <div>
+          <h1 className={styles.title}>
+            <Sparkles size={27} aria-hidden="true" focusable={false} />
+            {t('LLM')}
+          </h1>
+          <p className={styles.subtitle}>
+            {t('Search indexed books with RAG and manage LLM profiles used by reader translation.')}
+          </p>
+        </div>
+      </header>
+      <div className={styles.tabs} role="tablist" aria-label={t('LLM')}>
+        <button type="button" role="tab" aria-selected={activeTab === 'rag'}
+          className={activeTab === 'rag' ? styles.tabActive : styles.tab}
+          onClick={() => selectTab('rag')}>{t('RAG')}</button>
+        <button type="button" role="tab" aria-selected={activeTab === 'settings'}
+          className={activeTab === 'settings' ? styles.tabActive : styles.tab}
+          onClick={() => selectTab('settings')}>{t('Settings')}</button>
+      </div>
+    </>
+  );
+
+  if (activeTab === 'settings') {
+    return (
+      <section className={styles.container}>
+        {pageHeader}
+        <div className={styles.llmSettingsHost}>
+          {readerSettingsQuery.isLoading || !llmReaderSettings ? (
+            <SpinnerCentered size={34} />
+          ) : readerSettingsQuery.error ? (
+            <EmptyState message={t('Could not load LLM settings.')} />
+          ) : (
+            <LlmProfileSettings settings={llmReaderSettings} update={updateLlmReaderSettings} />
+          )}
+        </div>
+      </section>
+    );
+  }
+
   if (!enabled) {
     return (
       <section className={styles.container}>
-        <h1 className={styles.title}>{t('RAG search')}</h1>
+        {pageHeader}
         <EmptyState message={t('RAG search is not available for this account.')} />
       </section>
     );
@@ -112,12 +179,10 @@ export function AiSearch() {
 
   return (
     <section className={styles.container}>
+      {pageHeader}
       <header className={styles.header}>
         <div>
-          <h1 className={styles.title}>
-            <Sparkles size={27} aria-hidden="true" focusable={false} />
-            {t('RAG search')}
-          </h1>
+          <h2 className={styles.sectionTitle}>{t('RAG')}</h2>
           <p className={styles.subtitle}>
             {t('Search inside the full text of your indexed books, not only titles and metadata.')}
           </p>
