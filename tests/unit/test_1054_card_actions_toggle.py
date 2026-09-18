@@ -273,19 +273,21 @@ def test_coarse_pointer_reversal_does_not_touch_primary_actions_or_badges():
     assert ".seriesBadge {" in coarse and "height: 22px;" in coarse
 
 
-def test_touch_cover_chrome_keeps_large_hit_target_but_small_visuals():
-    """Touch safety must not require painting half of an 82px Dense cover.
+def test_touch_cover_chrome_has_no_disclosure_and_keeps_compact_status_badges():
+    """Coarse-pointer cards must stay tap-safe without painting action chrome.
 
-    The disclosure keeps its 44px hit box while a 30px pseudo-element paints the
-    visible disc. Badge labels shrink/ellipsis inside the cover, and Dense cards
-    drop only the redundant read-state icon before truncating the status text.
+    Upstream #2228 removed the touch disclosure entirely after proving that card
+    actions belong on the detail page. Keep the fork's compact/ellipsis badge
+    treatment so Dense mobile covers still preserve useful status text.
     """
     src = (_FE / "components" / "BookCard.tsx").read_text()
     css = (_FE / "components" / "BookCard.module.css").read_text()
+    coarse = css.split("@media (any-hover: none), (any-pointer: coarse) {", 1)[1] \
+        .split("/* Narrow cards", 1)[0]
 
-    assert ".moreActionsTrigger::before" in css
-    assert "inset: 7px;" in css  # 44px target -> 30px painted circle
-    assert "background: transparent;" in css
+    assert "moreActionsTrigger" not in src
+    assert ".moreActionsTrigger" not in css
+    assert ".readNow, .removeBtn, .quickEditBtn { display: none; }" in coarse
     assert ".badgeLabel" in css and "text-overflow: ellipsis;" in css
     assert "max-width: 100%;" in css
     assert "@container book-card (max-width: 100px)" in css
