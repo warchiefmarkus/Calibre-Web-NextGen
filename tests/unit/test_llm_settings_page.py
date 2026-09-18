@@ -48,3 +48,28 @@ def test_reader_translation_panel_is_compact_and_profile_only():
     assert "translationProfileEditor" not in reader
     assert "checkAllModels" not in reader
     assert "t('Prompt')" not in reader
+
+
+def test_llm_profiles_and_model_catalog_are_visually_distinct():
+    manager = _manager_source()
+    assert "styles.translationProfileList" in manager
+    assert "removeProfile(profile)" in manager
+    assert "styles.translationModelCatalogIdentity" in manager
+    assert "t('Models')} · {selectedProfile.name}" in manager
+    assert "BrandMark" in manager
+
+
+def test_model_editor_is_plain_text_and_catalog_owns_discovery_selection():
+    manager = _manager_source()
+    assert 'list="reader-translation-models"' not in manager
+    assert '<datalist id="reader-translation-models">' not in manager
+    assert "selectCatalogModel(item.model)" in manager
+    assert "modelsMutation.mutateAsync(selectedProfile.id)" in manager
+
+
+def test_provider_and_model_brand_icons_use_models_dev_with_fallbacks():
+    manager = _manager_source()
+    assert "https://models.dev/logos/" in TRANSLATION
+    assert "translationBrandFallback" in TRANSLATION
+    assert "modelLogoId(item.model" in manager
+    assert "providerLogoId(providerFor(profile.base_url))" in manager

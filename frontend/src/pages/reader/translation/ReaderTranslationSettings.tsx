@@ -19,35 +19,43 @@ import styles from '../../Reader.module.css';
 const PROVIDERS = {
   custom: {
     label: 'Custom OpenAI-compatible', base_url: '', endpoint_path: 'chat/completions',
-    model: '', discover: false,
+    model: '', discover: false, logo: '',
   },
   opencode_zen: {
     label: 'OpenCode Zen', base_url: 'https://opencode.ai/zen/v1', endpoint_path: 'chat/completions',
-    model: 'deepseek-v4-flash-free', discover: true,
+    model: 'deepseek-v4-flash-free', discover: true, logo: 'opencode',
   },
   opencode_go: {
     label: 'OpenCode Go', base_url: 'https://opencode.ai/zen/go/v1', endpoint_path: 'chat/completions',
-    model: 'glm-5.2', discover: true,
+    model: 'glm-5.2', discover: true, logo: 'opencode',
   },
   nvidia_nim: {
     label: 'NVIDIA NIM', base_url: 'https://integrate.api.nvidia.com/v1', endpoint_path: 'chat/completions',
-    model: 'nvidia/nemotron-3-nano-30b-a3b', discover: true,
+    model: 'nvidia/nemotron-3-nano-30b-a3b', discover: true, logo: 'nvidia',
   },
   openrouter: {
     label: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', endpoint_path: 'chat/completions',
-    model: '', discover: false,
+    model: '', discover: true, logo: 'openrouter',
   },
   groq: {
     label: 'Groq', base_url: 'https://api.groq.com/openai/v1', endpoint_path: 'chat/completions',
-    model: '', discover: false,
+    model: '', discover: true, logo: 'groq',
   },
   mistral: {
     label: 'Mistral', base_url: 'https://api.mistral.ai/v1', endpoint_path: 'chat/completions',
-    model: '', discover: false,
+    model: '', discover: true, logo: 'mistral',
+  },
+  xai: {
+    label: 'xAI', base_url: 'https://api.x.ai/v1', endpoint_path: 'chat/completions',
+    model: '', discover: true, logo: 'xai',
   },
   ollama: {
     label: 'Ollama', base_url: 'http://127.0.0.1:11434/v1', endpoint_path: 'chat/completions',
-    model: '', discover: false,
+    model: '', discover: true, logo: 'ollama',
+  },
+  lmstudio: {
+    label: 'LM Studio', base_url: 'http://127.0.0.1:1234/v1', endpoint_path: 'chat/completions',
+    model: '', discover: true, logo: 'lmstudio',
   },
 } as const;
 
@@ -149,6 +157,50 @@ function providerFor(baseUrl: string): ProviderKey {
   return (found?.[0] as ProviderKey | undefined) ?? 'custom';
 }
 
+function providerLogoId(provider: ProviderKey): string {
+  return PROVIDERS[provider].logo;
+}
+
+const MODEL_LOGO_BY_FAMILY: Record<string, string> = {
+  gpt: 'openai',
+  claude: 'anthropic',
+  gemini: 'google',
+  gemma: 'google',
+  deepseek: 'deepseek',
+  qwen: 'alibaba',
+  llama: 'meta',
+  mistral: 'mistral',
+  grok: 'xai',
+  kimi: 'moonshotai',
+  glm: 'zhipuai',
+  minimax: 'minimax',
+  nemotron: 'nvidia',
+  command: 'cohere',
+  granite: 'ibm',
+  nova: 'amazon',
+  jamba: 'ai21',
+  phi: 'microsoft',
+};
+
+function brandLogoUrl(id: string): string {
+  return `https://models.dev/logos/${encodeURIComponent(id)}.svg`;
+}
+
+function BrandMark({ id, label, small = false }: { id: string; label: string; small?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const fallback = label.trim().slice(0, 2).toUpperCase() || 'AI';
+  return (
+    <span className={small ? styles.translationBrandSmall : styles.translationBrand}
+      aria-hidden="true" title={label}>
+      <span className={styles.translationBrandFallback}>{fallback}</span>
+      {!!id && !failed && (
+        <img src={brandLogoUrl(id)} alt="" loading="lazy"
+          onError={() => setFailed(true)} />
+      )}
+    </span>
+  );
+}
+
 function maxOutputTokensForModel(model: string, configured: number): number {
   return model.trim().toLowerCase() === 'big-pickle' ? Math.max(configured, 8192) : configured;
 }
@@ -216,6 +268,15 @@ function modelFamily(model: string, details: ReaderTranslationModelInfo[]): Mode
   )) ?? { key: 'other', title: 'Other models', patterns: [] };
 }
 
+function modelLogoId(
+  model: string,
+  details: ReaderTranslationModelInfo[],
+  fallbackProvider: ProviderKey,
+): string {
+  const family = modelFamily(model, details);
+  return MODEL_LOGO_BY_FAMILY[family.key] || providerLogoId(fallbackProvider);
+}
+
 function groupByModelFamily<T>(
   items: T[],
   modelOf: (item: T) => string,
@@ -280,13 +341,12 @@ export function LlmProfileSettings({ settings, update }: {
   const [notice, setNotice] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [modelDetails, setModelDetails] = useState<ReaderTranslationModelInfo[]>([]);
-  const [editorModels, setEditorModels] = useState<string[]>([]);
-  const [editorModelDetails, setEditorModelDetails] = useState<ReaderTranslationModelInfo[]>([]);
   const [modelChecks, setModelChecks] = useState<ModelCheckItem[]>([]);
   const [lastModelCheckAt, setLastModelCheckAt] = useState<string | null>(null);
   const [checkingModels, setCheckingModels] = useState(false);
   const [openModelFamilies, setOpenModelFamilies] = useState<Set<string>>(() => new Set());
   const modelCheckRunRef = useRef(0);
+  const autoDiscoveredProfilesRef = useRef(new Set<string>());
   const [promptDraft, setPromptDraft] = useState(settings.translationPrompt);
 
   const selectedProfile = useMemo(
@@ -404,15 +464,11 @@ export function LlmProfileSettings({ settings, update }: {
     setHeadersText('{}');
     setFormError(null);
     setNotice(null);
-    setEditorModels([]);
-    setEditorModelDetails([]);
   };
 
   const chooseProvider = (key: ProviderKey) => {
     setProvider(key);
     const preset = PROVIDERS[key];
-    setEditorModels([]);
-    setEditorModelDetails([]);
     setForm((current) => {
       const model = preset.model || current.model;
       return {
@@ -451,6 +507,44 @@ export function LlmProfileSettings({ settings, update }: {
     return nextChecks;
   };
 
+  useEffect(() => {
+    const profile = selectedProfile;
+    if (!profile) return;
+    const cached = readModelCheckCache(profile.id);
+    if (cached?.models.length) return;
+    const providerKey = providerFor(profile.base_url);
+    const preset = PROVIDERS[providerKey];
+    if (!preset.discover) return;
+    if ((providerKey === 'ollama' || providerKey === 'lmstudio')
+        && !profilesQuery.data?.private_endpoints_allowed) return;
+    if (autoDiscoveredProfilesRef.current.has(profile.id)) return;
+    autoDiscoveredProfilesRef.current.add(profile.id);
+
+    let cancelled = false;
+    void modelsMutation.mutateAsync(profile.id).then((response) => {
+      if (cancelled) return;
+      const details = response.details ?? [];
+      const checks: ModelCheckItem[] = response.models.map((model) => ({
+        model, status: 'pending',
+      }));
+      setModels(response.models);
+      setModelDetails(details);
+      setModelChecks(checks);
+      setLastModelCheckAt(null);
+      writeModelCheckCache(profile.id, {
+        version: 1,
+        models: response.models,
+        details,
+        checks,
+        lastCheckedAt: null,
+      });
+    }).catch(() => {
+      // Auto-discovery is opportunistic. The explicit Refresh button remains
+      // the error-reporting/retry path and profile editing stays usable.
+    });
+    return () => { cancelled = true; };
+  }, [profilesQuery.data?.private_endpoints_allowed, selectedProfile?.id]);
+
   const save = async () => {
     setFormError(null);
     setNotice(null);
@@ -481,8 +575,6 @@ export function LlmProfileSettings({ settings, update }: {
       if (PROVIDERS[provider].discover) {
         const discovered = await modelsMutation.mutateAsync(savedProfile.id);
         const details = discovered.details ?? [];
-        setEditorModels(discovered.models);
-        setEditorModelDetails(details);
         applyModelCatalog(savedProfile.id, discovered.models, details, [], null);
         setNotice(t('{count} models loaded.', { count: discovered.models.length }));
       } else {
@@ -723,12 +815,17 @@ export function LlmProfileSettings({ settings, update }: {
                 role="listitem">
                 <button type="button" className={styles.translationProfileSelect}
                   aria-pressed={selected} onClick={() => setManagedProfileId(profile.id)}>
-                  <span className={styles.translationProfileName}>
-                    <strong>{profile.name}</strong>
-                    {active && <span className={styles.translationProfileActive}>{t('Active in reader')}</span>}
-                  </span>
-                  <span className={styles.translationProfileMeta}>
-                    {providerLabel} · {profile.model || t('No model')}
+                  <span className={styles.translationProfileIdentity}>
+                    <BrandMark id={providerLogoId(providerFor(profile.base_url))} label={providerLabel} />
+                    <span className={styles.translationProfileIdentityText}>
+                      <span className={styles.translationProfileName}>
+                        <strong>{profile.name}</strong>
+                        {active && <span className={styles.translationProfileActive}>{t('Active in reader')}</span>}
+                      </span>
+                      <span className={styles.translationProfileMeta}>
+                        {providerLabel} · {profile.model || t('No model')}
+                      </span>
+                    </span>
                   </span>
                   <span className={styles.translationProfileEndpoint}>
                     {profile.base_url}{profile.endpoint_path ? `/${profile.endpoint_path}` : ''}
@@ -743,9 +840,6 @@ export function LlmProfileSettings({ settings, update }: {
                     setHeadersText(JSON.stringify(profile.extra_headers ?? {}, null, 2));
                     setFormError(null);
                     setNotice(null);
-                    const cached = readModelCheckCache(profile.id);
-                    setEditorModels(cached?.models ?? []);
-                    setEditorModelDetails(cached?.details ?? []);
                   }}>
                     <Pencil size={14} /> {t('Edit')}
                   </button>
@@ -774,11 +868,14 @@ export function LlmProfileSettings({ settings, update }: {
       {editingId && (
         <div className={styles.translationProfileEditor}>
           <label>{t('Provider')}
-            <select value={provider} onChange={(event) => chooseProvider(event.target.value as ProviderKey)}>
-              {Object.entries(PROVIDERS).map(([key, value]) => (
-                <option key={key} value={key}>{value.label}</option>
-              ))}
-            </select>
+            <span className={styles.translationProviderField}>
+              <BrandMark id={providerLogoId(provider)} label={PROVIDERS[provider].label} />
+              <select value={provider} onChange={(event) => chooseProvider(event.target.value as ProviderKey)}>
+                {Object.entries(PROVIDERS).map(([key, value]) => (
+                  <option key={key} value={key}>{value.label}</option>
+                ))}
+              </select>
+            </span>
           </label>
           <label>{t('Name')}
             <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
@@ -798,7 +895,7 @@ export function LlmProfileSettings({ settings, update }: {
               onChange={(event) => setForm({ ...form, api_key: event.target.value })} />
           </label>
           <label>{t('Model')}
-            <input value={form.model} list="reader-translation-models"
+            <input value={form.model}
               onChange={(event) => {
                 const model = event.target.value;
                 setForm((current) => ({
@@ -808,11 +905,6 @@ export function LlmProfileSettings({ settings, update }: {
                   endpoint_path: endpointForModel(provider, model, current.endpoint_path),
                 }));
               }} />
-            <datalist id="reader-translation-models">
-              {editorModels.map((model) => (
-                <option key={model} value={model}>{modelOptionLabel(model, editorModelDetails)}</option>
-              ))}
-            </datalist>
           </label>
           <div className={styles.translationProfileGrid}>
             <label>{t('Temperature')}
@@ -836,7 +928,7 @@ export function LlmProfileSettings({ settings, update }: {
           <label>{t('Headers, JSON')}
             <textarea rows={4} value={headersText} onChange={(event) => setHeadersText(event.target.value)} />
           </label>
-          {provider === 'ollama' && !profilesQuery.data?.private_endpoints_allowed && (
+          {(provider === 'ollama' || provider === 'lmstudio') && !profilesQuery.data?.private_endpoints_allowed && (
             <p className={styles.translationWarning}>
               {t('Private endpoints are blocked. Set CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true on the server to use Ollama or another LAN model.')}
             </p>
@@ -852,11 +944,15 @@ export function LlmProfileSettings({ settings, update }: {
       {selectedProfile && (
         <section className={styles.translationModelHealth} aria-label={t('Models')}>
           <div className={styles.translationModelHealthHeader}>
-            <div>
-              <strong>{selectedProviderLabel}</strong>
+            <div className={styles.translationModelCatalogIdentity}>
+              <BrandMark id={providerLogoId(providerFor(selectedProfile.base_url))}
+                label={selectedProviderLabel} />
               <span>
-                {selectedProfile.model}
-                {selectedModelOwner ? ` · ${selectedModelOwner}` : ''}
+                <strong>{t('Models')} · {selectedProfile.name}</strong>
+                <small>
+                  {selectedProviderLabel} · {selectedProfile.model}
+                  {selectedModelOwner ? ` · ${selectedModelOwner}` : ''}
+                </small>
               </span>
             </div>
             <span className={styles.translationModelHealthCount}>
@@ -866,7 +962,7 @@ export function LlmProfileSettings({ settings, update }: {
           <div className={styles.translationModelToolbar}>
             <button type="button" onClick={() => void loadModels()}
               disabled={modelsMutation.isPending || checkingModels}>
-              <RefreshCw size={15} /> {t('Load')}
+              <RefreshCw size={15} /> {t('Refresh')}
             </button>
             <button type="button" onClick={() => void checkAllModels()}
               disabled={checkingModels || modelsMutation.isPending}>
@@ -903,6 +999,9 @@ export function LlmProfileSettings({ settings, update }: {
                       });
                     }}>
                     <summary>
+                      <BrandMark small
+                        id={modelLogoId(group.items[0]?.model ?? '', modelDetails, providerFor(selectedProfile.base_url))}
+                        label={label} />
                       <span className={styles.translationModelFamilyName}>{label}</span>
                       <span className={styles.translationModelFamilyStats} aria-hidden="true">
                         <span>{group.items.length}</span>
@@ -921,7 +1020,17 @@ export function LlmProfileSettings({ settings, update }: {
                             disabled={updateProfile.isPending || checkingModels}
                             title={item.error || modelOptionLabel(item.model, modelDetails)}
                             onClick={() => void selectCatalogModel(item.model)}>
-                            <span className={styles.translationModelHealthName}>{item.model}</span>
+                            <BrandMark small
+                              id={modelLogoId(item.model, modelDetails, providerFor(selectedProfile.base_url))}
+                              label={item.model} />
+                            <span className={styles.translationModelHealthName}>
+                              <strong>{item.model}</strong>
+                              {modelDetails.find((detail) => detail.id === item.model)?.context_length && (
+                                <small>
+                                  {modelDetails.find((detail) => detail.id === item.model)!.context_length!.toLocaleString()} ctx
+                                </small>
+                              )}
+                            </span>
                             {selected && (
                               <span className={styles.translationModelSelected}>
                                 <CheckCircle2 size={13} /> {t('Selected')}

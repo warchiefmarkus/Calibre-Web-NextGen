@@ -1064,6 +1064,60 @@
   background: color-mix(in srgb, var(--reader-accent) 7%, transparent);
 }
 
+.translationBrand,
+.translationBrandSmall {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--reader-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--reader-panel) 78%, var(--reader-bg));
+  color: var(--reader-muted);
+}
+
+.translationBrand {
+  width: 30px;
+  height: 30px;
+}
+
+.translationBrandSmall {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.translationBrand img,
+.translationBrandSmall img {
+  position: relative;
+  z-index: 1;
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
+}
+
+.translationBrandFallback {
+  position: absolute;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  opacity: .72;
+}
+
+.translationProfileIdentity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.translationProfileIdentityText {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
 .translationProfileName {
   display: flex;
   min-width: 0;
@@ -1168,6 +1222,18 @@
   background: color-mix(in srgb, var(--reader-panel) 72%, transparent);
 }
 
+.translationProviderField {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.translationProviderField select {
+  width: 100%;
+  min-width: 0;
+}
+
 .translationProfileGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1195,6 +1261,27 @@
   min-width: 0;
   display: grid;
   gap: 2px;
+}
+
+.translationModelHealthHeader .translationModelCatalogIdentity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.translationModelCatalogIdentity > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.translationModelCatalogIdentity small {
+  overflow: hidden;
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .translationModelHealthHeader span,
@@ -1248,7 +1335,7 @@
 
 .translationModelFamily summary {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
   padding: 8px 9px;
@@ -1328,7 +1415,7 @@
   width: 100%;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   border: 0;
@@ -1368,11 +1455,23 @@
 
 .translationModelHealthName {
   min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.translationModelHealthName strong {
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translationModelHealthName small {
+  color: var(--reader-muted);
+  font-size: 10px;
+  font-weight: 400;
 }
 
 .translationModelHealthStatus {

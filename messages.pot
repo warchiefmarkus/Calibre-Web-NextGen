@@ -15708,6 +15708,12 @@ msgstr ""
 msgid "LLM profiles"
 msgstr ""
 
+msgid "LM Studio"
+msgstr ""
+
+msgid "xAI"
+msgstr ""
+
 msgid "Active in reader"
 msgstr ""
 

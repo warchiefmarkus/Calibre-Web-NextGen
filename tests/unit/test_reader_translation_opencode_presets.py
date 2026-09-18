@@ -30,3 +30,13 @@ def test_nvidia_nim_preset_uses_public_model_discovery():
     assert "label: 'NVIDIA NIM'" in source
     assert "base_url: 'https://integrate.api.nvidia.com/v1'" in source
     assert "model: 'nvidia/nemotron-3-nano-30b-a3b'" in source
+
+
+def test_common_openai_compatible_providers_expose_live_model_discovery():
+    source = (ROOT / "frontend/src/pages/reader/translation/ReaderTranslationSettings.tsx").read_text()
+    for label in ("OpenRouter", "Groq", "Mistral", "xAI", "Ollama", "LM Studio"):
+        start = source.index(f"label: '{label}'")
+        block = source[start:start + 260]
+        assert "discover: true" in block, label
+    assert "https://models.dev/logos/" in source
+    assert "modelLogoId(" in source
