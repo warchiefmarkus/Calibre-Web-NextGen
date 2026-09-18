@@ -74,6 +74,55 @@
   white-space: nowrap;
 }
 
+.pageNav {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.pageNavButton {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pageNavButton + .pageNavValue,
+.pageNavValue + .pageNavButton {
+  border-left: 1px solid var(--border);
+}
+
+.pageNavButton:hover:not(:disabled),
+.pageNavButton:focus-visible {
+  background: var(--surface-3, var(--surface-1));
+  color: var(--accent);
+}
+
+.pageNavButton:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+.pageNavValue {
+  min-width: 68px;
+  padding: 0 var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .syncStatus[data-state='error'] { color: var(--danger, #b42318); }
 .syncStatus[data-state='saved'] { color: var(--success, #18864b); }
 .barSpacer { flex: 1 1 auto; }
@@ -260,6 +309,7 @@
 
 @media (max-width: 900px) {
   .pageStatus { display: none; }
+  .pageNavValue { min-width: 58px; padding-inline: var(--sp-1); }
   .actionButton span:not(.badge) { display: none; }
   .actionButton { width: 36px; padding-inline: 0; }
 }
@@ -267,6 +317,9 @@
 @media (max-width: 640px) {
   .bar { gap: var(--sp-1); padding-inline: var(--sp-2); }
   .close { width: 36px; padding-inline: 0; font-size: 0; }
+  .pageNavButton { width: 32px; height: 32px; flex-basis: 32px; }
+  .pageNav { min-height: 32px; }
+  .pageNavValue { min-width: 52px; }
   .fmt { display: none; }
   .syncStatus { max-width: 82px; overflow: hidden; text-overflow: ellipsis; }
   .body { width: 100vw; }

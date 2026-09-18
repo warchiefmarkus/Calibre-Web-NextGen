@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'wouter';
 import {
-  AlertTriangle, Check, Download, ExternalLink, LoaderCircle, StickyNote, Trash2, X,
+  AlertTriangle, Check, ChevronLeft, ChevronRight, Download, ExternalLink, LoaderCircle,
+  Maximize, Minimize, StickyNote, Trash2, X,
 } from 'lucide-react';
 import {
   PDFViewer,
@@ -27,7 +28,12 @@ import { EmptyState } from '../components/EmptyState';
 import { SpinnerCentered } from '../components/Spinner';
 import { VisuallyHidden } from '../components/VisuallyHidden';
 import { useT } from '../lib/i18n';
+import { useReaderFullscreen } from './reader/fullscreen';
 import styles from './PdfReader.module.css';
+
+type PdfUiCapability = {
+  disableOverlay: (overlayId: string, documentId?: string) => void;
+};
 
 type ServerPdfAnnotation = {
   annotation_id?: string;
@@ -176,7 +182,11 @@ export function PdfReader({ id, format }: { id: string; format: string }) {
   const downloadUrl = useMemo(() => resourceUrl(`/download/${id}/${fmt}`), [fmt, id]);
   const wasmUrl = useMemo(() => resourceUrl('/static/app/embedpdf/pdfium.wasm'), []);
   const positionQuery = useBookmark(id, fmt);
-  const { schedule: schedulePosition, saveError, saveState } = useReadingPositionSaver(id, fmt, 1000);
+  // Scroll events can fire continuously during a touch fling. The saver coalesces
+  // them and performs the network write only after the viewport has been idle.
+  const { schedule: schedulePosition, saveError, saveState } = useReadingPositionSaver(id, fmt, 450);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const { fullscreenSupported, isFullscreen, toggleFullscreen } = useReaderFullscreen(shellRef);
   const annotationCapabilityRef = useRef<AnnotationCapability | null>(null);
   const scrollCapabilityRef = useRef<ScrollCapability | null>(null);
   const subscriptionsRef = useRef<Array<() => void>>([]);
@@ -343,8 +353,12 @@ export function PdfReader({ id, format }: { id: string; format: string }) {
     subscriptionsRef.current.splice(0).forEach((unsubscribe) => unsubscribe());
     const annotationPlugin = registry.getPlugin(ANNOTATION_PLUGIN_ID);
     const scrollPlugin = registry.getPlugin(SCROLL_PLUGIN_ID);
+    const ui = registry.getPlugin('ui')?.provides?.() as PdfUiCapability | undefined;
     const annotations = annotationPlugin?.provides?.() as AnnotationCapability | undefined;
     const scroll = scrollPlugin?.provides?.() as ScrollCapability | undefined;
+    // The stock page-controls overlay sits over the bottom-center of the PDF.
+    // Keep the scroll/navigation plugin, but move page navigation into our bar.
+    ui?.disableOverlay('page-controls');
     if (!annotations || !scroll) {
       setSourceError(t('The PDF reader could not initialize its navigation or annotation plugins.'));
       return;
@@ -356,6 +370,9 @@ export function PdfReader({ id, format }: { id: string; format: string }) {
         if (event.type !== 'loaded') persistAnnotation(event);
       }),
       scroll.onLayoutReady((event) => {
+        // UI document state is guaranteed to exist by layout-ready; repeat the
+        // disable here in case the initial call raced document initialization.
+        ui?.disableOverlay('page-controls');
         if (event.isInitial) {
           setTotalPages(Math.max(1, scroll.getTotalPages()));
           setLayoutReady(true);
@@ -451,8 +468,36 @@ export function PdfReader({ id, format }: { id: string; format: string }) {
     annotations.deleteAnnotation(transfer.annotation.pageIndex, transfer.annotation.id);
   }, []);
 
-  const syncBusy = pendingAnnotationSaves > 0 || saveState === 'pending' || saveState === 'saving';
+  const goToPage = useCallback((page: number) => {
+    const scroll = scrollCapabilityRef.current;
+    if (!scroll) return;
+    const total = Math.max(1, scroll.getTotalPages());
+    const target = Math.max(1, Math.min(total, Math.trunc(page)));
+    setCurrentPage(target);
+    scroll.scrollToPage({ pageNumber: target, behavior: 'smooth', alignY: 0 });
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.('input, textarea, select, button, [contenteditable="true"]')) return;
+      if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+        event.preventDefault();
+        goToPage(currentPage - 1);
+      } else if (event.key === 'ArrowRight' || event.key === 'PageDown') {
+        event.preventDefault();
+        goToPage(currentPage + 1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [currentPage, goToPage]);
+
+  const positionPending = saveState === 'pending';
+  const syncBusy = pendingAnnotationSaves > 0 || saveState === 'saving';
   const syncFailed = annotationSaveError || saveError || saveState === 'error';
+  const syncState = syncFailed ? 'error' : syncBusy ? 'busy' : positionPending ? 'pending' : 'saved';
 
   if (sourceError) {
     return (
@@ -471,19 +516,31 @@ export function PdfReader({ id, format }: { id: string; format: string }) {
   }
 
   return (
-    <div className={styles.shell}>
+    <div ref={shellRef} className={styles.shell}>
       <VisuallyHidden as="h1">{t('PDF reader')}</VisuallyHidden>
       <div className={styles.bar}>
         <Link href={`/book/${id}`} className={styles.close} title={t('Close reader')} aria-label={t('Close reader')}>
           <X size={18} aria-hidden="true" focusable={false} /> {t('Close')}
         </Link>
         <span className={styles.fmt}>PDF</span>
-        <span className={styles.pageStatus}>{t('Page')} {currentPage} / {totalPages}</span>
-        <span className={styles.syncStatus} data-state={syncFailed ? 'error' : syncBusy ? 'busy' : 'saved'}>
+        <div className={styles.pageNav} role="group" aria-label={t('Page')}>
+          <button type="button" className={styles.pageNavButton}
+            onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1}
+            title={t('Previous page')} aria-label={t('Previous page')}>
+            <ChevronLeft size={17} aria-hidden="true" />
+          </button>
+          <span className={styles.pageNavValue} aria-live="off">{currentPage} / {totalPages}</span>
+          <button type="button" className={styles.pageNavButton}
+            onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages}
+            title={t('Next page')} aria-label={t('Next page')}>
+            <ChevronRight size={17} aria-hidden="true" />
+          </button>
+        </div>
+        <span className={styles.syncStatus} data-state={syncState}>
           {syncFailed ? <AlertTriangle size={15} aria-hidden="true" />
             : syncBusy ? <LoaderCircle className={styles.spin} size={15} aria-hidden="true" />
-              : <Check size={15} aria-hidden="true" />}
-          {syncFailed ? t('Sync error') : syncBusy ? t('Saving…') : t('Synced')}
+              : !positionPending ? <Check size={15} aria-hidden="true" /> : null}
+          {syncFailed ? t('Sync error') : syncBusy ? t('Saving…') : positionPending ? t('Pending') : t('Synced')}
         </span>
         <div className={styles.barSpacer} />
         <button className={styles.actionButton} onClick={() => setNotesOpen((open) => !open)}
@@ -499,6 +556,16 @@ export function PdfReader({ id, format }: { id: string; format: string }) {
           title={t('Download PDF')}>
           <Download size={17} aria-hidden="true" /> <span>{t('Download')}</span>
         </a>
+        {fullscreenSupported && (
+          <button type="button" className={styles.iconButton} onClick={toggleFullscreen}
+            title={isFullscreen ? t('Exit full screen') : t('Full screen')}
+            aria-label={isFullscreen ? t('Exit full screen') : t('Full screen')}
+            aria-pressed={isFullscreen}>
+            {isFullscreen
+              ? <Minimize size={18} aria-hidden="true" />
+              : <Maximize size={18} aria-hidden="true" />}
+          </button>
+        )}
       </div>
       <div className={styles.workspace}>
         <div className={styles.body}>
