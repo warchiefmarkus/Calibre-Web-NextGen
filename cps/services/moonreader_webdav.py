@@ -446,6 +446,7 @@ class BookMatcher:
         self._exact: dict[str, list[BookMatch]] = {}
         self._stem: dict[str, list[BookMatch]] = {}
         self._metadata: dict[str, list[tuple[str, BookMatch]]] = {}
+        self._metadata_glued: dict[str, list[tuple[str, str, BookMatch]]] = {}
         self._by_id_format: dict[tuple[int, str], BookMatch] = {}
         self._local_files: list[tuple[BookMatch, str, int | None]] = []
         originals = {
@@ -537,7 +538,11 @@ class BookMatcher:
         # download, so index the stable title+first-author prefix separately
         # from the physical Calibre filename.
         prefix = f"{title} {author}"
-        self._metadata.setdefault(str(match.format).upper(), []).append((prefix, match))
+        fmt = str(match.format).upper()
+        self._metadata.setdefault(fmt, []).append((prefix, match))
+        raw_author = unicodedata.normalize("NFKC", unquote(str(author_value or ""))).strip()
+        if raw_author:
+            self._metadata_glued.setdefault(fmt, []).append((title, raw_author, match))
 
     @staticmethod
     def _unique(values: list[BookMatch] | None, method: str) -> BookMatch | None:
@@ -573,19 +578,44 @@ class BookMatcher:
         stem, extension = os.path.splitext(filename)
         if " - " not in stem or not extension:
             return None
+        fmt = extension[1:].upper()
         key = self._text_key(stem)
         candidates = [
             (prefix, match)
-            for prefix, match in self._metadata.get(extension[1:].upper(), [])
+            for prefix, match in self._metadata.get(fmt, [])
             if key == prefix or key.startswith(prefix + " ")
         ]
-        if not candidates:
+        if candidates:
+            # Prefer the most-specific metadata prefix. If duplicate Calibre books
+            # still tie at that specificity, refuse to guess.
+            longest = max(len(prefix) for prefix, _ in candidates)
+            return self._unique(
+                [match for prefix, match in candidates if len(prefix) == longest],
+                "metadata",
+            )
+
+        # Some Moon+ builds concatenate embedded publisher metadata directly to
+        # the author with no separator, e.g. ``Майкл МерфиРИПОЛ классик``. Match
+        # that shape only when the title is exact and the glued suffix starts
+        # with an uppercase character. The uppercase guard prevents treating a
+        # longer surname such as ``Smithers`` as author ``Smith``.
+        raw_title, raw_tail = stem.split(" - ", 1)
+        title_key = self._text_key(raw_title)
+        tail = unicodedata.normalize("NFKC", unquote(raw_tail)).strip()
+        glued = []
+        for indexed_title, raw_author, match in getattr(self, "_metadata_glued", {}).get(fmt, []):
+            if indexed_title != title_key or len(tail) <= len(raw_author):
+                continue
+            if tail[:len(raw_author)].casefold() != raw_author.casefold():
+                continue
+            suffix = tail[len(raw_author):]
+            if suffix and not suffix[0].isspace() and suffix[0].isupper():
+                glued.append((len(raw_author), match))
+        if not glued:
             return None
-        # Prefer the most-specific metadata prefix. If duplicate Calibre books
-        # still tie at that specificity, refuse to guess.
-        longest = max(len(prefix) for prefix, _ in candidates)
+        longest = max(length for length, _ in glued)
         return self._unique(
-            [match for prefix, match in candidates if len(prefix) == longest],
+            [match for length, match in glued if length == longest],
             "metadata",
         )
 

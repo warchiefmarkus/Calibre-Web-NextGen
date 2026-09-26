@@ -165,6 +165,34 @@ def test_book_matcher_matches_opds_metadata_name_with_publisher_suffix():
     assert result.method == "metadata"
 
 
+def test_book_matcher_matches_publisher_glued_directly_to_author():
+    from cps.services.moonreader_webdav import BookMatch, BookMatcher
+    matcher = BookMatcher.__new__(BookMatcher)
+    matcher._metadata = {}
+    matcher._metadata_glued = {}
+    match = BookMatch(
+        210, "FB2", "Budushchieie tiela. Issliedovaniie dal'nie - Maikl Mierfi.fb2", "seed",
+    )
+    matcher._add_metadata_values(
+        "Будущее тела. Исследование дальнейшей эволюции человека",
+        "Майкл Мерфи",
+        match,
+    )
+
+    result = matcher.match_metadata_filename(
+        "Moon/.Moon+/Cache/Будущее тела. Исследование дальнейшей эволюции человека - "
+        "Майккы Мерфилософ.ПОЛ классик.fb2.po"
+    )
+    assert result.book_id == 210
+    assert result.format == "FB2"
+    assert result.method == "metadata"
+
+    assert matcher.match_metadata_filename(
+        "Moon/.Moon+/Cache/Будущее тела. Исследование дальнейшей эволюции человека - "
+        "Майкл Мерфилософ.fb2.po"
+    ) is None
+
+
 def test_book_matcher_metadata_name_refuses_ambiguous_duplicate_books():
     from cps.services.moonreader_webdav import BookMatch, BookMatcher
     matcher = BookMatcher.__new__(BookMatcher)
