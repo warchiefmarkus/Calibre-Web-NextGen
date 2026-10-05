@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import type { ReaderBookmark as SyncedReaderBookmark } from './readerResume';
-import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { ReaderFontCatalog } from './readerFonts';
+import { keepPreviousData, useQuery, useMutation, useQueryClient, useIsMutating } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import {
-  apiGet, apiPost, apiPut, apiPatch, apiDelete, apiUpload, apiPostForm, ApiError,
+  apiGet, apiPost, apiPut, apiPatch, apiDelete, apiUpload, apiPostForm, apiPostDownload, ApiError,
   navigateToLogout, noteSessionIdentity,
   getMetadataProviders, setMetadataProviderActive,
 } from './api';
@@ -2117,6 +2118,45 @@ export function useDeleteKoboSyncToken() {
     onSuccess: () => qc.setQueryData<KoboSyncToken>(KOBO_SYNC_TOKEN_KEY, (old) => (
       old ? { ...old, configured: false, sync_url: null } : old
     )),
+  });
+}
+
+export function useForceKoboFullSync() {
+  return useMutation({
+    mutationFn: () => apiPost<{ user_id: number; sync_entries_deleted: number }>(
+      '/api/v1/account/kobo-full-sync',
+    ),
+  });
+}
+
+const koreaderPairPath = (code: string) =>
+  `/api/v1/devices/koreader/pair/${encodeURIComponent(code)}`;
+
+export function useLookupKoreaderPair() {
+  return useMutation({
+    mutationFn: (code: string) => apiGet<KoreaderPairRequest>(koreaderPairPath(code)),
+  });
+}
+
+export function useAnswerKoreaderPair() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ code, approve }: { code: string; approve: boolean }) =>
+      apiPost<KoreaderPairRequest>(`${koreaderPairPath(code)}/${approve ? 'approve' : 'deny'}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['account'] });
+      void qc.invalidateQueries({ queryKey: ['annotation-devices'] });
+    },
+  });
+}
+
+export function useKoreaderSetupBundle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (server: string) => apiPostDownload(
+      '/api/v1/devices/koreader/setup-bundle', { server },
+    ),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['account'] }); },
   });
 }
 

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
-  Library, Globe, BookCopy, Sparkles,
+  Library, Globe, BookCopy, Sparkles, ChevronDown, Plus, BookPlus, Tag,
   Info, ListChecks, Table2, Wand2, Files, SlidersHorizontal, Check, RotateCcw, X, Pin, PinOff,
 } from 'lucide-react';
 import { useShelves, useMe, useMagicShelves, useUpdateSidebar } from '../lib/queries';

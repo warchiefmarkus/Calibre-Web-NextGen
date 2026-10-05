@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'wouter';
+import { Link, useSearch } from 'wouter';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { apiGet, apiUrl } from '../lib/api';
 import { EmptyState } from '../components/EmptyState';

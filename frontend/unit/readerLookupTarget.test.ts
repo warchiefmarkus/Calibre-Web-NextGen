@@ -4,7 +4,7 @@ import { getPrimaryReadTarget, withLookupMode } from '../src/lib/readerTarget.ts
 
 test('lookup targets preserve format choice, existing source and passage', () => {
   for (const [formats, expected] of [
-    [['EPUB'], '/read/42?lookup=1'],
+    [['EPUB'], '/view/42/epub?lookup=1'],
     [['PDF'], '/view/42/pdf?lookup=1'],
     [['MP3'], '/view/42/mp3?lookup=1'],
   ] as [string[], string][]) {

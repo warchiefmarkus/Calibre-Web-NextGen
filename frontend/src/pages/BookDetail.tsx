@@ -1,4 +1,3 @@
-import { BookReview } from '../components/BookReview';
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } from 'react';
 import { Link, useParams, useLocation } from 'wouter';
 import { Download, Pencil, Star, Archive, EyeOff, Eye, Send, Highlighter, Image as ImageIcon, Plus, X, BookOpen, BookCheck, BookPlus, BookX, Trash2, RefreshCw, TabletSmartphone, Settings, Upload as UploadIcon, Cloud } from 'lucide-react';
@@ -24,14 +23,16 @@ import { MoreByAuthor } from '../components/MoreByAuthor';
 import { AUTHOR_SEPARATOR, formatAuthors } from '../lib/authors';
 import { SpinnerCentered, Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
-import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef, DeliveryDevice } from '../lib/api';
+import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef, DeliveryDevice, OtherEreader } from '../lib/api';
 import { ApiError, resourceUrl, resourceSrcSet } from '../lib/api';
-import { useT } from '../lib/i18n';
-import { getPrimaryReadTarget } from '../lib/readerTarget';
+import { useT, useI18n } from '../lib/i18n';
+import { formatCustomColumnDate } from '../lib/customColumnDisplay';
+import { getPrimaryReadTarget, withLookupMode } from '../lib/readerTarget';
+import { hasRecipients, toggleRecipients } from '../lib/sendRecipients';
 import { EXTERNAL_RATING_SOURCE_LABELS, formatExternalRatingScore } from '../lib/externalRating';
 import { CoverProgressBadge } from '../components/CoverProgressBadge';
 import { formatReadingProgress } from '../lib/readerProgress';
-import { canDeleteBooks, canDownloadBooks, canReadBooks, canUploadBooks } from '../lib/permissions';
+import { canDeleteBooks, canDownloadBooks, canEditBookCover, canReadBooks, canUploadBooks } from '../lib/permissions';
 import styles from './BookDetail.module.css';
 import { useCardActionsHidden } from '../lib/useCardActionsHidden';
 import { useReadingTagsHidden } from '../lib/useReadingTagsHidden';
@@ -146,7 +147,9 @@ function ExternalRatingsPanel({ bookId }: { bookId: number }) {
   );
 }
 
-function formatCustomValue(column: CustomColumn, entry: CustomColumnValue, yes: string, no: string): string {
+function formatCustomValue(
+  column: CustomColumn, entry: CustomColumnValue, yes: string, no: string, locale?: string,
+): string {
   const value = entry.value;
   if (value === null || value === undefined) return '';
   if (column.datatype === 'bool') return value ? yes : no;

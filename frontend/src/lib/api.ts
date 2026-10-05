@@ -144,6 +144,8 @@ export interface Me {
   acquisition_access?: boolean;
 }
 
+export type ReadingStatus = 'unread' | 'finished' | 'in_progress' | 'did_not_finish' | 'on_hold';
+
 export interface ExternalRatingSummary {
   source: 'goodreads' | 'hardcover' | 'google_books' | 'open_library';
   rating: number;
@@ -717,6 +719,16 @@ export interface KoboSyncToken {
   sync_url: string | null;
   server_url: string;
   is_localhost: boolean;
+}
+
+export interface KoreaderPairRequest {
+  user_code: string;
+  device_name: string;
+  requested_at: string | null;
+  expires_at: string | null;
+  ip: string | null;
+  same_network?: boolean | null;
+  status: 'pending' | 'approved' | 'denied' | 'claimed';
 }
 
 export interface MoonReaderSyncSummary {
