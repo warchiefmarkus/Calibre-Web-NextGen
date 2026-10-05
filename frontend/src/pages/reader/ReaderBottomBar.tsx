@@ -22,7 +22,7 @@ export function ReaderBottomBar(props: {
     </button>
     <div className={styles.progressArea}>
       <div className={styles.progressMeta}>
-        <span>{props.location.tocItem?.label || t('Book')}</span>
+        {!isMobile && <span>{props.location.tocItem?.label || t('Book')}</span>}
         <span>{props.location.pageItem?.label ? `${t('Page')} ${props.location.pageItem.label} · ` : ''}
           {props.location.location?.current && props.location.location?.total
             ? `${t('Location')} ${props.location.location.current}/${props.location.location.total} · ` : ''}{props.percent}%</span>

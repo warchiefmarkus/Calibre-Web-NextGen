@@ -1,6 +1,6 @@
 import { Link } from 'wouter';
 import {
-  Bookmark, BookOpen, Languages, List, MapPin, Maximize, Minimize, Search, Settings,
+  Bookmark, BookOpen, EyeOff, Languages, List, MapPin, Maximize, Minimize, Search, Settings,
   Square, StickyNote, Volume2, X,
 } from 'lucide-react';
 import type { ReaderSettings } from '../../lib/queries';
@@ -28,6 +28,7 @@ export function ReaderToolbar(props: {
   fullscreenSupported: boolean;
   isFullscreen: boolean;
   toggleFullscreen: () => void;
+  hideChrome: () => void;
 }) {
   const t = useT();
   const togglePanel = (value: Exclude<ReaderPanel, null>) => props.setPanel(props.panel === value ? null : value);
@@ -85,6 +86,10 @@ export function ReaderToolbar(props: {
         aria-label={props.isFullscreen ? t('Exit full screen') : t('Full screen')} aria-pressed={props.isFullscreen}>
         {props.isFullscreen ? <Minimize size={19} aria-hidden="true" /> : <Maximize size={19} aria-hidden="true" />}
       </button>}
+      <button className={styles.iconButton} onClick={props.hideChrome}
+        title={`${t('Hide reader controls')} (F10)`} aria-label={t('Hide reader controls')}>
+        <EyeOff size={19} aria-hidden="true" />
+      </button>
     </nav>
   </header>;
 }

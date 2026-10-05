@@ -175,12 +175,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   const archiveRef = useRef<ArrayBuffer | null>(null);
   const shareWithDevicesRef = useRef(true);
   const previewSourceRef = useRef<ReadingSource | null>(null);
+  const chromeHiddenRef = useRef(false);
 
   const { fullscreenSupported, isFullscreen, toggleFullscreen } = useReaderFullscreen(shellRef);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReaderPanel>(null);
+  const [chromeHidden, setChromeHidden] = useState(false);
   const readingSourcesQuery = useReadingSources(
     id, readingPlacesAvailable && (panel === 'places' || !!requestedSource),
   );
@@ -221,6 +223,14 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   }, [ready, requestedSource, readingPlacesAvailable]);
 
   const closePanel = useCallback(() => setPanel(null), []);
+  const setReaderChromeHidden = useCallback((hidden: boolean) => {
+    chromeHiddenRef.current = hidden;
+    setChromeHidden(hidden);
+    if (hidden) setPanel(null);
+  }, []);
+  const toggleReaderChrome = useCallback(() => {
+    setReaderChromeHidden(!chromeHiddenRef.current);
+  }, [setReaderChromeHidden]);
   const closeAnnotationEditor = useCallback(() => setAnnotationEditor(null), []);
 
   const openEditAnnotation = useCallback((annotation: FoliateAnnotation) => {
@@ -1306,6 +1316,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         startX: number;
         startY: number;
         preserveSelection: boolean;
+        moved: boolean;
+        target: Element | null;
       } | null = null;
 
       const clearNativeSelection = () => {
@@ -1362,6 +1374,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           startX: touch.clientX,
           startY: touch.clientY,
           preserveSelection: !!doc.getSelection()?.toString(),
+          moved: false,
+          target: event.target as Element | null,
         };
       };
       const handleTouchMove = (event: TouchEvent) => {
@@ -1370,6 +1384,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         const touch = event.touches[0];
         const distance = Math.hypot(touch.clientX - gesture.startX, touch.clientY - gesture.startY);
         if (distance < READER_TOUCH_MOVE_THRESHOLD_PX) return;
+        gesture.moved = true;
         if (Date.now() - gesture.startedAt < READER_TOUCH_SELECTION_HOLD_MS) {
           suppressTouchSelectionUntil = Date.now() + READER_TOUCH_SELECTION_SUPPRESS_MS;
           clearNativeSelection();
@@ -1378,8 +1393,11 @@ export function Reader({ id, format }: { id: string; format?: string }) {
       const handleTouchEnd = () => {
         const gesture = touchGesture;
         touchGesture = null;
-        if (gesture && !gesture.preserveSelection
+        if (gesture && !gesture.preserveSelection && !gesture.moved
             && Date.now() - gesture.startedAt < READER_TOUCH_SELECTION_HOLD_MS) {
+          if (chromeHiddenRef.current && !gesture.target?.closest?.('a[href]')) {
+            setReaderChromeHidden(false);
+          }
           suppressTouchSelectionUntil = Date.now() + READER_TOUCH_SELECTION_SUPPRESS_MS;
           clearNativeSelection();
           window.setTimeout(clearNativeSelection, 80);
@@ -1409,6 +1427,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         void activateReaderLink(anchor, doc);
       };
       doc.addEventListener('click', routeBookLink, true);
+      doc.addEventListener('click', (event) => {
+        if (!chromeHiddenRef.current) return;
+        const target = event.target as Element | null;
+        if (target?.closest?.('a[href]')) return;
+        setReaderChromeHidden(false);
+      }, { passive: true });
 
       const armMovement = markReadingMovement;
       const armPointerDrag = (event: PointerEvent) => {
@@ -1593,9 +1617,15 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     positionQuery.isFetched, selectedFormat,
     settingsQuery.data, bookStateQuery.data, bookStateQuery.isFetching,
     schedulePosition, dismissSelection, handleReaderWheel, scheduleLinkSync, activateReaderLink,
-    markReadingMovement, openEditAnnotation, resetReadingMovement, restoreInlineTranslations, t]);
+    markReadingMovement, openEditAnnotation, resetReadingMovement, restoreInlineTranslations,
+    setReaderChromeHidden, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!event.repeat && event.key === 'F10') {
+      event.preventDefault();
+      toggleReaderChrome();
+      return;
+    }
     if (isReaderTypingTarget(event.target)) return;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
@@ -1900,8 +1930,10 @@ export function Reader({ id, format }: { id: string; format?: string }) {
   if (bookQuery.error) return <EmptyState message={t('Could not load the book.')} />;
   if (!selectedFormat) return <EmptyState message={t('No supported reader format is available.')} />;
   return (
-    <main ref={shellRef} className={`${styles.reader} ${styles[settings?.theme ?? 'lightTheme']}`}>
-      <ReaderToolbar
+    <main ref={shellRef} className={`${styles.reader} ${styles[settings?.theme ?? 'lightTheme']} ${
+      chromeHidden ? styles.readerChromeHidden : ''
+    }`}>
+      {!chromeHidden && <ReaderToolbar
         bookId={id} title={title || bookQuery.data?.title || t('Untitled')} format={selectedFormat.format}
         panel={panel} setPanel={setPanel} canBookmark={!!location.cfi && !createBookmark.isPending}
         addBookmark={addReaderBookmark} speaking={speaking} toggleSpeech={toggleSpeech}
@@ -1910,7 +1942,8 @@ export function Reader({ id, format }: { id: string; format?: string }) {
         translationSkipped={translationSkipped} translationActivity={translationActivity}
         translationLoading={translationLoading} translationPreloading={translationPreloading}
         fullscreenSupported={fullscreenSupported} isFullscreen={isFullscreen} toggleFullscreen={toggleFullscreen}
-      />
+        hideChrome={() => setReaderChromeHidden(true)}
+      />}
 
       {remoteResume && (
         <div className={styles.resumeNotice} role="status">
@@ -2031,6 +2064,12 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           ref={stageRef}
           className={styles.stage}
           aria-label={t('Book content')}
+          onClick={(event) => {
+            if (!chromeHiddenRef.current) return;
+            const target = event.target as Element | null;
+            if (target?.closest?.('a, button, input, textarea, select, [role="button"], [data-reader-wheel-page-zone]')) return;
+            setReaderChromeHidden(false);
+          }}
         >
           {!ready && !error && <div className={styles.stageLoading}><SpinnerCentered size={44} /></div>}
           {error && <EmptyState message={error} />}
@@ -2127,7 +2166,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           </section>
         </>
       )}
-      <ReaderBottomBar location={location} percent={percent} progress={progress}
+      {!chromeHidden && <ReaderBottomBar location={location} percent={percent} progress={progress}
         sectionFractions={sectionFractions}
         previous={() => navigateReaderOrClosePanel('prev')}
         next={() => navigateReaderOrClosePanel('next')}
@@ -2138,7 +2177,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           setLocation((current) => ({ ...current, fraction }));
           void viewRef.current?.goToFraction(fraction);
         }}
-      />
+      />}
       {saveError && <div className={styles.saveError} role="alert">
         {t('Could not save reading position. It will be retried automatically.')}
       </div>}

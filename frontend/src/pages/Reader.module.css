@@ -18,6 +18,10 @@
   color: var(--reader-text);
 }
 
+.reader.readerChromeHidden {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .lightTheme { color-scheme: light; }
 .sepiaTheme {
   color-scheme: light;
@@ -911,6 +915,11 @@
   }
   .progressMeta span:first-child { max-width: 48%; }
   .progressMeta span:last-child { max-width: 52%; }
+  .progressMeta span:only-child {
+    max-width: 100%;
+    flex: 1 1 auto;
+    text-align: center;
+  }
   .selectionBar {
     top: auto;
     right: 8px;
