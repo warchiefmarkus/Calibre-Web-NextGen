@@ -87,7 +87,7 @@ export function ReaderToolbar(props: {
         {props.isFullscreen ? <Minimize size={19} aria-hidden="true" /> : <Maximize size={19} aria-hidden="true" />}
       </button>}
       <button className={styles.iconButton} onClick={props.hideChrome}
-        title={`${t('Hide reader controls')} (F10)`} aria-label={t('Hide reader controls')}>
+        title={`${t('Hide reader controls')} (F9 / F10)`} aria-label={t('Hide reader controls')}>
         <EyeOff size={19} aria-hidden="true" />
       </button>
     </nav>

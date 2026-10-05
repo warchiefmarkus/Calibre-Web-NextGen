@@ -1621,7 +1621,7 @@ export function Reader({ id, format }: { id: string; format?: string }) {
     setReaderChromeHidden, t]);
   function onReaderKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (!event.repeat && event.key === 'F10') {
+    if (!event.repeat && (event.key === 'F9' || event.key === 'F10')) {
       event.preventDefault();
       toggleReaderChrome();
       return;
