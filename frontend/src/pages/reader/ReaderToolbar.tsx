@@ -81,15 +81,15 @@ export function ReaderToolbar(props: {
         title={t('Page translation')} aria-pressed={props.panel === 'translation'}><Languages size={19} aria-hidden="true" /></button>
       <button className={styles.iconButton} onClick={() => togglePanel('settings')}
         title={t('Reader settings')} aria-pressed={props.panel === 'settings'}><Settings size={19} aria-hidden="true" /></button>
+      <button className={styles.iconButton} onClick={props.hideChrome}
+        title={`${t('Hide reader controls')} (F9 / F10)`} aria-label={t('Hide reader controls')}>
+        <EyeOff size={19} aria-hidden="true" />
+      </button>
       {props.fullscreenSupported && <button className={styles.iconButton} onClick={props.toggleFullscreen}
         title={props.isFullscreen ? t('Exit full screen') : t('Full screen')}
         aria-label={props.isFullscreen ? t('Exit full screen') : t('Full screen')} aria-pressed={props.isFullscreen}>
         {props.isFullscreen ? <Minimize size={19} aria-hidden="true" /> : <Maximize size={19} aria-hidden="true" />}
       </button>}
-      <button className={styles.iconButton} onClick={props.hideChrome}
-        title={`${t('Hide reader controls')} (F9 / F10)`} aria-label={t('Hide reader controls')}>
-        <EyeOff size={19} aria-hidden="true" />
-      </button>
     </nav>
   </header>;
 }
