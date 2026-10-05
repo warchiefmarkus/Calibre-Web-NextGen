@@ -1585,6 +1585,7 @@ export interface ReaderSettings {
   animated: boolean;
   tapToTurn: boolean;
   justifyText: boolean;
+  showFullscreenProgress: boolean;
   translationEnabled: boolean;
   translationCacheEnabled: boolean;
   translationPreloadNextPage: boolean;

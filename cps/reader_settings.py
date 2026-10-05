@@ -26,6 +26,7 @@ READER_DEFAULTS = {
     "animated": True,
     "tapToTurn": True,
     "justifyText": False,
+    "showFullscreenProgress": True,
     "translationEnabled": False,
     "translationCacheEnabled": True,
     "translationPreloadNextPage": False,
@@ -94,7 +95,7 @@ def sanitize_reader_settings(payload, custom_font_ids=None):
         if value is not None:
             out[key] = value
     for key in (
-        "reflow", "animated", "tapToTurn", "justifyText",
+        "reflow", "animated", "tapToTurn", "justifyText", "showFullscreenProgress",
         "translationEnabled", "translationCacheEnabled", "translationPreloadNextPage",
     ):
         value = payload.get(key)

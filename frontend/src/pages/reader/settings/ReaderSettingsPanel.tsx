@@ -74,6 +74,11 @@ export function ReaderSettingsPanel({ settings, update }: {
           onChange={(event) => update({ tapToTurn: event.target.checked })} />
         {t('Turn pages by clicking the left or right side')}
       </label>
+      <label className={styles.checkboxLabel}>
+        <input type="checkbox" checked={settings.showFullscreenProgress}
+          onChange={(event) => update({ showFullscreenProgress: event.target.checked })} />
+        {t('Show reading progress in full screen')}
+      </label>
       <div className={styles.settingsHint}>
         <AlignJustify size={18} aria-hidden="true" />
         <span>{t('Reader settings are saved to your account and follow you across devices.')}</span>

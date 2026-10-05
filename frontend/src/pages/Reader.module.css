@@ -22,6 +22,21 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
+.fullscreenProgress {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right, 0px));
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  z-index: 1006;
+  color: var(--reader-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  text-shadow: 0 1px 2px var(--reader-bg);
+}
+
 .lightTheme { color-scheme: light; }
 .sepiaTheme {
   color-scheme: light;

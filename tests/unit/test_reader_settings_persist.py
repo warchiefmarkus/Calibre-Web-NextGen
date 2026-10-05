@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from cps.web import sanitize_reader_settings, _reader_setting_int
+from cps.reader_settings import resolved_reader_settings
 
 
 def test_keeps_each_valid_field():
@@ -19,6 +20,7 @@ def test_keeps_each_valid_field():
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
         "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
         "animated": False, "tapToTurn": False, "justifyText": True,
+        "showFullscreenProgress": False,
         "translationCacheEnabled": False, "translationPreloadNextPage": True,
     })
     assert out == {
@@ -26,6 +28,7 @@ def test_keeps_each_valid_field():
         "fontSize": 150, "margin": 40, "lineHeight": 160, "reflow": True,
         "flow": "scrolled", "maxColumnCount": 1, "maxInlineSize": 840,
         "animated": False, "tapToTurn": False, "justifyText": True,
+        "showFullscreenProgress": False,
         "translationCacheEnabled": False, "translationPreloadNextPage": True,
     }
 
@@ -72,10 +75,16 @@ def test_flow_and_boolean_coercion():
     assert sanitize_reader_settings({"tapToTurn": "false"})["tapToTurn"] is False
     assert sanitize_reader_settings({"justifyText": True})["justifyText"] is True
     assert sanitize_reader_settings({"justifyText": "false"})["justifyText"] is False
+    assert sanitize_reader_settings({"showFullscreenProgress": True})["showFullscreenProgress"] is True
+    assert sanitize_reader_settings({"showFullscreenProgress": "false"})["showFullscreenProgress"] is False
     assert sanitize_reader_settings({"translationCacheEnabled": True})["translationCacheEnabled"] is True
     assert sanitize_reader_settings({"translationCacheEnabled": "false"})["translationCacheEnabled"] is False
     assert sanitize_reader_settings({"translationPreloadNextPage": True})["translationPreloadNextPage"] is True
     assert sanitize_reader_settings({"translationPreloadNextPage": "false"})["translationPreloadNextPage"] is False
+
+
+def test_fullscreen_progress_defaults_on():
+    assert resolved_reader_settings({})["showFullscreenProgress"] is True
 
 
 def test_non_dict_payload_is_empty():

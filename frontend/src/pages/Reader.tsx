@@ -2166,6 +2166,11 @@ export function Reader({ id, format }: { id: string; format?: string }) {
           </section>
         </>
       )}
+      {isFullscreen && settings?.showFullscreenProgress && (
+        <div className={styles.fullscreenProgress} aria-label={t('Reading progress')}>
+          {percent}%
+        </div>
+      )}
       {!chromeHidden && <ReaderBottomBar location={location} percent={percent} progress={progress}
         sectionFractions={sectionFractions}
         previous={() => navigateReaderOrClosePanel('prev')}
