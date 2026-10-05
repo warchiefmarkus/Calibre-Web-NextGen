@@ -5,7 +5,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
-import atexit
 import os
 import re
 import sys
@@ -37,6 +36,7 @@ from sqlalchemy import create_engine, DDL, exc, exists, event, text
 from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, UniqueConstraint
 from sqlalchemy import String, Integer, SmallInteger, Boolean, DateTime, Float, JSON, Text, BLOB
 from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.pool import NullPool
 from sqlalchemy.sql.expression import func
 try:
     # Compatibility with sqlalchemy 2.0
@@ -195,11 +195,25 @@ class UserBase:
     def role_edit_shelfs(self):
         return self._has_role(constants.ROLE_EDIT_SHELFS)
 
+    def role_share_shelfs(self):
+        """Whether this signed-in account may publish its own shelves."""
+        return bool(
+            self.is_authenticated
+            and not self.is_anonymous
+            and getattr(self, "share_shelfs", True)
+        )
+
     def role_delete_books(self):
         return self._has_role(constants.ROLE_DELETE_BOOKS)
 
     def role_viewer(self):
         return self._has_role(constants.ROLE_VIEWER)
+
+    def role_acquisition_access(self):
+        return self._has_role(constants.ROLE_ACQUISITION_ACCESS)
+
+    def role_acquisition_auto_approve(self):
+        return self._has_role(constants.ROLE_ACQUISITION_AUTO_APPROVE)
 
     def role_browse_global(self):
         return self._has_role(constants.ROLE_BROWSE_GLOBAL)
@@ -284,6 +298,9 @@ class User(UserBase, Base):
     name = Column(String(64), unique=True)
     email = Column(String(120), unique=True, default="")
     role = Column(SmallInteger, default=constants.ROLE_USER)
+    # Publishing one's own shelves is independent from editing other users'
+    # public shelves (ROLE_EDIT_SHELFS). Existing installs are backfilled on.
+    share_shelfs = Column(Boolean, nullable=False, default=True, server_default=text("1"))
     password = Column(String)
     kindle_mail = Column(String(120), default="")
     kindle_mail_subject = Column(String(256), default="", doc="Subject line for eReader email sending, empty=default")
@@ -307,7 +324,7 @@ class User(UserBase, Base):
         cascade="all, delete-orphan",
     )
     view_settings = Column(JSON, default={})
-    kobo_only_shelves_sync = Column(Integer, default=0)
+    kobo_only_shelves_sync = Column(Integer, default=1)
     opds_only_shelves_sync = Column(Integer, default=0)
     # Named library-mode selector. False is monolibrary mode: this account's
     # library continuously mirrors the global archive. True is personal mode:
@@ -513,7 +530,8 @@ class UserAppPassword(Base):
     LDAP users may prefer not to expose their directory password to OPDS / KOSync
     clients. App passwords let any user mint a long random token bound to a
     label (e.g. "Kobo", "KOReader iPad"); the cleartext is shown once at create
-    time and then only its `werkzeug` hash is stored.
+    time. What is kept, and why a fast digest is safe for these secrets, is
+    explained in ``cps/services/app_passwords.py``.
 
     See `notes/oauth-opds-app-passwords-DESIGN.md` and fork issue #95.
     """
@@ -524,10 +542,47 @@ class UserAppPassword(Base):
                      nullable=False, index=True)
     label = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
+    # SHA-256 hex of the cleartext: how sign-in finds the row. NULL on rows
+    # saved before it existed until their first sign-in fills it in.
+    token_digest = Column(String(64), index=True)
     created_at = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
     last_used_at = Column(DateTime)
     revoked = Column(Boolean, nullable=False, default=False)
+
+
+class KOReaderPairing(Base):
+    """One "connect this e-reader with a code" request (a device grant).
+
+    The device shows ``user_code``; a signed-in reader types it on the website
+    and approves or denies. The device polls with its ``device_code``, which
+    is a 256-bit secret stored only as a SHA-256 digest. On the first poll
+    after approval the device receives a freshly minted app password, exactly
+    once; its cleartext is never stored. Rows live ten minutes and are swept
+    by ``clean_database``. See ``cps/services/koreader_pairing.py``.
+    """
+    __tablename__ = 'koreader_pairing'
+
+    id = Column(Integer, primary_key=True)
+    user_code = Column(String(8), nullable=False, unique=True)
+    device_code_hash = Column(String(64), nullable=False, unique=True)
+    device_name = Column(String(100), nullable=False)
+    # The id the device sends with every call: a device asking again replaces
+    # its own waiting code instead of adding another.
+    device_id = Column(String(100))
+    requester_ip = Column(String(64))
+    # What the waiting-code limit counts: the IPv4 address, or the IPv6 /64.
+    requester_net = Column(String(64), index=True)
+    status = Column(String(16), nullable=False, default="pending")
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'),
+                     index=True)
+    created_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    decided_at = Column(DateTime)
+    claimed_at = Column(DateTime)
+    last_poll_at = Column(DateTime)
+    app_password_id = Column(Integer, ForeignKey('user_app_password.id',
+                                                 ondelete='SET NULL'))
 
 
 # Baseclass representing Shelfs in calibre-web in app.db
@@ -668,7 +723,8 @@ class MyLibraryAdminIntro(Base):
     administrator and must survive sessions, so it lives in app.db rather than
     per-user rows or browser storage. ``snapshot_json`` holds the pre-enable
     restore point — {user_id: {"browse_global": bool, "has_own_library": bool}}
-    for every account the enable action touched — so Undo is a true restore
+    for every account the enable action touched, plus a completion receipt and
+    any last error for resumable setup — so Undo is a true restore
     rather than a re-derivation. Membership rows and the seed-once fence are
     deliberately NOT part of the snapshot: undo leaves each selection dormant
     (the keep-dormant guarantee), exactly like a per-user mode switch back to
@@ -677,6 +733,7 @@ class MyLibraryAdminIntro(Base):
     __tablename__ = 'my_library_admin_intro'
 
     STATUS_NOT_ENABLED = 'not_enabled'
+    STATUS_INCOMPLETE = 'incomplete'
     STATUS_ENABLED = 'enabled'
 
     id = Column(Integer, primary_key=True)
@@ -721,6 +778,8 @@ class ReadBook(Base):
     STATUS_UNREAD = 0
     STATUS_FINISHED = 1
     STATUS_IN_PROGRESS = 2
+    STATUS_DID_NOT_FINISH = 3
+    STATUS_ON_HOLD = 4
 
     id = Column(Integer, primary_key=True)
     book_id = Column(Integer, unique=False)
@@ -735,6 +794,10 @@ class ReadBook(Base):
     last_modified = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     last_time_started_reading = Column(DateTime, nullable=True)
     times_started_reading = Column(Integer, default=0, nullable=False)
+    # Explicit user intent is independent of device/status observation clocks.
+    # Automatic-created rows have no choice; migration snapshots legacy clocks
+    # once as an inferred historical baseline, never as a runtime fallback.
+    read_status_choice_at = Column(DateTime, nullable=True)
 
     # Audit 2026-05-11: enforce per-(user, book) uniqueness so concurrent
     # Kobo PUTs can't produce duplicate rows. The Kobo state handler reads
@@ -1011,6 +1074,30 @@ class UserLibraryBook(Base):
     )
 
 
+class BookReview(Base):
+    """A private plain-text review/note owned by one account for one book.
+
+    ``book_id`` belongs to metadata.db, so it intentionally has no cross-db
+    foreign key.  The unique pair makes concurrent creation safe and keeps a
+    user's private note separate from Calibre's shared description.
+    """
+    __tablename__ = 'book_review'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'),
+                     nullable=False, index=True)
+    book_id = Column(Integer, nullable=False, index=True)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'book_id', name='uq_book_review_user_book'),
+    )
+
+
 class UserBookCover(Base):
     """One viewer's cover choice for one global Calibre book.
 
@@ -1119,8 +1206,9 @@ class KoboDeviceBookEntitlement(Base):
     # Canonical, constituent-preserving book/archive clock encoding that
     # justified the delivered entitlement. A declared renderer-schema
     # transition may replace the fingerprint only while this entire non-null
-    # tuple is byte-identical. NULL is retained for #1925 rows and deliberately
-    # fails open on a changed payload.
+    # tuple is byte-identical. The one-time classification audit stamps it on
+    # a kept #1925 row only when neither clock moved after the row was
+    # written; any other NULL fails open on a changed payload.
     change_basis = Column(Text, nullable=True)
     updated_at = Column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
@@ -1221,9 +1309,12 @@ class KoboDeviceEntitlementSeed(Base):
     seeded_at = Column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
     )
-    # Version 1 means the per-device rows were audited against the legacy
-    # New/Changed classifier.  Version 0 rows predate #1735 and may include
-    # fingerprints for ChangedEntitlements a device could not apply.
+    # Version 1 means the one-time pre-#2025 audit has run for this device.
+    # Version 0 rows were written by the shipped v4.1.43 seed, which copied
+    # the user-wide flat history onto every Kobo it sealed, and by v4.1.43's
+    # deliveries, recorded when sent.  The audit keeps the rows whose books
+    # the account took delivery of, stamps the change basis each kept row can
+    # vouch for, and clears every recorded tombstone.
     classification_version = Column(
         Integer, nullable=False, default=0, server_default="0",
     )
@@ -1597,6 +1688,8 @@ class Device(Base):
     __table_args__ = (
         Index('ix_device_user_active_last_seen', 'user_id', 'active', 'last_seen_at'),
         Index('ix_device_user_display_name', 'user_id', 'display_name'),
+        Index('uq_device_account_browser', 'user_id', unique=True,
+              sqlite_where=text("kind = 'webreader' AND created_by = 'account-browser'")),
     )
 
 
@@ -1865,6 +1958,11 @@ class Annotation(Base):
     # not safe to present to epub.js as CFIs.
     start_xpointer = Column(Text, nullable=True)
     end_xpointer = Column(Text, nullable=True)
+    # The passage as a word-based client named it: JSON
+    # ``{"exact", "prefix", "suffix"}`` (services/text_anchor). Kept after the
+    # server places it, so the words go back to that client unchanged and an
+    # unplaced one (``position_type`` 'text_quote') can be placed later.
+    text_quote = Column(Text, nullable=True)
     # Phase 2 (KOReader bridge) — opaque per-device id of the row a device last
     # wrote/saw for this annotation (e.g. the KoboReader.sqlite Bookmark.BookmarkID
     # the plugin created). Lets the plugin dedup + suppress feedback loops without
@@ -1915,9 +2013,10 @@ class Annotation(Base):
         ),
     )
 
-    _VALID_SOURCES = {"kobo", "webreader", "koreader"}
+    _VALID_SOURCES = {"kobo", "webreader", "koreader", "textquote"}
     _VALID_POSITION_TYPES = {
         "cfi", "pdf_quad", "comic_page", "koreader_xpointer", "unanchored",
+        "text_quote",
     }
 
     @validates("source")
@@ -3042,6 +3141,10 @@ def migrate_user_table(engine, _session):
             "NOT NULL DEFAULT 0",
         )
 
+    # #1734 — publishing a user's own shelves is independent of the existing
+    # edit-public-shelves role. Preserve current behavior for existing users.
+    migrate_user_share_shelfs(engine)
+
     # Keep full User entity loads below every additive User-column migration.
     # SQLAlchemy selects every mapped column for query(User), so loading rows
     # before a later ALTER makes populated older schemas fail on undeclared
@@ -3259,6 +3362,19 @@ def migrate_config_table(engine, _session):
         except Exception as e:
             log.error("Failed to add config_custom_css column: %s", e)
             pass
+
+    # Issue #1402: support destinations must retain the current project-link
+    # behavior on upgrade. The PRAGMA-guarded helper makes startup re-entry safe
+    # and ensures legacy rows receive the same default as newly-created settings.
+    for column_name, ddl in (
+        ("config_show_project_support", "config_show_project_support BOOLEAN NOT NULL DEFAULT 1"),
+        ("config_support_url", "config_support_url VARCHAR DEFAULT ''"),
+        ("config_support_label", "config_support_label VARCHAR DEFAULT ''"),
+    ):
+        try:
+            _add_column_if_missing(engine, "settings", column_name, ddl)
+        except Exception as error:
+            log.error("Failed to add %s column: %s", column_name, error)
 
     # Add LDAP auto-create users configuration
     try:
@@ -3512,24 +3628,37 @@ def _merge_kobo_statistics(_session, winner, loser):
 
 
 def _dedupe_book_read_link(_session):
-    """ReadBook winner: prefer rows with the highest read_status (FINISHED
-    > IN_PROGRESS > UNREAD), tiebreak by newest last_modified, then by
-    highest times_started_reading. Sum times_started_reading from losers
-    into the winner so the user doesn't lose their read-counter total.
+    """Preserve legacy status ordering unless a paused choice is involved.
+
+    When any duplicate is paused, the newest explicit choice clock wins, so neither a
+    paused choice nor a later explicit resume is lost. Sum start counters from
+    losers into the winner so the user doesn't lose their read-counter total.
     """
     dup_groups = _find_duplicate_groups(_session, ReadBook)
     deleted = 0
     for (user_id, book_id), rows in dup_groups.items():
+        has_paused = any(r.read_status in (ReadBook.STATUS_DID_NOT_FINISH,
+                                           ReadBook.STATUS_ON_HOLD) for r in rows)
         rows.sort(
             key=lambda r: (
-                r.read_status or 0,
-                r.last_modified or datetime.min.replace(tzinfo=timezone.utc),
+                # Paused states are choices, not ordinal progress. A newer
+                # explicit resume must also survive duplicate recovery.
+                (0 if has_paused else r.read_status or 0),
+                ((r.read_status_choice_at if has_paused else r.last_modified)
+                 or datetime.min).replace(tzinfo=None),
+                (r.read_status in (ReadBook.STATUS_DID_NOT_FINISH,
+                                   ReadBook.STATUS_ON_HOLD)) if has_paused else False,
                 r.times_started_reading or 0,
                 r.id,
             ),
             reverse=True,
         )
         winner, losers = rows[0], rows[1:]
+        chosen_clock = winner.last_modified
+        if not has_paused:
+            known_choices = [r.read_status_choice_at for r in rows if r.read_status_choice_at is not None]
+            if known_choices:
+                winner.read_status_choice_at = max(known_choices, key=lambda stamp: stamp.replace(tzinfo=None))
         for loser in losers:
             winner.times_started_reading = (
                 (winner.times_started_reading or 0)
@@ -3541,6 +3670,9 @@ def _dedupe_book_read_link(_session):
                 winner.last_time_started_reading = loser.last_time_started_reading
             _session.delete(loser)
             deleted += 1
+        if has_paused:
+            winner.last_modified = chosen_clock
+            flag_modified(winner, "last_modified")
     if deleted:
         _session.flush()
     return deleted
@@ -3913,6 +4045,62 @@ def migrate_user_book_cover_table(engine, _session):
     """Create per-user cover metadata on upgraded app.db files."""
     Base.metadata.create_all(
         engine, tables=[UserBookCover.__table__], checkfirst=True,
+    )
+
+
+def migrate_koreader_pairing_table(engine, _session):
+    """Create the e-reader pairing (device grant) table on upgraded app.db
+    files, and give one made by an earlier build the columns it lacks.
+
+    Rows already there get NULL in the new columns; they live ten minutes.
+    """
+    Base.metadata.create_all(
+        engine, tables=[KOReaderPairing.__table__], checkfirst=True,
+    )
+    with engine.connect() as connection:
+        columns = {row[1] for row in connection.execute(
+            text("PRAGMA table_info(koreader_pairing)"))}
+    for name, kind in (("device_id", "VARCHAR(100)"), ("requester_net", "VARCHAR(64)")):
+        if name in columns:
+            continue
+        try:
+            _run_ddl_with_retry(
+                engine, "ALTER TABLE koreader_pairing ADD COLUMN %s %s" % (name, kind))
+        except exc.OperationalError as error:
+            if "duplicate column" not in str(error).lower():
+                raise
+    _run_ddl_with_retry(
+        engine,
+        "CREATE INDEX IF NOT EXISTS ix_koreader_pairing_requester_net "
+        "ON koreader_pairing (requester_net)",
+    )
+
+
+def migrate_user_app_password_digest(engine, _session):
+    """Give app passwords the digest sign-in looks them up by, on upgraded app.db files.
+
+    Rows already there keep a NULL digest; the first sign-in with each fills
+    it in (``cps/services/app_passwords.py``). ``IF NOT EXISTS`` and the
+    duplicate-column tolerance make this safe on every boot.
+    """
+    with engine.connect() as connection:
+        columns = {row[1] for row in connection.execute(
+            text("PRAGMA table_info(user_app_password)"))}
+    if not columns:
+        return
+    if "token_digest" not in columns:
+        try:
+            _run_ddl_with_retry(
+                engine,
+                "ALTER TABLE user_app_password ADD COLUMN token_digest VARCHAR(64)",
+            )
+        except exc.OperationalError as error:
+            if "duplicate column" not in str(error).lower():
+                raise
+    _run_ddl_with_retry(
+        engine,
+        "CREATE INDEX IF NOT EXISTS ix_user_app_password_token_digest "
+        "ON user_app_password (token_digest)",
     )
 
 
@@ -4624,6 +4812,18 @@ def _add_column_if_missing(engine, table_name, column_name, ddl):
     return True
 
 
+def migrate_user_share_shelfs(engine):
+    """Add the independent own-shelf sharing capability, defaulting on."""
+    if engine is None:
+        return False
+    return _add_column_if_missing(
+        engine,
+        "user",
+        "share_shelfs",
+        "share_shelfs BOOLEAN NOT NULL DEFAULT 1",
+    )
+
+
 def _ensure_kobo_two_way_gate_columns(engine):
     """Install both persisted opt-ins without assuming either table exists."""
     if engine is None:
@@ -5071,6 +5271,23 @@ def migrate_annotation_koreader_identity(engine, _session):
         ))
 
 
+def migrate_annotation_text_quote(engine, _session):
+    """Add the nullable ``text_quote`` column to ``annotation``. Idempotent."""
+    with engine.begin() as conn:
+        if not conn.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='annotation'"
+        )).first():
+            return
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(annotation)"))}
+        if "text_quote" in existing:
+            return
+        try:
+            conn.execute(text("ALTER TABLE annotation ADD COLUMN text_quote TEXT"))
+        except exc.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
+
 def migrate_annotation_decouple_source_target(engine, _session):
     """Decouple annotation origin from sync target.
 
@@ -5302,9 +5519,43 @@ def migrate_reading_activity_indexes(engine, _session):
         )
 
 
+def migrate_acquisition_schema(engine, metadata=None):
+    # Keep services initialization out of ub's module import: cps imports ub
+    # before app/config globals exist. Bootstrap invokes this before create_all.
+    from .services.acquisition.migration import migrate_acquisition_schema as migrate
+    return migrate(engine, metadata if metadata is not None else Base.metadata)
+
+
+def migrate_read_status_choice_at(engine, _session):
+    """Snapshot legacy activity clocks once, without inventing later choices.
+
+    Legacy app.db cannot recover which old status timestamps came from user
+    intent. Preserve them as an inferred upgrade baseline. New automatic rows
+    remain NULL, and subsequent boots never backfill those unknown choices.
+    The explicit SQLite transaction makes ADD and snapshot one atomic step.
+    """
+    with engine.connect() as connection:
+        columns = {row[1] for row in connection.execute(
+            text("PRAGMA table_info(book_read_link)"))}
+    if not columns or "read_status_choice_at" in columns:
+        return
+    try:
+        _run_ddl_with_retry(engine, [
+            "BEGIN IMMEDIATE",
+            "ALTER TABLE book_read_link ADD COLUMN read_status_choice_at DATETIME",
+            "UPDATE book_read_link SET read_status_choice_at = last_modified",
+        ])
+    except exc.OperationalError as error:
+        if "duplicate column" not in str(error).lower():
+            raise
+    log.info("[read-status-choice] added independent choice clock with historical baseline")
+
+
 def migrate_Database(_session):
     engine = _session.bind
+    migrate_acquisition_schema(engine, Base.metadata)
     add_missing_tables(engine, _session)
+    migrate_read_status_choice_at(engine, _session)
     migrate_kobo_entitlement_ledger_columns(engine, _session)
     migrate_thumbnail_lookup_index(engine, _session)
     migrate_reading_activity_indexes(engine, _session)
@@ -5340,8 +5591,13 @@ def migrate_Database(_session):
     migrate_device_reading_position_slice(engine, _session)
     migrate_kobo_annotation_seed_pipeline(engine, _session)
     migrate_kobo_two_way_annotation_sync(engine, _session)
+    migrate_annotation_text_quote(engine, _session)
+    from .services.browser_source import migrate_account_browser_source
+    migrate_account_browser_source(engine)
     migrate_book_cover_preview_table(engine, _session)
     migrate_user_book_cover_table(engine, _session)
+    migrate_koreader_pairing_table(engine, _session)
+    migrate_user_app_password_digest(engine, _session)
     migrate_cover_design_preset_tables(engine, _session)
     migrate_notice_tables(engine, _session)
     migrate_kepub_package_repair_disposition(engine, _session)
@@ -5434,6 +5690,10 @@ def clean_database(_session):
     try:
         _session.query(RemoteAuthToken).filter(now > RemoteAuthToken.expiration).\
             filter(RemoteAuthToken.token_type != 1).delete()
+        # Pairing requests are useless once expired; stored times are UTC.
+        _session.query(KOReaderPairing).filter(
+            KOReaderPairing.expires_at
+            < datetime.now(timezone.utc).replace(tzinfo=None)).delete()
         _session.commit()
     except exc.OperationalError:  # Database is not writeable
         print('Settings database is not writeable. Exiting...')
@@ -5441,16 +5701,17 @@ def clean_database(_session):
 
 
 # Save downloaded books per user in calibre-web's own database
-def update_download(book_id, user_id):
-    check = session.query(Downloads).filter(Downloads.user_id == user_id).filter(Downloads.book_id == book_id).first()
+def update_download(book_id, user_id, _session=None):
+    s = _session if _session else session
+    check = s.query(Downloads).filter(Downloads.user_id == user_id).filter(Downloads.book_id == book_id).first()
 
     if not check:
         new_download = Downloads(user_id=user_id, book_id=book_id)
-        session.add(new_download)
+        s.add(new_download)
         try:
-            session.commit()
+            s.commit()
         except exc.OperationalError:
-            session.rollback()
+            s.rollback()
 
 
 # Delete non existing downloaded books in calibre-web's own database
@@ -5465,6 +5726,7 @@ def delete_download(book_id):
 def create_anonymous_user(_session):
     user = User()
     user.name = "Guest"
+    user.kobo_only_shelves_sync = 0
     user.email = 'no@email'
     user.role = constants.ROLE_ANONYMOUS
     user.password = ''
@@ -5565,7 +5827,7 @@ def begin_contained_nested(db_session):
     return db_session.begin_nested()
 
 
-def _create_app_db_engine(app_db_path):
+def _create_app_db_engine(app_db_path, **engine_options):
     """Create an app.db engine with WAL and legacy sqlite3 transactions.
 
     Python's sqlite3 legacy transaction mode emits BEGIN for DML only. A
@@ -5583,6 +5845,7 @@ def _create_app_db_engine(app_db_path):
         'sqlite:///{0}'.format(app_db_path),
         echo=False,
         connect_args={'timeout': 30},
+        **engine_options,
     )
     wal_mode = {'configured': False}
     wal_mode_lock = threading.Lock()
@@ -5621,7 +5884,38 @@ def _create_app_db_engine(app_db_path):
     return engine
 
 def init_db_thread():
-    global app_DB_path
+    return sessionmaker(bind=_shared_app_db_engine())()
+
+
+def owned_session():
+    """Return a new Session on app.db's engine for code off the serving thread.
+
+    ``session`` belongs to the web requests: every request greenlet shares that
+    one object on the thread that serves HTTP, and a SQLAlchemy Session is not
+    thread-safe.  WorkerThread and scheduler code that reads or writes app.db
+    through it can fail a request mid-query ("This session is in 'prepared'
+    state") or commit a request's unfinished changes.  The caller owns the
+    returned Session and closes it (it is a context manager).  It shares the
+    task engine instead of building one per call as ``init_db_thread()`` once
+    did.
+    """
+    return sessionmaker(bind=_shared_app_db_engine())()
+
+
+_task_engine = None
+_task_engine_lock = threading.Lock()
+
+
+def _shared_app_db_engine():
+    """The one app.db engine for sessions opened off the serving thread.
+
+    An engine per session kept each connection it opened (and its WAL files)
+    until the process exited. This engine does not pool: closing a session
+    closes its connection. It is also not the web requests' engine, so a task
+    stuck in an image library while holding a connection takes nothing from
+    the pool every request draws on.
+    """
+    global _task_engine
     if not app_DB_path:
         # Without this guard, 'sqlite:///{}'.format(None) builds the URL
         # 'sqlite:///None' and SQLite silently creates (and writes real
@@ -5630,13 +5924,14 @@ def init_db_thread():
         # committed in #440 (the annotation-backup worker fires this in
         # contexts where init_db() was never called, e.g. unit tests).
         raise RuntimeError(
-            "ub.init_db_thread() called before ub.init_db(); app_DB_path "
-            "is unset, refusing to create a stray 'None' SQLite file")
-    engine = _create_app_db_engine(app_DB_path)
-
-    Session = scoped_session(sessionmaker())
-    Session.configure(bind=engine)
-    return Session()
+            "an app.db task session was requested before ub.init_db(); "
+            "app_DB_path is unset, refusing to create a stray 'None' SQLite file")
+    with _task_engine_lock:
+        if _task_engine is None or _task_engine.url.database != app_DB_path:
+            if _task_engine is not None:
+                _task_engine.dispose()
+            _task_engine = _create_app_db_engine(app_DB_path, poolclass=NullPool)
+        return _task_engine
 
 
 def init_db(app_db_path):
@@ -5645,13 +5940,17 @@ def init_db(app_db_path):
     global app_DB_path
 
     app_DB_path = app_db_path
+    database_exists = os.path.exists(app_db_path)
     engine = _create_app_db_engine(app_db_path)
 
     session = _make_app_session_factory(engine)
 
     _healthcheck_app_db(app_db_path)
 
-    if os.path.exists(app_db_path):
+    # Must precede create_all: it creates user_library_book, erasing whether
+    # bit9 meant legacy Store access or the current Global Library capability.
+    migrate_acquisition_schema(engine, Base.metadata)
+    if database_exists:
         Base.metadata.create_all(engine)
         migrate_Database(session)
         clean_database(session)
@@ -5718,18 +6017,16 @@ def password_change(user_credentials=None):
 
 
 def get_new_session_instance():
-    new_engine = _create_app_db_engine(app_DB_path)
-    new_session = scoped_session(sessionmaker())
-    new_session.configure(bind=new_engine)
-
-    atexit.register(lambda: new_session.remove() if new_session else True)
-
-    return new_session
+    return scoped_session(sessionmaker(bind=_shared_app_db_engine()))
 
 
 def dispose():
-    global session
+    global session, _task_engine
 
+    with _task_engine_lock:
+        if _task_engine is not None:
+            _task_engine.dispose()
+            _task_engine = None
     old_session = session
     session = None
     if old_session:

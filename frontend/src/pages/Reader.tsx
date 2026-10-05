@@ -15,6 +15,9 @@ import { archiveMatchesFingerprint, resumeForArchive } from '../lib/readerResume
 import {
   classifyHref, inBookTarget, isNoteElement, isNoterefAnchor, isOpenableHref, sanitizeNoteElement,
 } from '../lib/readerLinks';
+import { hasNativeAnchor, resolveNativeAnnotations } from '../lib/reader/nativeAnnotations';
+import { readerFontFaceCss, readerFontFamily, BUILTIN_READER_FONTS, type ReaderFont } from '../lib/readerFonts';
+import { restoreBookAttributeNamespaces } from '../lib/reader/attributeNamespaces';
 import styles from './Reader.module.css';
 
 // Foliate-specific engine details live behind the reader module boundary.

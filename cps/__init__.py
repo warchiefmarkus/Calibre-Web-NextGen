@@ -20,7 +20,7 @@ from . import logger
 from . import constants
 from . import deployment_profile
 from .cli import CliParameter
-from .reverseproxy import ReverseProxied
+from .reverseproxy import ReverseProxied, TrustedProxyPeers, parse_trusted_networks
 from .server import WebServer
 from .updater import Updater
 from . import config_sql
@@ -78,7 +78,14 @@ def protect_user_specific_catalog_responses(response):
     """Prevent a shared cache from crossing account-specific catalog views."""
     if not getattr(g, "_common_filters_user_specific", False):
         return response
-    response.headers["Cache-Control"] = "private, no-store"
+    # A response that already declares a private policy keeps it. `private` is
+    # what keeps a shared cache out, which is all this hook guarantees; covers,
+    # comic pages and fonts set their own private lifetimes on versioned URLs,
+    # and replacing those with no-store made every library visit re-download
+    # every cover (#2386). Anything shareable or unstated still becomes no-store.
+    cache_control = response.cache_control
+    if not cache_control.private or cache_control.public:
+        response.headers["Cache-Control"] = "private, no-store"
     response.vary.add("Cookie")
     response.vary.add("Authorization")
     runtime_config = current_app.extensions.get("cps_config", config)
@@ -91,6 +98,32 @@ def protect_user_specific_catalog_responses(response):
 
 _BASE_HOOK_MARKER = "cps_base_after_request_registered"
 _PROXY_FIX_MARKER = "cps_proxy_fix_registered"
+_READER_FONT_UPLOAD_LIMITER_MARKER = "cps_reader_font_upload_limiter_registered"
+
+
+def _limit_reader_font_upload_request():
+    """Bound multipart parsing for the font-upload route before CSRF reads it."""
+    from flask import jsonify, request
+
+    if request.endpoint != "api_v1.admin_upload_reader_font":
+        return None
+    from .services import reader_fonts
+
+    max_request_bytes = reader_fonts.MAX_FONT_FILE_BYTES + 256 * 1024
+    request.max_content_length = max_request_bytes
+    if request.content_length is not None and request.content_length > max_request_bytes:
+        return jsonify({"error": {
+            "code": "font_too_large",
+            "message": "Font upload exceeds the 8 MiB limit",
+        }}), 413
+    return None
+
+
+def _register_reader_font_upload_limiter(application):
+    if application.extensions.get(_READER_FONT_UPLOAD_LIMITER_MARKER):
+        return
+    application.before_request(_limit_reader_font_upload_request)
+    application.extensions[_READER_FONT_UPLOAD_LIMITER_MARKER] = True
 
 
 def _configure_base_app(application, runtime_config=None):
@@ -116,7 +149,8 @@ def _configure_base_app(application, runtime_config=None):
 
     # Fix for running behind reverse proxy (e.g. nginx, apache, caddy, ...)
     # Without it, url_for will generate http:// urls even if https:// is used.
-    # Preserve the existing defaults exactly; PROXY-01 changes them in P2.02.
+    # The hops are believed only from a trusted peer: create_app puts
+    # TrustedProxyPeers in front of this and ReverseProxied.
     application.wsgi_app = ProxyFix(application.wsgi_app, **proxyfix_hops)
     application.extensions[_PROXY_FIX_MARKER] = True
     if len(set(proxyfix_hops.values())) == 1:
@@ -131,7 +165,7 @@ def _configure_base_app(application, runtime_config=None):
 
 
 # These values intentionally remain import-time environment reads. Moving the
-# read to saved configuration would alter PROXY-01 rather than expose a seam.
+# read to saved configuration would change who is trusted, not add a seam.
 num_proxies = int(os.environ.get('TRUSTED_PROXY_COUNT', '1'))
 proxyfix_hops = {
     'x_for': int(os.environ.get('PROXYFIX_X_FOR', num_proxies)),
@@ -139,6 +173,9 @@ proxyfix_hops = {
     'x_host': int(os.environ.get('PROXYFIX_X_HOST', num_proxies)),
     'x_prefix': num_proxies,
 }
+# The peers those hops are believed from (cps/reverseproxy.py); a client that
+# reaches the listener from anywhere else is taken at its own address.
+trusted_proxy_networks = parse_trusted_networks(os.environ.get('TRUSTED_PROXY_NETWORKS'))
 
 # Compatibility singleton: imports of ``cps.app`` keep the same hook and
 # middleware they had before the factory seam. Explicit factory callers use
@@ -164,7 +201,12 @@ web_server = WebServer()
 updater_thread = Updater()
 
 if limiter_present:
-    limiter = Limiter(key_func=True, headers_enabled=True, auto_check=False, swallow_errors=False)
+    # An admin can put the limits in Redis or Memcached. If that store stops
+    # answering, the limits carry on in this process's memory until it
+    # recovers: no sign-in is refused or answered 500 because of the store,
+    # and wrong passwords are still paced.
+    limiter = Limiter(key_func=True, headers_enabled=True, auto_check=False, swallow_errors=False,
+                      in_memory_fallback_enabled=True)
 else:
     limiter = None
 
@@ -433,6 +475,12 @@ def create_app(config=None, services=None):
         state.config_fingerprint = _process_config_fingerprint(runtime_config)
         state.goodreads_support = getattr(runtime_services, "goodreads_support", None)
 
+    # Resolve declarative Generic OIDC before cookie policy and route setup.
+    # A complete environment-owned provider selects OAuth for this process
+    # without persisting config_login_type to app.db.
+    from . import oauth_config
+    oauth_config.prepare_application(application, runtime_config)
+
     # Intelligent Security Configuration
     # Force SESSION_COOKIE_SECURE if OAuth is enabled OR if "Use via HTTPS" is checked.
     if config is None:
@@ -486,6 +534,16 @@ def create_app(config=None, services=None):
             ub.session.bind,
             lambda book_id: getattr(calibre_db.get_book(book_id), "uuid", None),
         )
+        # The custom-column visibility seed needs both databases too: the
+        # browsable column set and each column's hierarchy come from
+        # metadata.db, the per-user values live in app.db. Runs once, gated on
+        # a settings flag, and writes missing keys only -- a user who already
+        # saved a choice keeps it.
+        try:
+            from .custom_column_visibility import backfill_existing_users
+            backfill_existing_users()
+        except Exception as ex:
+            log.error("Custom column visibility seed failed: %s", ex)
 
         updater_thread.init_updater(runtime_config, web_server)
     # Perform dry run of updater and exit afterward
@@ -498,11 +556,14 @@ def create_app(config=None, services=None):
         else:
             log.info("Internal updater disabled by mcp-managed-library profile")
     if not application.extensions.get("cps_reverse_proxy_registered"):
-        application.wsgi_app = ReverseProxied(application.wsgi_app)
+        # TrustedProxyPeers goes outermost: it decides whether the proxy
+        # headers ReverseProxied and ProxyFix read may be believed at all.
+        application.wsgi_app = TrustedProxyPeers(
+            ReverseProxied(application.wsgi_app), trusted_proxy_networks)
+        log.info("Reverse-proxy headers are believed from: %s", application.wsgi_app.describe())
         application.extensions["cps_reverse_proxy_registered"] = True
 
-    if os.environ.get('FLASK_DEBUG'):
-        cache_buster.init_cache_busting(application)
+    cache_buster.init_cache_busting(application)
     log.info('Starting Calibre Web...')
     Principal(application)
     app_login_manager.init_app(application)
@@ -754,6 +815,16 @@ def create_app(config=None, services=None):
         }
         if request.endpoint not in keep_endpoints:
             session.pop("pending_app_password", None)
+
+    @application.before_request
+    def _adopt_replaced_metadata_db():
+        from flask import request
+        if request.endpoint == 'static':
+            return
+        try:
+            calibre_db.reconnect_if_metadata_db_replaced(ub.app_DB_path)
+        except Exception as e:
+            log.warning("Could not reconnect to a replaced metadata.db: %s", e)
 
     @application.before_request
     def _desktop_compat_fresh_snapshot():

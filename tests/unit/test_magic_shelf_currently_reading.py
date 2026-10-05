@@ -33,7 +33,9 @@ Three invariants this test pins:
    awkward to invoke from a unit test without full app init.
 """
 
-import inspect
+from types import SimpleNamespace
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 import pytest
 
@@ -184,4 +186,5 @@ class TestQueryBuilderTemplateExposesThreeRadioValues:
             "collapses to 0/1 only."
         )
         assert read_status["input"] == "radio"
-        assert read_status["values"] == {0: "Unread", 2: "Currently Reading", 1: "Read"}
+        assert read_status["values"] == {0: "Unread", 2: "Currently Reading", 1: "Read",
+                                        3: "Did not finish", 4: "On hold"}

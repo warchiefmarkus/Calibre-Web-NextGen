@@ -19,7 +19,8 @@ from .serializers import serialize_shelf
 from .books import _rows_to_items
 from .. import calibre_db, config, db, deployment_profile, ub, user_library
 from ..cw_login import current_user
-from ..sort_orders import BOOK_SORT_ORDERS, RECENT_SORT, recent_sort_order, viewer_id
+from ..services import ereader_scope
+from ..sort_orders import BOOK_SORT_ORDERS, RECENT_SORT, recent_sort_order, viewer_id, book_sort_order
 from ..usermanagement import login_required_if_no_ano
 from ..shelf import (
     check_shelf_view_permissions,
@@ -82,6 +83,8 @@ def list_shelves():
         serialize_shelf(s, _shelf_book_count(s, current_user), is_owner=(s.user_id == uid))
         for s in shelves
     ]
+    for shelf, item in zip(shelves, items):
+        item['can_edit'] = check_shelf_edit_permissions(shelf)
     return jsonify({"items": items})
 
 
@@ -96,8 +99,13 @@ def shelf_detail(shelf_id):
     if not check_shelf_view_permissions(shelf):
         return _err("forbidden", "You are not allowed to view this shelf", 403)
 
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", config.config_books_per_page, type=int)
+    select_all = request.args.get("select_all", "").strip().lower() in (
+        "1", "true", "yes", "on"
+    )
+    page = 1 if select_all else request.args.get("page", 1, type=int)
+    per_page = (MAX_SELECT_ALL_BOOKS + 1 if select_all else request.args.get(
+        "per_page", config.config_books_per_page, type=int
+    ))
 
     # Shelf sorting is view-only: "stored", an unknown value, and the two
     # app-DB download-count sorts all retain the manual BookShelf order. Every
@@ -110,7 +118,7 @@ def shelf_detail(shelf_id):
         reader = viewer_id(current_user)
         order = None if reader is None else recent_sort_order(reader)
     else:
-        order = BOOK_SORT_ORDERS.get(sort)
+        order = book_sort_order(sort) if sort in BOOK_SORT_ORDERS else None
     if order is None or sort in ("hotdesc", "hotasc"):
         order = [ub.BookShelf.order.asc()]
 
@@ -135,15 +143,23 @@ def shelf_detail(shelf_id):
         True, config.config_read_column,
         *joins,
         allow_public_shelf_books=bool(shelf.is_public),
+        ids_only=select_all,
     )
 
+    if select_all:
+        return _selection_response(entries, pagination.total_count)
+
     body = serialize_shelf(shelf, pagination.total_count, is_owner=(shelf.user_id == _uid()))
+    custom_column_definitions, _custom_values = _list_custom_column_data([])
     body.update({
         "items": _rows_to_items(entries),
+        "custom_column_definitions": custom_column_definitions,
         "page": pagination.page,
         "per_page": pagination.per_page,
         "total": pagination.total_count,
         "can_edit": check_shelf_edit_permissions(shelf),
+        "opds_expose": bool(getattr(current_user, 'opds_only_shelves_sync', False)
+                            and ub.is_opds_shelf_exposed_for_user(current_user.id, shelf.id)),
     })
     return jsonify(body)
 
@@ -182,7 +198,7 @@ def create_shelf_api():
         return _err("feature_disabled", "Kobo integration is disabled", 404)
 
     is_public = 1 if data.get("is_public") else 0
-    if is_public and not current_user.role_edit_shelfs():
+    if is_public and not current_user.role_share_shelfs():
         return _err("forbidden", "You are not allowed to create a public shelf", 403)
     if not check_shelf_is_unique(name, is_public):
         return _err("conflict", "A shelf with that name already exists", 409)
@@ -192,6 +208,10 @@ def create_shelf_api():
         shelf.kobo_sync = True
     try:
         ub.session.add(shelf)
+        ub.session.flush()
+        if getattr(current_user, 'opds_only_shelves_sync', False):
+            ub.set_opds_shelf_exposed_for_user(current_user.id, shelf.id,
+                                              data.get('opds_expose') is True)
         ub.session.commit()
     except (OperationalError, InvalidRequestError) as e:
         ub.session.rollback()
@@ -220,7 +240,8 @@ def update_shelf_api(shelf_id):
     target_public = shelf.is_public
     if "is_public" in data:
         target_public = 1 if data["is_public"] else 0
-        if target_public and not current_user.role_edit_shelfs():
+        if target_public and not shelf.is_public and not (current_user.role_share_shelfs()
+                                  if shelf.user_id == _uid() else current_user.role_edit_shelfs()):
             return _err("forbidden", "You are not allowed to make a shelf public", 403)
 
     if "name" in data:
@@ -243,6 +264,12 @@ def update_shelf_api(shelf_id):
                 ub.ShelfArchive.uuid == shelf.uuid,
             ).delete()
 
+    if 'opds_expose' in data:
+        if not isinstance(data['opds_expose'], bool):
+            ub.session.rollback()
+            return _err("invalid_request", "opds_expose must be a boolean", 400)
+        if getattr(current_user, 'opds_only_shelves_sync', False):
+            ub.set_opds_shelf_exposed_for_user(current_user.id, shelf.id, data['opds_expose'])
     shelf.last_modified = datetime.now(timezone.utc)
     try:
         ub.session.merge(shelf)

@@ -166,7 +166,8 @@ def _reject_cross_site_mutation():
     # Bounded: the value is attacker-controlled and this runs before the per-route
     # rate limits, so an unbounded %r would let a caller size our log lines.
     log.warning("Rejected cross-site %s %.128s (stated origin %.128r, expected %.128r). "
-                "Check TRUSTED_PROXY_COUNT for your proxy hops; if the proxy rewrites Host, "
+                "Check TRUSTED_PROXY_COUNT for your proxy hops and TRUSTED_PROXY_NETWORKS "
+                "for where it connects from; if the proxy rewrites Host, "
                 "set CWNG_TRUSTED_ORIGINS to the public origin.",
                 request.method, request.path, stated, request.host_url)
     return jsonify({"error": {"code": "cross_site_request",
@@ -213,8 +214,12 @@ from . import admin    # noqa: E402,F401
 from . import info     # noqa: E402,F401
 from . import duplicates  # noqa: E402,F401
 from . import magicshelves  # noqa: E402,F401
+from . import columns  # noqa: E402,F401
 from . import comic     # noqa: E402,F401
 from . import admin_security  # noqa: E402,F401
 from . import notices   # noqa: E402,F401
 from . import kobo_two_way  # noqa: E402,F401
 from . import kobo_pairing  # noqa: E402,F401
+from . import koreader_devices  # noqa: E402,F401
+from . import acquisition  # noqa: E402,F401
+from . import discover_source  # noqa: E402,F401

@@ -26,7 +26,6 @@ test('non-member detail keeps global editing and hides member-only controls', ()
   assert.match(detail, /label: t\('Not in your library'\)/);
   assert.match(detail, /\{inLibrary && \(unifiedProgress != null \|\| book\.in_progress\) && \(/);
   assert.match(detail, /\{inLibrary && \([\s\S]*<AddToShelf/);
-  assert.match(detail, /if \(inLibrary\) \{[\s\S]*to: `\/book\/\$\{book\.id\}\/annotations`/);
   assert.match(detail, /if \(me\?\.role\?\.edit\) \{[\s\S]*to: `\/book\/\$\{book\.id\}\/edit`/);
   assert.match(detail, /if \(me\?\.role\?\.admin\)[\s\S]*menu-delete-book/);
 

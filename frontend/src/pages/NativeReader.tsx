@@ -7,6 +7,7 @@ import { SpinnerCentered } from '../components/Spinner';
 import { VisuallyHidden } from '../components/VisuallyHidden';
 import { useT } from '../lib/i18n';
 import styles from './NativeReader.module.css';
+import { withLookupMode } from '../lib/readerTarget';
 
 const AUDIO = new Set(['mp3', 'mp4', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav', 'aac']);
 const COMIC = new Set(['cbz', 'cbr', 'cbt', 'cb7']);
@@ -15,6 +16,7 @@ const COMIC = new Set(['cbz', 'cbr', 'cbt', 'cb7']);
  * and archive comics that require server-side extraction. */
 export function NativeReader({ id, format }: { id: string; format: string }) {
   const t = useT();
+  const lookupMode = new URLSearchParams(useSearch()).get('lookup') === '1';
   const fmt = format.toLowerCase();
   const src = apiUrl(`/show/${id}/${fmt}`);
   // #1584 — never hand a PDF to the browser's native viewer. WebKit, which is
@@ -23,7 +25,7 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
   // one and nothing else on iPad. The bundled pdf.js viewer (what the classic
   // reader has always used) paints to <canvas> and behaves the same on every
   // engine. url_for inside that template keeps it correct behind a subpath.
-  const pdfSrc = apiUrl(`/read/${id}/pdf`);
+  const pdfSrc = apiUrl(withLookupMode(`/read/${id}/pdf`, lookupMode));
   const [text, setText] = useState<string | null>(null);
   const [textErr, setTextErr] = useState(false);
 
@@ -45,6 +47,8 @@ export function NativeReader({ id, format }: { id: string; format: string }) {
         </Link>
         <span className={styles.fmt}>{fmt.toUpperCase()}</span>
       </div>
+
+      {lookupMode && <p className={styles.lookupNotice} role="status">{t('Progress is not being saved.')}</p>}
 
       {/* The reader shell is position:fixed, so THIS div is the scroll container,
           not the document. A scrollable div with no tabindex and no focusable
