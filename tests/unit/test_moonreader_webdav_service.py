@@ -181,7 +181,7 @@ def test_book_matcher_matches_publisher_glued_directly_to_author():
 
     result = matcher.match_metadata_filename(
         "Moon/.Moon+/Cache/Будущее тела. Исследование дальнейшей эволюции человека - "
-        "Майккы Мерфилософ.ПОЛ классик.fb2.po"
+        "Майкл МерфиРИПОЛ классик.fb2.po"
     )
     assert result.book_id == 210
     assert result.format == "FB2"
