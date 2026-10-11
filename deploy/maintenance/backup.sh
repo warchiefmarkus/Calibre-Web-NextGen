@@ -65,5 +65,12 @@ git -C "$MCP" ls-files --others --exclude-standard > "$DEST/calibremcp/untracked
 
 (cd "$DEST" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 chmod -R go-rwx "$DEST"
-find "$DEST_ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf -- {} +
+# Keep the latest seven scheduled snapshots. Named manual/recovery backups are preserved.
+mapfile -t scheduled_snapshots < <(
+  find "$DEST_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
+    | grep -E '^[0-9]{8}-[0-9]{6}$' | LC_ALL=C sort -r
+)
+for ((i=7; i<${#scheduled_snapshots[@]}; i++)); do
+  rm -rf --one-file-system -- "$DEST_ROOT/${scheduled_snapshots[i]}"
+done
 echo "$DEST"
