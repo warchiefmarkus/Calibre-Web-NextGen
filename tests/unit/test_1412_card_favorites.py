@@ -29,6 +29,8 @@ def test_list_card_favorites_are_page_bounded_and_account_isolated(monkeypatch):
     monkeypatch.setattr(books.config, 'config_read_column', 0, raising=False)
     monkeypatch.setattr(books, 'read_statuses_for_books', lambda *args, **kwargs: {})
     monkeypatch.setattr(books.user_cover, 'overrides_for_user', lambda *args: {})
+    # Shelf chips are an unrelated page enrichment and have their own tests.
+    monkeypatch.setattr(books, '_visible_shelves_by_book', lambda *_args: {})
     # Keep the SQL-count assertion scoped to favorites, not unrelated enrichments.
     from cps.api import external_ratings
     from cps.services import reading_progress

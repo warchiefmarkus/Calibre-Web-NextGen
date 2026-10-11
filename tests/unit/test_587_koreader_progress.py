@@ -89,7 +89,8 @@ def test_detail_endpoint_null_progress_when_unsynced():
 
 @pytest.mark.unit
 def test_bookdetail_renders_progress():
-    src = (_ROOT / "frontend" / "src" / "pages" / "BookDetail.tsx").read_text()
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "pages" / "BookDetail.tsx").read_text()
     assert "unifiedProgress" in src
     assert "className={styles.readProgress}" in src
     assert "KOReader Progress" not in src

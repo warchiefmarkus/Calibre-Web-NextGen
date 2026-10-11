@@ -1,4 +1,3 @@
-import { BookReview } from '../components/BookReview';
 import { PersonalRating } from '../components/PersonalRating';
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } from 'react';
 import { Link, useParams, useLocation } from 'wouter';
@@ -25,7 +24,7 @@ import { MoreByAuthor } from '../components/MoreByAuthor';
 import { AUTHOR_SEPARATOR, formatAuthors } from '../lib/authors';
 import { SpinnerCentered, Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
-import type { BookOcrResponse, ReadingStatus, CustomColumn, CustomColumnValue, EntityRef, DeliveryDevice, OtherEreader } from '../lib/api';
+import type { BookOcrResponse, CustomColumn, CustomColumnValue, EntityRef, DeliveryDevice, OtherEreader } from '../lib/api';
 import { ApiError, resourceUrl, resourceSrcSet, TASK_FAILED, TASK_FINISHED, TASK_ENDED, TASK_CANCELLED } from '../lib/api';
 import { useT, useI18n } from '../lib/i18n';
 import { formatCustomColumnDate } from '../lib/customColumnDisplay';
