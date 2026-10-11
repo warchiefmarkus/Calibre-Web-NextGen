@@ -194,12 +194,48 @@ def _row_read_status(e):
     return getattr(e, "read_status", None)
 
 
+def _list_custom_column_data(books):
+    """Return configured list-field definitions and per-book values."""
+    columns = load_configured_columns(config) or []
+    definitions = [{"id": col.id, "name": col.name, "datatype": col.datatype}
+                   for col in columns]
+    values = {int(book.id): {} for book in books}
+    if not columns or not values:
+        return definitions, values
+
+    for column in columns:
+        model = db.cc_classes.get(column.id)
+        if model is None:
+            continue
+        try:
+            rows = calibre_db.session.query(model).filter(
+                model.book.in_(values)).all()
+        except (SQLAlchemyError, AttributeError):
+            log.warning("Cannot load custom column %s for book list",
+                        column.id, exc_info=True)
+            continue
+        for row in rows:
+            target = values.get(int(row.book))
+            if target is not None:
+                target.setdefault(str(column.id), []).append({
+                    "value": serialize_custom_column_value(
+                        row.value, column.datatype),
+                    "extra": getattr(row, "extra", None),
+                })
+    return definitions, values
+
+
 def _row_to_item(e, in_progress_ids, hidden_ids=None, cover_override=None,
-                 external_rating=None, reading_progress=None):
+                 external_rating=None, reading_progress=None, read_status_name=None,
+                 custom_columns=None, favorited=None):
     """Unwrap a SQLAlchemy Row and attach all per-user/list enrichments."""
     book = getattr(e, "Books", e)
     read_status = _row_read_status(e)
-    read = bool(read_status) if config.config_read_column         else read_status == ub.ReadBook.STATUS_FINISHED
+    if read_status_name is None:
+        read_status_name = ("in_progress" if book.id in in_progress_ids else
+                            "finished" if config.config_read_column and bool(read_status) else
+                            canonical_read_status(read_status))
+    read = read_status_name == "finished"
     archived = bool(getattr(e, "is_archived", False))
     return serialize_book_list_item(
         book,
@@ -211,6 +247,8 @@ def _row_to_item(e, in_progress_ids, hidden_ids=None, cover_override=None,
         cover_override=cover_override,
         external_rating=external_rating,
         reading_progress=reading_progress,
+        custom_columns=custom_columns,
+        favorited=favorited,
     )
 
 
@@ -227,7 +265,19 @@ def _rows_to_items(entries, hidden_ids=None):
     in_progress_ids = {book_id for book_id, status in status_by_id.items()
                        if status == "in_progress"}
     books = [getattr(entry, "Books", entry) for entry in entries]
+    _definitions, custom_values = _list_custom_column_data(books)
     user_id = _real_user_id()
+    favorite_ids = set()
+    favorite_available = True
+    if user_id is not None and book_ids:
+        try:
+            favorite_rows = (ub.session.query(ub.FavoriteBook.book_id)
+                             .filter(ub.FavoriteBook.user_id == user_id,
+                                     ub.FavoriteBook.book_id.in_(book_ids)).all())
+            favorite_ids = {int(row[0]) for row in favorite_rows}
+        except SQLAlchemyError:
+            log.warning("Favorite state unavailable for book list", exc_info=True)
+            favorite_available = False
     overrides = user_cover.overrides_for_user(user_id, book_ids)
     try:
         from .external_ratings import external_rating_summary_map
@@ -249,6 +299,9 @@ def _rows_to_items(entries, hidden_ids=None):
             cover_override=overrides.get(book_id),
             external_rating=summaries.get(book_id),
             reading_progress=progress_summaries.get(book_id),
+            read_status_name=status_by_id.get(book_id),
+            custom_columns=custom_values.get(book_id),
+            favorited=(book_id in favorite_ids) if favorite_available else None,
         )
         for entry, book_id in zip(entries, book_ids)
     ]

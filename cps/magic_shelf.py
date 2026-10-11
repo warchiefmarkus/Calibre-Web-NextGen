@@ -811,14 +811,11 @@ def build_filter_from_rule(rule, user_id=None):
                     # Unread is the default/no-row state or an explicit
                     # STATUS_UNREAD row. Exclude both FINISHED and IN_PROGRESS
                     # so the three read-state shelves are mutually exclusive.
-                    matching_books = ub.session.query(ub.ReadBook).filter(
+                    matching_books = ub.session.query(ub.ReadBook.book_id).filter(
                         ub.ReadBook.user_id == user_id,
-                        ub.ReadBook.read_status.in_((
-                            ub.ReadBook.STATUS_FINISHED,
-                            ub.ReadBook.STATUS_IN_PROGRESS,
-                        )),
+                        ub.ReadBook.read_status == status_value,
                     ).all()
-                    matching_book_ids = [rb[0] for rb in matching_books]
+                    matching_book_ids = [row[0] for row in matching_books]
                     condition = db.Books.id.in_(matching_book_ids)
 
                 if operator_name == 'equal':

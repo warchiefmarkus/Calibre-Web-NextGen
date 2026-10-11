@@ -172,11 +172,20 @@ def cover_url_for(book, resolution, cover_override=None):
     return f"{url}?{COVER_VERSION_ARG}={version}" if version else url
 
 
+_FAVORITED_UNSET = object()
+
+
 def serialize_book_list_item(book, read=False, archived=False, hidden=False,
                              in_progress=False, cover_override=None,
-                             external_rating=None, reading_progress=None):
-    series = book.series[0].name if getattr(book, "series", None) else None
-    return {
+                             external_rating=None, reading_progress=None,
+                             read_status=None, custom_columns=None,
+                             favorited=_FAVORITED_UNSET):
+    series_item = book.series[0] if getattr(book, "series", None) else None
+    series = series_item.name if series_item is not None else None
+    series_id = series_item.id if series_item is not None else None
+    if read_status is None:
+        read_status = "finished" if read else ("in_progress" if in_progress else "unread")
+    result = {
         "id": book.id,
         "title": book.title,
         # Calibre escapes commas inside a single author name as '|' in the DB
@@ -211,6 +220,9 @@ def serialize_book_list_item(book, read=False, archived=False, hidden=False,
         # without paying for a detail request per book.
         "custom_columns": custom_columns or {},
     }
+    if favorited is not _FAVORITED_UNSET:
+        result["favorited"] = None if favorited is None else bool(favorited)
+    return result
 
 
 def serialize_custom_column_value(value, datatype):

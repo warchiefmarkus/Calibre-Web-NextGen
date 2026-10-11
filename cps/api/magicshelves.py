@@ -15,7 +15,8 @@ from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from . import api_v1
-from .books import _rows_to_items
+from .books import (_rows_to_items, _list_custom_column_data,
+                    _selection_response, MAX_SELECT_ALL_BOOKS)
 from .. import ub, config, db, calibre_db, deployment_profile, logger, magic_shelf
 from ..cw_login import current_user
 from ..services import ereader_scope

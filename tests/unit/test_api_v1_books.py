@@ -126,7 +126,6 @@ def test_list_books_search():
              patch.object(books_mod.config, "config_read_column", 0, create=True), \
              patch.object(books_mod.user_cover, "overrides_for_user", return_value={}), \
              patch.object(books_mod.ub, "session", app_session), \
-             patch.object(books_mod, "_visible_shelves_by_book", return_value={}), \
              patch.object(books_mod, "_real_user_id", return_value=7):
             view = inspect.unwrap(books_mod.list_books)
             resp = view()

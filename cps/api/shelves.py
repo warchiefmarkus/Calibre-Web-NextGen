@@ -16,7 +16,8 @@ from sqlalchemy.exc import InvalidRequestError, OperationalError
 
 from . import api_v1
 from .serializers import serialize_shelf
-from .books import _rows_to_items
+from .books import (_rows_to_items, _list_custom_column_data,
+                    _selection_response, MAX_SELECT_ALL_BOOKS)
 from .. import calibre_db, config, db, deployment_profile, ub, user_library
 from ..cw_login import current_user
 from ..services import ereader_scope
