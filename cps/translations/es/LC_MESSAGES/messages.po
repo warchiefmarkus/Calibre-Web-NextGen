@@ -2423,13 +2423,14 @@ msgstr "Estanterías"
 msgid "Books organized in shelves"
 msgstr "Libros organizados en estanterías"
 
-#: cps/opds.py
-msgid "Magic Shelves"
-msgstr "Estanterías mágicas"
+#: cps/opds.py cps/spa_strings.py cps/templates/feed.xml
+#: cps/templates/layout.html
+msgid "Smart shelves"
+msgstr "Estanterías inteligentes"
 
 #: cps/opds.py
-msgid "Books organized in magic shelves"
-msgstr "Libros organizados en estanterías mágicas"
+msgid "Books organized in smart shelves"
+msgstr "Libros organizados en estanterías inteligentes"
 
 #: cps/opds.py
 msgid "description"
@@ -3611,11 +3612,11 @@ msgstr "Aplicar a {n} libros"
 msgid "Match condition"
 msgstr "Condición de coincidencia"
 
-#: cps/spa_strings.py
+#: cps/spa_strings.py cps/templates/magic_shelf_edit.html
 msgid "Rule field"
 msgstr "Campo de la regla"
 
-#: cps/spa_strings.py
+#: cps/spa_strings.py cps/templates/magic_shelf_edit.html
 msgid "Rule operator"
 msgstr "Operador de la regla"
 
@@ -3835,6 +3836,11 @@ msgid "Convert failed."
 msgstr "Error al convertir."
 
 #: cps/spa_strings.py
+#, python-brace-format
+msgid "{format} is ready."
+msgstr ""
+
+#: cps/spa_strings.py
 msgid "Convert to"
 msgstr "Convertir a"
 
@@ -3888,7 +3894,7 @@ msgstr "Error al actualizar la portada."
 msgid "Cover updated."
 msgstr "Portada actualizada."
 
-#: cps/spa_strings.py
+#: cps/spa_strings.py cps/templates/layout.html cps/web.py
 msgid "Create smart shelf"
 msgstr "Crear estantería inteligente"
 
@@ -6752,7 +6758,7 @@ msgstr "Editar estanterías públicas"
 msgid "Edit shared library cover"
 msgstr ""
 
-#: cps/spa_strings.py
+#: cps/spa_strings.py cps/web.py
 msgid "Edit smart shelf"
 msgstr "Editar estantería inteligente"
 
@@ -7551,7 +7557,7 @@ msgid "Loading reading positions…"
 msgstr "Cargando posiciones de lectura…"
 
 #: cps/spa_strings.py cps/templates/book_review.html
-#: cps/templates/cover_picker.html
+#: cps/templates/cover_picker.html cps/templates/personal_rating.html
 msgid "Loading…"
 msgstr "Cargando…"
 
@@ -8423,10 +8429,6 @@ msgstr "Página anterior"
 msgid "Progress"
 msgstr "Progreso"
 
-#: cps/spa_strings.py cps/templates/_reader_lookup_banner.html
-msgid "Progress is not being saved."
-msgstr ""
-
 #: cps/spa_strings.py
 msgid "Published after"
 msgstr "Publicado después de"
@@ -8766,6 +8768,7 @@ msgid "Resume at {percent} from another device"
 msgstr ""
 
 #: cps/spa_strings.py cps/templates/book_review.html
+#: cps/templates/personal_rating.html
 msgid "Retry"
 msgstr "Reintentar"
 
@@ -9266,6 +9269,10 @@ msgid "Show shelf tags"
 msgstr ""
 
 #: cps/spa_strings.py
+msgid "Show shelf drag handles"
+msgstr ""
+
+#: cps/spa_strings.py
 msgid ""
 "Show the global library again? Your selection is kept exactly as you left it "
 "— switch back any time and it is still there. At its next update, your e-"
@@ -9375,10 +9382,6 @@ msgstr ""
 #: cps/api/magicshelves.py cps/spa_strings.py
 msgid "Smart shelf not found."
 msgstr "Estantería inteligente no encontrada."
-
-#: cps/spa_strings.py
-msgid "Smart shelves"
-msgstr "Estanterías inteligentes"
 
 #: cps/spa_strings.py
 msgid ""
@@ -10666,7 +10669,7 @@ msgstr "tipo (isbn, amazon, doi…)"
 msgid "unknown"
 msgstr "desconocido"
 
-#: cps/spa_strings.py
+#: cps/spa_strings.py cps/templates/magic_shelf_edit.html
 msgid "value"
 msgstr "valor"
 
@@ -10871,6 +10874,43 @@ msgstr "← Volver a iniciar sesión"
 #: cps/spa_strings.py
 msgid "← Library"
 msgstr "← Biblioteca"
+
+#: cps/spa_strings.py
+msgid "Add books"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Add books to shelf"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Add selected"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not add the selected books. Please try again."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not load books."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "On shelf"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Search library"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Search title, author, series…"
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{failed} of {total} books could not be added. They remain selected."
+msgstr ""
 
 #: cps/spa_strings.py
 msgid ""
@@ -11143,6 +11183,10 @@ msgstr ""
 msgid "Save Discover source"
 msgstr ""
 
+#: cps/spa_strings.py
+msgid "Change Discover source"
+msgstr ""
+
 #: cps/spa_strings.py cps/web.py
 msgid "Discover source saved."
 msgstr ""
@@ -11388,6 +11432,100 @@ msgid ""
 "can be downloaded but cannot be opened in the web reader."
 msgstr ""
 
+#: cps/spa_strings.py cps/templates/personal_rating.html
+msgid "Could not load your rating."
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/personal_rating.html
+msgid "Could not save your rating."
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/personal_rating.html
+msgid "Household average"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/detail.html
+#: cps/templates/library_rating.html
+msgid "Library rating"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/user_edit.html
+msgid ""
+"Off by default. Only opted-in ratings count, and names are never shown. If "
+"you are the only person sharing a rating for a book, the average is your "
+"score."
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/personal_rating.html
+msgid "Save rating"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/user_edit.html
+msgid "Share my ratings in the household average"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/user_edit.html
+msgid "Show library rating"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Show the labelled Calibre score alongside your own rating."
+msgstr ""
+
+#: cps/api/browse.py cps/spa_strings.py cps/templates/personal_rating.html
+#: cps/web.py
+msgid "Unrated"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/personal_rating.html
+msgid "Your rating"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/personal_rating.html
+msgid "Your rating saved."
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/_book_organizer.html
+msgid "Your rating, highest first"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/_book_organizer.html
+msgid "Your rating, lowest first"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/personal_rating.html
+msgid ""
+"Your score does not change the Calibre library rating. Sharing is off unless "
+"you opt in in your account."
+msgstr ""
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "{rating} out of 5"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Your rating (stars)"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/email_edit.html
+msgid "eReader attachment filename template"
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/email_edit.html
+#, python-brace-format
+msgid ""
+"Leave blank to keep the existing filename. Example: {series} #{series_index} "
+"- {title}. Fields include {title}, {authors}, {series} and {series_index}; "
+"the file extension is added automatically."
+msgstr ""
+
+#: cps/spa_strings.py cps/templates/email_edit.html
+#, python-brace-format
+msgid ""
+"Use {series:|(|) }{title} to omit the series prefix when no series is set."
+msgstr ""
+
 #: cps/tasks_status.py
 msgid "Waiting"
 msgstr "Esperando"
@@ -11476,6 +11614,11 @@ msgid "Series: %(serie)s"
 msgstr "Series: %(serie)s"
 
 #: cps/web.py
+#, python-format
+msgid "Your rating: %(rating)s stars"
+msgstr ""
+
+#: cps/web.py
 msgid "Rating: None"
 msgstr "Valoración: Ninguna"
 
@@ -11508,13 +11651,13 @@ msgid "Hidden Books"
 msgstr "Libros ocultos"
 
 #: cps/web.py
-msgid "Error loading magic shelf"
-msgstr "Error al cargar la estantería mágica"
+msgid "Error loading smart shelf"
+msgstr "Error al cargar la estantería inteligente"
 
 #: cps/web.py
 #, python-format
-msgid "Magic Shelf&nbsp&nbsp&nbsp—&nbsp&nbsp&nbsp%(icon)s %(name)s"
-msgstr "Estantería mágica&nbsp&nbsp&nbsp—&nbsp&nbsp&nbsp%(icon)s %(name)s"
+msgid "Smart shelf — %(icon)s %(name)s"
+msgstr "Estantería inteligente — %(icon)s %(name)s"
 
 #: cps/web.py
 msgid "You don't have permission to browse the global library."
@@ -11557,10 +11700,6 @@ msgstr "El nombre de la estantería es demasiado largo (máximo 100 caracteres).
 msgid "Error creating shelf"
 msgstr "Error al crear la estantería"
 
-#: cps/templates/layout.html cps/web.py
-msgid "Create Magic Shelf"
-msgstr "Crear una Magic Shelf"
-
 #: cps/web.py
 msgid "Only the shelf owner can change Kobo sync"
 msgstr ""
@@ -11572,10 +11711,6 @@ msgstr "Permiso denegado para cambiar el estado público"
 #: cps/web.py
 msgid "Error updating shelf"
 msgstr "Error al actualizar la librería"
-
-#: cps/web.py
-msgid "Edit Magic Shelf"
-msgstr "Editar Magic Shelf"
 
 #: cps/web.py
 msgid "Shelf not found"
@@ -11630,6 +11765,10 @@ msgstr "Error al mostrar la estantería"
 #: cps/templates/admin.html cps/templates/cwa_stats_i18n.html cps/web.py
 msgid "Downloads"
 msgstr "Descargas"
+
+#: cps/web.py
+msgid "Your ratings"
+msgstr ""
 
 #: cps/web.py
 msgid "File formats list"
@@ -11861,26 +12000,37 @@ msgstr ""
 msgid "Connect to Wi-Fi and open it from your library: it downloads by itself."
 msgstr ""
 
-#: cps/services/ereader_scope.py
-msgid ""
-"E-reader sync for Magic Shelves is disabled globally — this shelf won't "
-"reach your e-readers until 'Sync Magic Shelves to e-readers (Kobo and "
-"KOReader)' is enabled in CWA Settings."
+#: cps/services/ereader_scope.py cps/templates/cwa_settings.html
+#: cps/templates/magic_shelf_edit.html
+msgid "Sync smart shelves to e-readers (Kobo and KOReader)"
 msgstr ""
+"Sincronizar estanterías inteligentes con lectores electrónicos (Kobo y "
+"KOReader)"
+
+#: cps/services/ereader_scope.py cps/templates/cwa_settings.html
+#: cps/templates/magic_shelf_edit.html
+msgid "Sync smart shelves to Kobo"
+msgstr "Sincronizar estanterías inteligentes con Kobo"
 
 #: cps/services/ereader_scope.py
+#, python-format
 msgid ""
-"Kobo sync for Magic Shelves is disabled globally — this shelf won't reach "
-"your Kobo until 'Sync Magic Shelves to Kobo' is enabled in CWA Settings."
+"Smart-shelf sync is disabled globally. Enable “%(setting)s” in CWA Settings "
+"so this shelf can reach your e-readers."
 msgstr ""
-"La sincronización de estanterías mágicas con Kobo está desactivada "
-"globalmente: esta estantería no llegará a tu Kobo hasta que se active "
-"«Sincronizar estanterías mágicas con Kobo» en la configuración de CWA."
+"La sincronización de estanterías inteligentes está desactivada globalmente. "
+"Activa «%(setting)s» en Ajustes de CWA para que esta estantería llegue a tus "
+"lectores electrónicos."
 
 #: cps/services/gmail.py
 msgid "Found no valid gmail.json file with OAuth information"
 msgstr ""
 "No se ha encontrado ningún archivo gmail.json válido con información OAuth"
+
+#: cps/services/mail_filename.py
+msgid ""
+"Use a valid attachment filename template with supported metadata fields."
+msgstr ""
 
 #: cps/services/opds_filename.py
 msgid "Conditional text needs both prefix and suffix separators."
@@ -15776,28 +15926,18 @@ msgstr ""
 "para el idioma elegido no están completas."
 
 #: cps/templates/cwa_settings.html
-msgid "Sync Magic Shelves to e-readers (Kobo and KOReader)"
-msgstr ""
-
-#: cps/templates/cwa_settings.html
 msgid ""
-"When active, Magic Shelves marked for e-reader sync reach your Kobo as "
-"collections and your KOReader library as shelves. Kobo also needs Kobo Sync "
-"in Basic Configuration."
+"When enabled, marked smart shelves reach your Kobo as collections. Enable "
+"Kobo Sync in Basic Configuration too."
 msgstr ""
+"Si se activa, las estanterías inteligentes marcadas llegan al Kobo como "
+"colecciones. Activa también Kobo Sync en Configuración básica."
 
 #: cps/templates/cwa_settings.html
-msgid "Sync Magic Shelves to Kobo"
-msgstr "Sincronizar estanterías mágicas con Kobo"
-
-#: cps/templates/cwa_settings.html
-msgid ""
-"When active, your Magic Shelves will be synced to your Kobo device as "
-"collections. Note: You must also enable Kobo Sync in Basic Configuration."
+msgid "KOReader also receives marked smart shelves in its library."
 msgstr ""
-"Cuando está activado, tus estanterías mágicas se sincronizarán con tu "
-"dispositivo Kobo como colecciones. Nota: también debes activar Kobo Sync en "
-"Configuración básica."
+"KOReader también recibe las estanterías inteligentes marcadas en su "
+"biblioteca."
 
 #: cps/templates/cwa_settings.html
 msgid "Enable Blurred Backgrounds on Mobile (&lt;768px)"
@@ -16332,8 +16472,8 @@ msgid "Shelf Views"
 msgstr ""
 
 #: cps/templates/cwa_stats_i18n.html
-msgid "Magic Shelf Views"
-msgstr ""
+msgid "Smart Shelf Views"
+msgstr "Vistas de estanterías inteligentes"
 
 #: cps/templates/cwa_stats_i18n.html
 msgid "Kobo Sync"
@@ -16852,14 +16992,6 @@ msgstr "¿Quitar «%(title)s» de tu biblioteca?"
 msgid "It also leaves these shelves: %(shelves)s."
 msgstr "También desaparecerá de estas estanterías: %(shelves)s."
 
-#: cps/templates/detail.html
-msgid "Rating updated"
-msgstr "Valoración actualizada"
-
-#: cps/templates/detail.html
-msgid "Rating cleared"
-msgstr "Valoración eliminada"
-
 #: cps/templates/detail.html cps/templates/listenmp3.html
 #, python-format
 msgid "Book %(index)s of %(range)s"
@@ -17221,10 +17353,6 @@ msgstr "Introducir nombre de dominio"
 msgid "Denied Domains (Blacklist)"
 msgstr "Dominios Prohibidos (Lista Negra)"
 
-#: cps/templates/feed.xml
-msgid "(Magic)"
-msgstr "(Mágica)"
-
 #: cps/templates/generate_kobo_auth_url.html
 msgid ""
 "Open the .kobo/Kobo/Kobo eReader.conf file in a text editor and add (or "
@@ -17423,10 +17551,10 @@ msgid "Mobile Notice"
 msgstr "Aviso para móviles"
 
 #: cps/templates/index.html
-msgid "Magic shelf editing works best on desktop or tablet devices."
+msgid "Smart shelf editing works best on desktop or tablet devices."
 msgstr ""
-"La edición de estanterías mágicas funciona mejor en equipos de escritorio o "
-"tablet."
+"La edición de estanterías inteligentes funciona mejor en un ordenador o una "
+"tableta."
 
 #: cps/templates/index.html
 msgid "Search the global library"
@@ -17699,10 +17827,6 @@ msgid "Create Shelf"
 msgstr "Crear estantería"
 
 #: cps/templates/layout.html
-msgid "Magic Shelves ✨"
-msgstr "Estanterías mágicas ✨"
-
-#: cps/templates/layout.html
 msgid "Book Details"
 msgstr "Detalles del libro"
 
@@ -17880,6 +18004,22 @@ msgid "Download Access Log"
 msgstr "Descargar el registro de acceso"
 
 #: cps/templates/magic_shelf_edit.html
+msgid "What are smart shelves?"
+msgstr "¿Qué son las estanterías inteligentes?"
+
+#: cps/templates/magic_shelf_edit.html
+msgid "Smart shelves collect books automatically using rules."
+msgstr ""
+"Las estanterías inteligentes recopilan libros automáticamente mediante "
+"reglas."
+
+#: cps/templates/magic_shelf_edit.html
+msgid "Smart shelves were called Magic Shelves in older versions."
+msgstr ""
+"Las estanterías inteligentes se llamaban «Magic Shelves» en versiones "
+"anteriores."
+
+#: cps/templates/magic_shelf_edit.html
 msgid "System Template"
 msgstr "Plantilla del sistema"
 
@@ -17888,6 +18028,19 @@ msgid "This is a pre-configured template shelf. You can edit it freely."
 msgstr ""
 "Esta es una estantería de plantilla preconfigurada. Puedes editarla "
 "libremente."
+
+#: cps/templates/magic_shelf_edit.html
+#, python-format
+msgid ""
+"Turn on “%(setting)s” in CWA Settings first. Until then, this checkbox has "
+"no effect and the shelf will not reach your e-reader."
+msgstr ""
+"Activa primero «%(setting)s» en Ajustes de CWA. Hasta entonces, esta casilla "
+"no tiene efecto y la estantería no llegará a tu lector electrónico."
+
+#: cps/templates/magic_shelf_edit.html
+msgid "Expose this smart shelf in my OPDS feed"
+msgstr "Mostrar esta estantería inteligente en mi catálogo OPDS"
 
 #: cps/templates/magic_shelf_edit.html
 msgid "Share with Everyone (Public)"
@@ -17985,6 +18138,11 @@ msgstr "Ok"
 #: cps/templates/osd.xml
 msgid "Calibre-Web NextGen eBook Catalog"
 msgstr "Catálogo de eBooks de Calibre-Web NextGen"
+
+#: cps/templates/personal_rating.html
+#, python-format
+msgid "%(rating)s out of 5"
+msgstr ""
 
 #: cps/templates/read.html
 msgid "epub Reader"
@@ -18254,8 +18412,16 @@ msgid "Exclude Extensions"
 msgstr "Extensiones Excluidas"
 
 #: cps/templates/search_form.html
+msgid "Your rating above"
+msgstr ""
+
+#: cps/templates/search_form.html
 msgid "Rating Above"
 msgstr "Valoración mayor que"
+
+#: cps/templates/search_form.html
+msgid "Your rating below"
+msgstr ""
 
 #: cps/templates/search_form.html
 msgid "Rating Below"
@@ -18832,13 +18998,12 @@ msgid "Configure what actions this user is allowed to perform."
 msgstr "Configura qué acciones puede realizar este usuario."
 
 #: cps/templates/user_edit.html
-msgid "Magic Shelves Order"
-msgstr "Orden de las estanterías mágicas"
+msgid "Smart shelves order"
+msgstr "Orden de las estanterías inteligentes"
 
 #: cps/templates/user_edit.html
-msgid "Choose how your magic shelves are ordered in the sidebar."
-msgstr ""
-"En la barra lateral, elige cómo quieres que se ordenen tus estantes mágicos."
+msgid "Choose how your smart shelves are ordered in the sidebar."
+msgstr "Elige el orden de tus estanterías inteligentes en la barra lateral."
 
 #: cps/templates/user_edit.html
 msgid "Order Mode"
@@ -18887,8 +19052,8 @@ msgstr ""
 "en Manual."
 
 #: cps/templates/user_edit.html
-msgid "Magic Shelves Visibility"
-msgstr "Visibilidad de estanterías mágicas"
+msgid "Smart shelves visibility"
+msgstr "Visibilidad de las estanterías inteligentes"
 
 #: cps/templates/user_edit.html
 msgid ""
@@ -19081,6 +19246,72 @@ msgstr "Exponer las estanterías seleccionadas en OPDS"
 #: cps/templates/user_table.html
 msgid "Show Read/Unread Section"
 msgstr "Mostrar Selección Leidos/No Leidos"
+
+#~ msgid "Rating updated"
+#~ msgstr "Valoración actualizada"
+
+#~ msgid "Rating cleared"
+#~ msgstr "Valoración eliminada"
+
+#~ msgid "Magic Shelves"
+#~ msgstr "Estanterías mágicas"
+
+#~ msgid "Books organized in magic shelves"
+#~ msgstr "Libros organizados en estanterías mágicas"
+
+#~ msgid "Error loading magic shelf"
+#~ msgstr "Error al cargar la estantería mágica"
+
+#, python-format
+#~ msgid "Magic Shelf&nbsp&nbsp&nbsp—&nbsp&nbsp&nbsp%(icon)s %(name)s"
+#~ msgstr "Estantería mágica&nbsp&nbsp&nbsp—&nbsp&nbsp&nbsp%(icon)s %(name)s"
+
+#~ msgid "Create Magic Shelf"
+#~ msgstr "Crear una Magic Shelf"
+
+#~ msgid "Edit Magic Shelf"
+#~ msgstr "Editar Magic Shelf"
+
+#~ msgid ""
+#~ "Kobo sync for Magic Shelves is disabled globally — this shelf won't reach "
+#~ "your Kobo until 'Sync Magic Shelves to Kobo' is enabled in CWA Settings."
+#~ msgstr ""
+#~ "La sincronización de estanterías mágicas con Kobo está desactivada "
+#~ "globalmente: esta estantería no llegará a tu Kobo hasta que se active "
+#~ "«Sincronizar estanterías mágicas con Kobo» en la configuración de CWA."
+
+#~ msgid "Sync Magic Shelves to Kobo"
+#~ msgstr "Sincronizar estanterías mágicas con Kobo"
+
+#~ msgid ""
+#~ "When active, your Magic Shelves will be synced to your Kobo device as "
+#~ "collections. Note: You must also enable Kobo Sync in Basic Configuration."
+#~ msgstr ""
+#~ "Cuando está activado, tus estanterías mágicas se sincronizarán con tu "
+#~ "dispositivo Kobo como colecciones. Nota: también debes activar Kobo Sync "
+#~ "en Configuración básica."
+
+#~ msgid "(Magic)"
+#~ msgstr "(Mágica)"
+
+#~ msgid "Magic shelf editing works best on desktop or tablet devices."
+#~ msgstr ""
+#~ "La edición de estanterías mágicas funciona mejor en equipos de escritorio "
+#~ "o tablet."
+
+#~ msgid "Magic Shelves ✨"
+#~ msgstr "Estanterías mágicas ✨"
+
+#~ msgid "Magic Shelves Order"
+#~ msgstr "Orden de las estanterías mágicas"
+
+#~ msgid "Choose how your magic shelves are ordered in the sidebar."
+#~ msgstr ""
+#~ "En la barra lateral, elige cómo quieres que se ordenen tus estantes "
+#~ "mágicos."
+
+#~ msgid "Magic Shelves Visibility"
+#~ msgstr "Visibilidad de estanterías mágicas"
 
 #~ msgid "Books ordered by category"
 #~ msgstr "Libros ordenados por categorías"

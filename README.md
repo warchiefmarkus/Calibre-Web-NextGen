@@ -750,6 +750,7 @@ The WebDAV connection is always made through HTTP/WebDAV, even when it points
 back to the same host. Redirects are rejected so Basic Auth credentials cannot
 be forwarded to another origin. Directory listings, position files, and
 checksum downloads have explicit size and timeout limits.
+For books emailed to a reader, **eReader attachment filename template** in the administrator's email settings controls the outgoing attachment name, including series and series numbers. See [Names for emailed book attachments](docs/send-filename-template.md) for examples.
 
 ### Kobo sync
 
@@ -917,34 +918,34 @@ The interface ships with the locales below. Completion is auto-refreshed on ever
 | Language | Completion | Strings | Fuzzy |
 |---|---|---:|---:|
 | English (source) | 100% | source | — |
-| Russian (`ru`) | `██████████████████░░` 88% | 3547/4049 | 0 |
-| French (`fr`) | `█████████████████░░░` 87% | 3512/4049 | 125 |
-| Slovak (`sk`) | `█████████████████░░░` 83% | 3377/4049 | 0 |
-| Swedish (`sv`) | `████████████████░░░░` 81% | 3290/4049 | 0 |
-| Italian (`it`) | `███████████████░░░░░` 77% | 3101/4049 | 0 |
-| Spanish (`es`) | `███████████████░░░░░` 76% | 3085/4049 | 0 |
-| Dutch (`nl`) | `███████████████░░░░░` 76% | 3063/4049 | 287 |
-| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `█████████████░░░░░░░` 66% | 2654/4049 | 179 |
-| Polish (`pl`) | `█████████████░░░░░░░` 63% | 2566/4049 | 0 |
-| German (`de`) | `████████████░░░░░░░░` 59% | 2394/4049 | 12 |
-| Hungarian (`hu`) | `█████████░░░░░░░░░░░` 43% | 1748/4049 | 119 |
-| Portuguese (Brazil) (`pt_BR`) | `███████░░░░░░░░░░░░░` 35% | 1400/4049 | 302 |
-| Japanese (`ja`) | `██████░░░░░░░░░░░░░░` 32% | 1310/4049 | 243 |
-| Slovenian (`sl`) | `██████░░░░░░░░░░░░░░` 30% | 1204/4049 | 311 |
-| Chinese (Simplified, China) (`zh_Hans_CN`) | `██████░░░░░░░░░░░░░░` 29% | 1170/4049 | 339 |
-| Korean (`ko`) | `█████░░░░░░░░░░░░░░░` 23% | 940/4049 | 265 |
-| Arabic (`ar`) | `████░░░░░░░░░░░░░░░░` 19% | 785/4049 | 280 |
-| Portuguese (`pt`) | `███░░░░░░░░░░░░░░░░░` 17% | 702/4049 | 350 |
-| Galician (`gl`) | `███░░░░░░░░░░░░░░░░░` 17% | 677/4049 | 351 |
-| Indonesian (`id`) | `███░░░░░░░░░░░░░░░░░` 17% | 678/4049 | 352 |
-| Greek (`el`) | `███░░░░░░░░░░░░░░░░░` 13% | 509/4049 | 388 |
-| Czech (`cs`) | `██░░░░░░░░░░░░░░░░░░` 12% | 481/4049 | 397 |
-| Ukrainian (`uk`) | `██░░░░░░░░░░░░░░░░░░` 11% | 450/4049 | 363 |
-| Norwegian (`no`) | `██░░░░░░░░░░░░░░░░░░` 11% | 436/4049 | 424 |
-| Vietnamese (`vi`) | `██░░░░░░░░░░░░░░░░░░` 11% | 428/4049 | 347 |
-| Finnish (`fi`) | `██░░░░░░░░░░░░░░░░░░` 9% | 361/4049 | 377 |
-| Turkish (`tr`) | `█░░░░░░░░░░░░░░░░░░░` 7% | 295/4049 | 375 |
-| Khmer (`km`) | `█░░░░░░░░░░░░░░░░░░░` 5% | 213/4049 | 335 |
+| Slovak (`sk`) | `████████████████████` 100% | 4078/4083 | 0 |
+| Russian (`ru`) | `██████████████████░░` 91% | 3728/4083 | 0 |
+| French (`fr`) | `█████████████████░░░` 87% | 3549/4083 | 123 |
+| Swedish (`sv`) | `████████████████░░░░` 81% | 3291/4083 | 0 |
+| Dutch (`nl`) | `███████████████░░░░░` 76% | 3113/4083 | 279 |
+| Italian (`it`) | `███████████████░░░░░` 76% | 3102/4083 | 0 |
+| Spanish (`es`) | `███████████████░░░░░` 76% | 3086/4083 | 0 |
+| Chinese (Traditional, Taiwan) (`zh_Hant_TW`) | `█████████████░░░░░░░` 65% | 2664/4083 | 172 |
+| Polish (`pl`) | `█████████████░░░░░░░` 63% | 2567/4083 | 0 |
+| German (`de`) | `████████████░░░░░░░░` 59% | 2397/4083 | 11 |
+| Hungarian (`hu`) | `█████████░░░░░░░░░░░` 43% | 1751/4083 | 118 |
+| Portuguese (Brazil) (`pt_BR`) | `███████░░░░░░░░░░░░░` 35% | 1418/4083 | 296 |
+| Japanese (`ja`) | `██████░░░░░░░░░░░░░░` 32% | 1324/4083 | 234 |
+| Slovenian (`sl`) | `██████░░░░░░░░░░░░░░` 30% | 1219/4083 | 302 |
+| Chinese (Simplified, China) (`zh_Hans_CN`) | `██████░░░░░░░░░░░░░░` 29% | 1184/4083 | 330 |
+| Korean (`ko`) | `█████░░░░░░░░░░░░░░░` 24% | 961/4083 | 256 |
+| Arabic (`ar`) | `████░░░░░░░░░░░░░░░░` 21% | 856/4083 | 221 |
+| Portuguese (`pt`) | `████░░░░░░░░░░░░░░░░` 18% | 723/4083 | 341 |
+| Galician (`gl`) | `███░░░░░░░░░░░░░░░░░` 17% | 698/4083 | 342 |
+| Indonesian (`id`) | `███░░░░░░░░░░░░░░░░░` 17% | 699/4083 | 343 |
+| Greek (`el`) | `███░░░░░░░░░░░░░░░░░` 13% | 530/4083 | 381 |
+| Czech (`cs`) | `██░░░░░░░░░░░░░░░░░░` 12% | 502/4083 | 390 |
+| Ukrainian (`uk`) | `██░░░░░░░░░░░░░░░░░░` 12% | 471/4083 | 357 |
+| Norwegian (`no`) | `██░░░░░░░░░░░░░░░░░░` 11% | 457/4083 | 417 |
+| Vietnamese (`vi`) | `██░░░░░░░░░░░░░░░░░░` 11% | 449/4083 | 338 |
+| Finnish (`fi`) | `██░░░░░░░░░░░░░░░░░░` 9% | 382/4083 | 371 |
+| Turkish (`tr`) | `██░░░░░░░░░░░░░░░░░░` 8% | 316/4083 | 369 |
+| Khmer (`km`) | `█░░░░░░░░░░░░░░░░░░░` 6% | 234/4083 | 330 |
 <!-- TRANSLATION_STATUS_END -->
 
 ---
