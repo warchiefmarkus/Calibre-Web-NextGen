@@ -340,3 +340,24 @@ def test_translate_page_rejects_untrusted_inline_mark():
     assert status == 400
     assert json.loads(response.get_data())["error"]["code"] == "invalid_runs"
     provider.assert_not_called()
+
+
+def test_provider_catalog_endpoint_returns_models_dev_summaries():
+    from cps.api import reader_translation as mod
+
+    rows = [{
+        "id": "openai",
+        "name": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "docs_url": "https://example.test",
+        "environment_variables": ["OPENAI_API_KEY"],
+        "model_count": 2,
+        "logo_id": "openai",
+    }]
+    with _ctx("/api/v1/reader/translation/providers/catalog?refresh=1"):
+        with patch.object(mod, "current_user", _user()), \
+             patch.object(mod, "list_provider_catalog", return_value=rows) as catalog:
+            response = inspect.unwrap(mod.get_reader_translation_provider_catalog)()
+
+    assert json.loads(response.get_data()) == {"providers": rows}
+    catalog.assert_called_once_with(force=True)

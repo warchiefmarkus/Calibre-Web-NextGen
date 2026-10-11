@@ -8,15 +8,11 @@ explicit CWNG_READER_TRANSLATION_ALLOW_PRIVATE_ENDPOINTS=true opt-in.
 """
 from __future__ import annotations
 
-import atexit
 import copy
 import hashlib
 import json
 import os
 import re
-import shutil
-import socket
-import subprocess
 import threading
 import time
 from typing import Any
@@ -27,16 +23,21 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from .. import cli_param, config_sql, cw_advocate, logger
 from . import parallel
+from .opencode_runtime import (
+    OpenCodeRuntimeError,
+    runtime_manager as opencode_runtime_manager,
+)
 from ..cw_advocate.exceptions import UnacceptableAddressException
 
 log = logger.create()
 
 _TRANSLATION_CONTEXT = threading.local()
 _OPENCODE_CLI_ENDPOINT = "opencode-cli"
-_OPENCODE_BRIDGE_LOCK = threading.Lock()
-_OPENCODE_BRIDGE_PROCESS = None
-_OPENCODE_BRIDGE_PORT = 0
-_OPENCODE_BRIDGE_KEY_FINGERPRINT = ""
+_MODELS_DEV_URL = "https://models.dev/api.json"
+_MODELS_DEV_CACHE_TTL = 6 * 60 * 60
+_MODELS_DEV_CACHE_LOCK = threading.Lock()
+_MODELS_DEV_CACHE_AT = 0.0
+_MODELS_DEV_PROVIDER_CACHE: list[dict[str, Any]] | None = None
 
 
 def _configured_translation_timeout(profile: Any) -> float:
@@ -107,6 +108,63 @@ class ReaderTranslationError(Exception):
         super().__init__(message)
         self.code = code
         self.status = status
+
+
+def list_provider_catalog(*, force=False) -> list[dict[str, Any]]:
+    """Return a compact models.dev provider catalogue for the LLM settings UI."""
+    global _MODELS_DEV_CACHE_AT, _MODELS_DEV_PROVIDER_CACHE
+    now = time.monotonic()
+    with _MODELS_DEV_CACHE_LOCK:
+        if (
+            not force and _MODELS_DEV_PROVIDER_CACHE is not None
+            and now - _MODELS_DEV_CACHE_AT < _MODELS_DEV_CACHE_TTL
+        ):
+            return copy.deepcopy(_MODELS_DEV_PROVIDER_CACHE)
+        stale = copy.deepcopy(_MODELS_DEV_PROVIDER_CACHE)
+
+    try:
+        response = requests.get(
+            _MODELS_DEV_URL,
+            timeout=20,
+            headers={"Accept": "application/json", "User-Agent": "CalibreWebNextGen/LLM"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("models.dev returned an invalid provider catalogue")
+        providers: list[dict[str, Any]] = []
+        for key, raw in payload.items():
+            if not isinstance(raw, dict):
+                continue
+            provider_id = str(raw.get("id") or key).strip()
+            name = str(raw.get("name") or provider_id).strip()
+            base_url = str(raw.get("api") or "").strip().rstrip("/")
+            docs_url = str(raw.get("doc") or "").strip()
+            models = raw.get("models")
+            model_count = len(models) if isinstance(models, dict) else 0
+            env = raw.get("env")
+            providers.append({
+                "id": provider_id,
+                "name": name,
+                "base_url": base_url,
+                "docs_url": docs_url,
+                "environment_variables": [str(item) for item in env] if isinstance(env, list) else [],
+                "model_count": model_count,
+                "logo_id": provider_id,
+            })
+        providers.sort(key=lambda item: (item["name"].casefold(), item["id"].casefold()))
+        with _MODELS_DEV_CACHE_LOCK:
+            _MODELS_DEV_PROVIDER_CACHE = providers
+            _MODELS_DEV_CACHE_AT = time.monotonic()
+        return copy.deepcopy(providers)
+    except Exception as exc:
+        if stale is not None:
+            log.warning("models.dev refresh failed; using stale provider catalogue: %s", exc)
+            return stale
+        raise ReaderTranslationError(
+            f"Could not load the models.dev provider catalogue: {exc}",
+            code="provider_catalog_unavailable", status=502,
+        ) from exc
 
 
 def normalize_base_url(value: Any) -> str:
@@ -300,111 +358,22 @@ def _opencode_model_id(model: Any) -> str:
     return value
 
 
-def _stop_opencode_bridge() -> None:
-    global _OPENCODE_BRIDGE_PROCESS, _OPENCODE_BRIDGE_PORT, _OPENCODE_BRIDGE_KEY_FINGERPRINT
-    process = _OPENCODE_BRIDGE_PROCESS
-    _OPENCODE_BRIDGE_PROCESS = None
-    _OPENCODE_BRIDGE_PORT = 0
-    _OPENCODE_BRIDGE_KEY_FINGERPRINT = ""
-    if process is None:
-        return
-    try:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
-    except Exception:
-        log.debug("Could not stop OpenCode CLI bridge", exc_info=True)
+def _opencode_runtime_id(profile: Any) -> str:
+    return str(
+        getattr(profile, "profile_id", None)
+        or getattr(profile, "id", None)
+        or f"profile-{id(profile)}"
+    )
 
 
-atexit.register(_stop_opencode_bridge)
-
-
-def _free_local_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def _opencode_bridge_healthy(port: int) -> bool:
-    if port <= 0:
-        return False
-    try:
-        response = requests.get(f"http://127.0.0.1:{port}/global/health", timeout=0.5)
-        return response.status_code == 200
-    except requests.RequestException:
-        return False
-
-
-def _ensure_opencode_bridge(api_key: str) -> str:
-    """Start one local pure OpenCode server and reuse it across translation calls."""
-    global _OPENCODE_BRIDGE_PROCESS, _OPENCODE_BRIDGE_PORT, _OPENCODE_BRIDGE_KEY_FINGERPRINT
-    fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest() if api_key else ""
-    with _OPENCODE_BRIDGE_LOCK:
-        process = _OPENCODE_BRIDGE_PROCESS
-        if (
-            process is not None
-            and process.poll() is None
-            and _OPENCODE_BRIDGE_KEY_FINGERPRINT == fingerprint
-            and _opencode_bridge_healthy(_OPENCODE_BRIDGE_PORT)
-        ):
-            return f"http://127.0.0.1:{_OPENCODE_BRIDGE_PORT}"
-
-        _stop_opencode_bridge()
-        command = shutil.which("opencode")
-        if not command:
-            raise ReaderTranslationError(
-                "OpenCode CLI transport is configured, but the opencode executable is not installed on the server.",
-                code="opencode_cli_unavailable", status=503,
-            )
-
-        port = _free_local_port()
-        workdir = os.path.join(os.path.dirname(cli_param.settings_path), "opencode-bridge")
-        os.makedirs(workdir, exist_ok=True)
-        env = os.environ.copy()
-        if api_key:
-            env["OPENCODE_API_KEY"] = api_key
-        try:
-            process = subprocess.Popen(
-                [
-                    command, "serve", "--pure",
-                    "--hostname", "127.0.0.1",
-                    "--port", str(port),
-                    "--log-level", "WARN",
-                ],
-                cwd=workdir,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except OSError as exc:
-            raise ReaderTranslationError(
-                f"Could not start OpenCode CLI: {exc}",
-                code="opencode_cli_start_failed", status=503,
-            ) from exc
-
-        _OPENCODE_BRIDGE_PROCESS = process
-        _OPENCODE_BRIDGE_PORT = port
-        _OPENCODE_BRIDGE_KEY_FINGERPRINT = fingerprint
-        deadline = time.monotonic() + 12
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                break
-            if _opencode_bridge_healthy(port):
-                log.info("OpenCode CLI bridge started on 127.0.0.1:%s", port)
-                return f"http://127.0.0.1:{port}"
-            time.sleep(0.15)
-
-        _stop_opencode_bridge()
+def _opencode_cli_api_key(profile: Any) -> str:
+    api_key = decrypt_api_key(getattr(profile, "api_key_encrypted", None))
+    if not api_key:
         raise ReaderTranslationError(
-            "OpenCode CLI did not start its local inference server.",
-            code="opencode_cli_start_failed", status=503,
+            "OpenCode Zen API key is required for OpenCode CLI.",
+            code="missing_api_key", status=400,
         )
+    return api_key
 
 
 def _opencode_message_text(value: Any) -> str:
@@ -420,119 +389,127 @@ def _opencode_message_text(value: Any) -> str:
 
 
 def _opencode_cli_completion(profile: Any, payload: dict[str, Any]) -> str:
-    """Run an OpenAI-shaped request through OpenCode's local session API."""
-    api_key = decrypt_api_key(getattr(profile, "api_key_encrypted", None))
+    """Run an OpenAI-shaped request through an isolated managed OpenCode runtime."""
+    api_key = _opencode_cli_api_key(profile)
     model_id = _opencode_model_id(getattr(profile, "model", ""))
+    runtime_id = _opencode_runtime_id(profile)
+    manager = opencode_runtime_manager()
 
     def perform() -> str:
-        base_uri = _ensure_opencode_bridge(api_key)
-        timeout = _remaining_translation_timeout(profile)
-        session_id = ""
         try:
-            created = requests.post(
-                f"{base_uri}/session",
-                json={"title": "Calibre Web LLM translation"},
-                timeout=min(10, timeout),
-            )
-            created.raise_for_status()
-            session_id = str((created.json() or {}).get("id") or "").strip()
-            if not session_id:
-                raise ReaderTranslationError(
-                    "OpenCode CLI did not return a session id.",
-                    code="opencode_cli_error", status=502,
-                )
+            with manager.lease(runtime_id, api_key) as base_uri:
+                timeout = _remaining_translation_timeout(profile)
+                session_id = ""
+                try:
+                    created = requests.post(
+                        f"{base_uri}/session",
+                        json={"title": "Calibre Web LLM translation"},
+                        timeout=min(30, timeout),
+                    )
+                    created.raise_for_status()
+                    session_id = str((created.json() or {}).get("id") or "").strip()
+                    if not session_id:
+                        raise ReaderTranslationError(
+                            "OpenCode CLI did not return a session id.",
+                            code="opencode_cli_error", status=502,
+                        )
 
-            messages = payload.get("messages")
-            if not isinstance(messages, list):
-                messages = []
-            system_parts = []
-            transcript_parts = []
-            for message in messages:
-                if not isinstance(message, dict):
-                    continue
-                role = str(message.get("role") or "user").strip().lower()
-                content = _opencode_message_text(message.get("content"))
-                if not content:
-                    continue
-                if role == "system":
-                    system_parts.append(content)
-                else:
-                    transcript_parts.append(f"{role.upper()}:\n{content}")
+                    messages = payload.get("messages")
+                    if not isinstance(messages, list):
+                        messages = []
+                    system_parts = []
+                    transcript_parts = []
+                    for message in messages:
+                        if not isinstance(message, dict):
+                            continue
+                        role = str(message.get("role") or "user").strip().lower()
+                        content = _opencode_message_text(message.get("content"))
+                        if not content:
+                            continue
+                        if role == "system":
+                            system_parts.append(content)
+                        else:
+                            transcript_parts.append(f"{role.upper()}:\n{content}")
 
-            system = (
-                "You are being used by Calibre Web as an inference transport. "
-                "Answer the supplied conversation directly. Never inspect local files, "
-                "run shell commands, or invoke OpenCode/local tools."
-            )
-            if system_parts:
-                system += "\n\nCALLER SYSTEM INSTRUCTIONS:\n" + "\n\n".join(system_parts)
-            transcript = "\n\n".join(transcript_parts).strip() or "Reply only OK."
+                    system = (
+                        "You are being used by Calibre Web as an inference transport. "
+                        "Answer the supplied conversation directly. Never inspect local files, "
+                        "run shell commands, or invoke OpenCode/local tools."
+                    )
+                    if system_parts:
+                        system += "\n\nCALLER SYSTEM INSTRUCTIONS:\n" + "\n\n".join(system_parts)
+                    transcript = "\n\n".join(transcript_parts).strip() or "Reply only OK."
 
-            body = {
-                "model": {"providerID": "opencode", "modelID": model_id},
-                "agent": "general",
-                "tools": {},
-                "system": system,
-                "parts": [{"type": "text", "text": transcript}],
-            }
-            response = requests.post(
-                f"{base_uri}/session/{session_id}/message",
-                json=body,
-                timeout=max(5, timeout),
-            )
-            if not response.ok:
-                detail = response.text.replace("\r", " ").replace("\n", " ").strip()[:500]
-                raise ReaderTranslationError(
-                    f"OpenCode CLI returned HTTP {response.status_code}"
-                    + (f": {detail}" if detail else ""),
-                    code="opencode_cli_error", status=502,
-                )
-            try:
-                data = response.json()
-            except ValueError as exc:
-                raise ReaderTranslationError(
-                    "OpenCode CLI returned invalid JSON.",
-                    code="opencode_cli_error", status=502,
-                ) from exc
-            info = data.get("info") if isinstance(data, dict) else None
-            if isinstance(info, dict) and info.get("error"):
-                raise ReaderTranslationError(
-                    f"OpenCode CLI error: {json.dumps(info['error'], ensure_ascii=False)[:500]}",
-                    code="opencode_cli_error", status=502,
-                )
-            parts = data.get("parts") if isinstance(data, dict) else None
-            text = "".join(
-                str(item.get("text") or "")
-                for item in (parts or [])
-                if isinstance(item, dict) and item.get("type") == "text"
-            ).strip()
-            if not text:
-                raise ReaderTranslationError(
-                    "OpenCode CLI returned no text.",
-                    code="empty_provider_response", status=502,
-                )
-            return text
+                    body = {
+                        "model": {"providerID": "opencode", "modelID": model_id},
+                        "agent": "general",
+                        "tools": {},
+                        "system": system,
+                        "parts": [{"type": "text", "text": transcript}],
+                    }
+                    response = requests.post(
+                        f"{base_uri}/session/{session_id}/message",
+                        json=body,
+                        timeout=max(5, timeout),
+                    )
+                    if not response.ok:
+                        detail = response.text.replace("\r", " ").replace("\n", " ").strip()[:500]
+                        raise ReaderTranslationError(
+                            f"OpenCode CLI returned HTTP {response.status_code}"
+                            + (f": {detail}" if detail else ""),
+                            code="opencode_cli_error", status=502,
+                        )
+                    try:
+                        data = response.json()
+                    except ValueError as exc:
+                        raise ReaderTranslationError(
+                            "OpenCode CLI returned invalid JSON.",
+                            code="opencode_cli_error", status=502,
+                        ) from exc
+                    info = data.get("info") if isinstance(data, dict) else None
+                    if isinstance(info, dict) and info.get("error"):
+                        raise ReaderTranslationError(
+                            f"OpenCode CLI error: {json.dumps(info['error'], ensure_ascii=False)[:500]}",
+                            code="opencode_cli_error", status=502,
+                        )
+                    parts = data.get("parts") if isinstance(data, dict) else None
+                    text = "".join(
+                        str(item.get("text") or "")
+                        for item in (parts or [])
+                        if isinstance(item, dict) and item.get("type") == "text"
+                    ).strip()
+                    if not text:
+                        raise ReaderTranslationError(
+                            "OpenCode CLI returned no text.",
+                            code="empty_provider_response", status=502,
+                        )
+                    return text
+                finally:
+                    if session_id:
+                        try:
+                            requests.delete(f"{base_uri}/session/{session_id}", timeout=2)
+                        except Exception:
+                            pass
         except ReaderTranslationError:
             raise
+        except OpenCodeRuntimeError as exc:
+            raise ReaderTranslationError(
+                f"OpenCode CLI runtime failed: {exc}",
+                code="opencode_cli_start_failed", status=503,
+            ) from exc
         except requests.Timeout as exc:
             raise ReaderTranslationError(
                 "OpenCode CLI request timed out.",
                 code="provider_timeout", status=504,
             ) from exc
         except requests.RequestException as exc:
+            manager.invalidate(runtime_id)
             raise ReaderTranslationError(
-                f"Could not reach the local OpenCode CLI bridge: {exc}",
+                f"Could not reach the local OpenCode CLI runtime: {exc}",
                 code="opencode_cli_error", status=502,
             ) from exc
-        finally:
-            if session_id:
-                try:
-                    requests.delete(f"{base_uri}/session/{session_id}", timeout=2)
-                except Exception:
-                    pass
 
     return parallel.run_blocking(perform)
-
 
 def _profile_headers(profile: Any) -> dict[str, str]:
     headers = {"Accept": "application/json", "Content-Type": "application/json"}

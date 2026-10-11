@@ -21,6 +21,7 @@ from ..services.reader_translation import (
     check_model,
     encrypt_api_key,
     list_model_catalog,
+    list_provider_catalog,
     normalize_base_url,
     normalize_endpoint_path,
     normalize_extra_headers,
@@ -198,6 +199,21 @@ def _commit_profile(profile, *, created=False):
         log.exception("Could not save reader translation profile")
         return _err("save_failed", "Could not save the translation profile.", 500)
     return jsonify({"profile": serialize_profile(profile)}), 201 if created else 200
+
+
+
+
+@api_v1.route("/reader/translation/providers/catalog")
+@login_required_if_no_ano
+def get_reader_translation_provider_catalog():
+    guard = _require_real_user()
+    if guard:
+        return guard
+    force = request.args.get("refresh") in {"1", "true", "yes", "on"}
+    try:
+        return jsonify({"providers": list_provider_catalog(force=force)})
+    except ReaderTranslationError as exc:
+        return _err(exc.code, str(exc), exc.status)
 
 
 @api_v1.route("/reader/translation/profiles")

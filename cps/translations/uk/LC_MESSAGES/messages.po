@@ -19751,6 +19751,46 @@ msgstr ""
 "Переглядайте моделі через налаштовані профілі. Рядки провайдерів нижче — це"
 " джерела каталогів, а не профілі; редагуйте або видаляйте профілі вище."
 
+#: cps/spa_strings.py
+msgid "Add an LLM profile to browse and test its models."
+msgstr "Додайте LLM-профіль, щоб переглядати й тестувати його моделі."
+
+#: cps/spa_strings.py
+msgid "Add provider"
+msgstr "Додати провайдера"
+
+#: cps/spa_strings.py
+msgid "Could not load provider catalog."
+msgstr "Не вдалося завантажити каталог провайдерів."
+
+#: cps/spa_strings.py
+msgid "Custom provider"
+msgstr "Власний провайдер"
+
+#: cps/spa_strings.py
+msgid "Enter any OpenAI-compatible endpoint"
+msgstr "Вкажіть будь-який OpenAI-сумісний endpoint"
+
+#: cps/spa_strings.py
+msgid "No providers configured yet."
+msgstr "Провайдерів ще не налаштовано."
+
+#: cps/spa_strings.py
+msgid ""
+"Providers are model catalog sources. Saved credentials and defaults live in"
+" LLM profiles above."
+msgstr ""
+"Провайдери є джерелами каталогів моделей. Збережені облікові дані та типові"
+" параметри зберігаються в LLM-профілях вище."
+
+#: cps/spa_strings.py
+msgid "Search providers"
+msgstr "Пошук провайдерів"
+
+#: cps/spa_strings.py
+msgid "models"
+msgstr "моделей"
+
 #~ msgid "Rating updated"
 #~ msgstr "З'єднання з базою даних закрите"
 

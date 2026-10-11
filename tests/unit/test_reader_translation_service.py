@@ -984,3 +984,54 @@ def test_opencode_cli_model_check_uses_local_transport(monkeypatch):
     assert result["ok"] is True
     assert result["model"] == "mimo-v2.5-free"
     assert result["preview"] == "OK"
+
+
+def test_models_dev_provider_catalog_is_compact_and_cached(monkeypatch):
+    from cps.services import reader_translation as service
+
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "openai": {
+                    "id": "openai",
+                    "name": "OpenAI",
+                    "api": "https://api.openai.com/v1",
+                    "doc": "https://example.test/openai",
+                    "env": ["OPENAI_API_KEY"],
+                    "models": {"gpt-5": {}, "gpt-5-mini": {}},
+                },
+                "empty": {
+                    "id": "empty",
+                    "name": "Empty Provider",
+                    "models": {},
+                },
+            }
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return Response()
+
+    monkeypatch.setattr(service, "_MODELS_DEV_PROVIDER_CACHE", None)
+    monkeypatch.setattr(service, "_MODELS_DEV_CACHE_AT", 0.0)
+    monkeypatch.setattr(service.requests, "get", fake_get)
+
+    first = service.list_provider_catalog()
+    second = service.list_provider_catalog()
+
+    assert len(calls) == 1
+    assert first == second
+    openai = next(item for item in first if item["id"] == "openai")
+    assert openai == {
+        "id": "openai",
+        "name": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "docs_url": "https://example.test/openai",
+        "environment_variables": ["OPENAI_API_KEY"],
+        "model_count": 2,
+        "logo_id": "openai",
+    }

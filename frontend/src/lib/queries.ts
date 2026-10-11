@@ -1682,6 +1682,16 @@ export interface ReaderTranslationResponse {
   model: string;
 }
 
+export interface ReaderTranslationProviderCatalogItem {
+  id: string;
+  name: string;
+  base_url: string;
+  docs_url: string;
+  environment_variables: string[];
+  model_count: number;
+  logo_id: string;
+}
+
 export interface ReaderTranslationModelInfo {
   id: string;
   owner?: string;
@@ -1772,6 +1782,16 @@ export function useSaveReaderBookState(bookId: string | number, format: string) 
 }
 
 const readerTranslationProfilesKey = ['reader-translation-profiles'] as const;
+
+export function useReaderTranslationProviderCatalog(enabled = true) {
+  return useQuery<{ providers: ReaderTranslationProviderCatalogItem[] }>({
+    queryKey: ['reader-translation-provider-catalog'],
+    queryFn: () => apiGet('/api/v1/reader/translation/providers/catalog'),
+    enabled,
+    staleTime: 6 * 60 * 60 * 1000,
+    retry: retryUnlessUnauthorized,
+  });
+}
 
 export function useReaderTranslationProfiles() {
   return useQuery<{ profiles: ReaderTranslationProfile[]; private_endpoints_allowed: boolean }>({

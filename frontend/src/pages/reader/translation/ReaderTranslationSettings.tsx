@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle2, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import {
   useCheckReaderTranslationModel,
   useCreateReaderTranslationProfile,
   useDeleteReaderTranslationProfile,
   useReaderTranslationModels,
   useReaderTranslationProfiles,
+  useReaderTranslationProviderCatalog,
   useTestReaderTranslationProfile,
   useUpdateReaderTranslationProfile,
   type ReaderSettings,
   type ReaderTranslationModelInfo,
   type ReaderTranslationProfile,
   type ReaderTranslationProfileInput,
+  type ReaderTranslationProviderCatalogItem,
 } from '../../../lib/queries';
 import { useT } from '../../../lib/i18n';
 import styles from '../../Reader.module.css';
@@ -352,6 +354,7 @@ export function LlmProfileSettings({ settings, update }: {
 }) {
   const t = useT();
   const profilesQuery = useReaderTranslationProfiles();
+  const providerCatalogQuery = useReaderTranslationProviderCatalog();
   const createProfile = useCreateReaderTranslationProfile();
   const updateProfile = useUpdateReaderTranslationProfile();
   const deleteProfile = useDeleteReaderTranslationProfile();
@@ -361,6 +364,8 @@ export function LlmProfileSettings({ settings, update }: {
   const profiles = profilesQuery.data?.profiles ?? [];
 
   const [managedProfileId, setManagedProfileId] = useState<string | null>(null);
+  const [providerPickerOpen, setProviderPickerOpen] = useState(false);
+  const [providerSearch, setProviderSearch] = useState('');
   const [testingProfileId, setTestingProfileId] = useState<string | null>(null);
   const [profileTestResults, setProfileTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
@@ -387,16 +392,44 @@ export function LlmProfileSettings({ settings, update }: {
     [managedProfileId, profiles, settings.translationProfileId],
   );
 
-  const configuredProviders = useMemo(() => (
-    (Object.keys(PROVIDERS) as ProviderKey[]).flatMap((key) => {
-      const providerProfiles = profiles.filter((profile) => providerFor(profile.base_url) === key);
-      return providerProfiles.length ? [{ key, profiles: providerProfiles }] : [];
-    })
-  ), [profiles]);
+  const providerCatalog = providerCatalogQuery.data?.providers ?? [];
 
-  const selectedProviderKey = selectedProfile ? providerFor(selectedProfile.base_url) : null;
+  const configuredProviders = useMemo(() => {
+    const normalize = (value: string) => value.trim().replace(/\/+$/, '').toLowerCase();
+    const groups = new Map<string, {
+      key: string;
+      providerKey: ProviderKey;
+      label: string;
+      logoId: string;
+      profiles: ReaderTranslationProfile[];
+    }>();
+    for (const profile of profiles) {
+      const providerKey = providerFor(profile.base_url);
+      const catalog = providerKey === 'custom'
+        ? providerCatalog.find((item) => item.base_url && normalize(item.base_url) === normalize(profile.base_url))
+        : undefined;
+      const key = providerKey !== 'custom'
+        ? providerKey
+        : catalog ? 'catalog:' + catalog.id : 'custom:' + (normalize(profile.base_url) || profile.id);
+      const label = providerKey !== 'custom'
+        ? PROVIDERS[providerKey].label
+        : catalog?.name || profile.name || t('Custom provider');
+      const logoId = providerKey !== 'custom'
+        ? providerLogoId(providerKey)
+        : catalog?.logo_id || '';
+      const group = groups.get(key) ?? { key, providerKey, label, logoId, profiles: [] };
+      group.profiles.push(profile);
+      groups.set(key, group);
+    }
+    return [...groups.values()].sort((left, right) => left.label.localeCompare(right.label));
+  }, [profiles, providerCatalog, t]);
 
-  const selectConfiguredProvider = (key: ProviderKey) => {
+  const selectedProviderGroup = selectedProfile
+    ? configuredProviders.find((group) => group.profiles.some((profile) => profile.id === selectedProfile.id))
+    : undefined;
+  const selectedProviderGroupKey = selectedProviderGroup?.key ?? null;
+
+  const selectConfiguredProvider = (key: string) => {
     const group = configuredProviders.find((item) => item.key === key);
     if (!group?.profiles.length) return;
     const preferred = group.profiles.find((profile) => profile.id === settings.translationProfileId)
@@ -404,6 +437,16 @@ export function LlmProfileSettings({ settings, update }: {
       ?? group.profiles[0];
     setManagedProfileId(preferred.id);
   };
+
+  const filteredProviderCatalog = useMemo(() => {
+    const query = providerSearch.trim().toLowerCase();
+    if (!query) return providerCatalog;
+    return providerCatalog.filter((item) => (
+      item.name.toLowerCase().includes(query)
+      || item.id.toLowerCase().includes(query)
+      || item.base_url.toLowerCase().includes(query)
+    ));
+  }, [providerCatalog, providerSearch]);
 
   useEffect(() => {
     if (!profiles.length) {
@@ -470,9 +513,10 @@ export function LlmProfileSettings({ settings, update }: {
     groupByModelFamily(sortedModelChecks, (item) => item.model, modelDetails)
   ), [modelDetails, sortedModelChecks]);
 
-  const selectedProviderLabel = selectedProfile
-    ? PROVIDERS[providerFor(selectedProfile.base_url)].label
-    : '';
+  const selectedProviderLabel = selectedProviderGroup?.label
+    ?? (selectedProfile ? PROVIDERS[providerFor(selectedProfile.base_url)].label : '');
+  const selectedProviderLogoId = selectedProviderGroup?.logoId
+    ?? (selectedProfile ? providerLogoId(providerFor(selectedProfile.base_url)) : '');
   const selectedModelOwner = selectedProfile
     ? modelDetails.find((item) => item.id === selectedProfile.model)?.owner
     : undefined;
@@ -512,6 +556,31 @@ export function LlmProfileSettings({ settings, update }: {
     setHeadersText('{}');
     setFormError(null);
     setNotice(null);
+  };
+
+  const beginProviderFromCatalog = (item: ReaderTranslationProviderCatalogItem | null) => {
+    if (!item) {
+      beginNew();
+      setProviderPickerOpen(false);
+      return;
+    }
+    const knownKey = providerFor(item.base_url);
+    const preset = PROVIDERS[knownKey];
+    setEditingId('new');
+    setProvider(knownKey);
+    setForm({
+      ...EMPTY_PROFILE,
+      extra_headers: {},
+      name: item.name,
+      base_url: item.base_url,
+      endpoint_path: knownKey === 'custom' ? 'chat/completions' : preset.endpoint_path,
+      model: knownKey === 'custom' ? '' : preset.model,
+    });
+    setHeadersText('{}');
+    setFormError(null);
+    setNotice(null);
+    setProviderPickerOpen(false);
+    setProviderSearch('');
   };
 
   const chooseProvider = (key: ProviderKey) => {
@@ -833,6 +902,7 @@ export function LlmProfileSettings({ settings, update }: {
 
   return (
     <div className={styles.translationSettings}>
+      <section className={styles.translationProfilesSection}>
       <div className={styles.translationManagerHeader}>
         <div>
           <h2>{t('LLM profiles')}</h2>
@@ -855,7 +925,11 @@ export function LlmProfileSettings({ settings, update }: {
           {profiles.map((profile) => {
             const selected = selectedProfile?.id === profile.id;
             const active = settings.translationProfileId === profile.id;
-            const providerLabel = PROVIDERS[providerFor(profile.base_url)].label;
+            const profileGroup = configuredProviders.find((group) => (
+              group.profiles.some((item) => item.id === profile.id)
+            ));
+            const providerLabel = profileGroup?.label ?? PROVIDERS[providerFor(profile.base_url)].label;
+            const providerLogo = profileGroup?.logoId ?? providerLogoId(providerFor(profile.base_url));
             const testResult = profileTestResults[profile.id];
             return (
               <article key={profile.id}
@@ -864,7 +938,7 @@ export function LlmProfileSettings({ settings, update }: {
                 <button type="button" className={styles.translationProfileSelect}
                   aria-pressed={selected} onClick={() => setManagedProfileId(profile.id)}>
                   <span className={styles.translationProfileIdentity}>
-                    <BrandMark id={providerLogoId(providerFor(profile.base_url))} label={providerLabel} />
+                    <BrandMark id={providerLogo} label={providerLabel} />
                     <span className={styles.translationProfileIdentityText}>
                       <span className={styles.translationProfileName}>
                         <strong>{profile.name}</strong>
@@ -943,7 +1017,7 @@ export function LlmProfileSettings({ settings, update }: {
               onChange={(event) => setForm({ ...form, api_key: event.target.value })} />
           </label>
           <label>{t('Model')}
-            <input value={form.model}
+            <input type="text" autoComplete="off" value={form.model}
               onChange={(event) => {
                 const model = event.target.value;
                 setForm((current) => ({
@@ -992,26 +1066,85 @@ export function LlmProfileSettings({ settings, update }: {
         </div>
       )}
 
-      {selectedProfile && (
-        <section className={styles.translationCatalogSection} aria-labelledby="llm-model-catalog-heading">
-          <div className={styles.translationCatalogHeader}>
-            <div>
-              <h3 id="llm-model-catalog-heading">{t('Model catalog')}</h3>
-              <p>
-                {t('Browse models through configured profiles. Provider rows below are catalog sources, not profiles; edit or delete profiles above.')}
-              </p>
-            </div>
+      <label>{t('Prompt')}
+        <textarea rows={6} value={promptDraft}
+          placeholder={t('Leave blank to use the built-in literary translation prompt.')}
+          onChange={(event) => setPromptDraft(event.target.value)}
+          onBlur={() => {
+            if (promptDraft !== settings.translationPrompt) update({ translationPrompt: promptDraft });
+          }} />
+      </label>
+      </section>
+
+      <section className={styles.translationCatalogSection} aria-labelledby="llm-model-catalog-heading">
+        <div className={styles.translationCatalogHeader}>
+          <div>
+            <h3 id="llm-model-catalog-heading">{t('Model catalog')}</h3>
+            <p>{t('Providers are model catalog sources. Saved credentials and defaults live in LLM profiles above.')}</p>
           </div>
-          <div className={styles.translationProviderModelGrid}
-            aria-label={t('Models')}>
+        </div>
+
+        <div className={styles.translationProviderModelGrid} aria-label={t('Models')}>
           <aside className={styles.translationProviderBrowser}>
             <div className={styles.translationBrowserHeading}>
-              <strong>{t('Provider catalogs')}</strong>
-              <span>{configuredProviders.length}</span>
+              <span className={styles.translationBrowserTitle}>
+                <strong>{t('Providers')}</strong>
+                <small>{configuredProviders.length}</small>
+              </span>
+              <button type="button" className={styles.translationBrowserAdd}
+                onClick={() => setProviderPickerOpen((open) => !open)}
+                aria-expanded={providerPickerOpen}>
+                <Plus size={14} /> {t('Add')}
+              </button>
             </div>
+
+            {providerPickerOpen && (
+              <div className={styles.translationProviderPicker}>
+                <div className={styles.translationProviderPickerHeader}>
+                  <strong>{t('Add provider')}</strong>
+                  <button type="button" onClick={() => setProviderPickerOpen(false)}
+                    title={t('Close')} aria-label={t('Close')}><X size={15} /></button>
+                </div>
+                <label className={styles.translationProviderSearch}>
+                  <Search size={14} aria-hidden="true" />
+                  <input type="search" value={providerSearch}
+                    placeholder={t('Search providers')}
+                    onChange={(event) => setProviderSearch(event.target.value)} />
+                </label>
+                <div className={styles.translationProviderPickerList} role="list">
+                  <button type="button" role="listitem" className={styles.translationProviderPickerRow}
+                    onClick={() => beginProviderFromCatalog(null)}>
+                    <BrandMark id="" label={t('Custom provider')} />
+                    <span><strong>{t('Custom provider')}</strong><small>{t('Enter any OpenAI-compatible endpoint')}</small></span>
+                  </button>
+                  {providerCatalogQuery.isLoading && <p className={styles.muted}>{t('Loading providers…')}</p>}
+                  {providerCatalogQuery.isError && (
+                    <p className={styles.translationError}>{t('Could not load provider catalog.')}</p>
+                  )}
+                  {filteredProviderCatalog.slice(0, 200).map((item) => (
+                    <button type="button" role="listitem" key={item.id}
+                      className={styles.translationProviderPickerRow}
+                      onClick={() => beginProviderFromCatalog(item)}>
+                      <BrandMark id={item.logo_id || item.id} label={item.name} />
+                      <span>
+                        <strong>{item.name}</strong>
+                        <small>
+                          {item.model_count > 0 ? String(item.model_count) + ' ' + t('models') : item.id}
+                          {item.base_url ? ' · ' + item.base_url : ''}
+                        </small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className={styles.translationProviderList} role="list">
+              {configuredProviders.length === 0 && (
+                <p className={styles.translationModelHealthEmpty}>{t('No providers configured yet.')}</p>
+              )}
               {configuredProviders.map((group) => {
-                const selected = selectedProviderKey === group.key;
+                const selected = selectedProviderGroupKey === group.key;
                 const preferred = group.profiles.find(
                   (profile) => profile.id === settings.translationProfileId,
                 ) ?? group.profiles.find(
@@ -1023,12 +1156,12 @@ export function LlmProfileSettings({ settings, update }: {
                     data-selected={selected ? 'true' : 'false'}
                     aria-pressed={selected}
                     onClick={() => selectConfiguredProvider(group.key)}>
-                    <BrandMark id={providerLogoId(group.key)} label={PROVIDERS[group.key].label} />
+                    <BrandMark id={group.logoId} label={group.label} />
                     <span>
-                      <strong>{PROVIDERS[group.key].label}</strong>
+                      <strong>{group.label}</strong>
                       <small>
                         {group.profiles.length > 1
-                          ? group.profiles.length + ' · ' + preferred.name
+                          ? String(group.profiles.length) + ' · ' + preferred.name
                           : preferred.name}
                       </small>
                     </span>
@@ -1037,140 +1170,139 @@ export function LlmProfileSettings({ settings, update }: {
               })}
             </div>
           </aside>
+
           <div className={[styles.translationModelHealth, styles.translationModelsBrowser].join(' ')}
             aria-label={t('Models')}>
             <div className={styles.translationBrowserHeading}>
               <strong>{t('Models')}</strong>
               <span>{selectedProviderLabel}</span>
             </div>
-          <div className={styles.translationModelHealthHeader}>
-            <div className={styles.translationModelCatalogIdentity}>
-              <BrandMark id={providerLogoId(providerFor(selectedProfile.base_url))}
-                label={selectedProviderLabel} />
-              <span>
-                <strong>{t('Models')} · {selectedProfile.name}</strong>
-                <small>
-                  {selectedProviderLabel} · {selectedProfile.model}
-                  {selectedModelOwner ? ` · ${selectedModelOwner}` : ''}
-                </small>
-              </span>
-            </div>
-            <span className={styles.translationModelHealthCount}>
-              {t('{count} models loaded.', { count: models.length })}
-            </span>
-          </div>
-          <div className={styles.translationModelToolbar}>
-            <button type="button" onClick={() => void loadModels()}
-              disabled={modelsMutation.isPending || checkingModels}>
-              <RefreshCw size={15} /> {t('Refresh')}
-            </button>
-            <button type="button" onClick={() => void checkAllModels()}
-              disabled={checkingModels || modelsMutation.isPending}>
-              <RefreshCw size={15} className={checkingModels ? styles.translationModelHealthSpin : undefined} />
-              {checkingModels ? t('Checking…') : t('Latency')}
-            </button>
-            <button type="button" onClick={() => void test()}
-              disabled={testProfile.isPending || checkingModels}>
-              <CheckCircle2 size={15} /> {t('Test')}
-            </button>
-          </div>
-          <p className={styles.translationModelHealthMeta}>
-            {formattedLastModelCheck
-              ? t('Last check: {date}', { date: formattedLastModelCheck })
-              : t('Not checked yet.')}
-          </p>
-          {sortedModelChecks.length > 0 ? (
-            <div className={styles.translationModelHealthList} aria-live="polite">
-              {groupedModelChecks.map((group) => {
-                const okCount = group.items.filter((item) => item.status === 'ok').length;
-                const errorCount = group.items.filter((item) => item.status === 'error').length;
-                const checkingCount = group.items.filter((item) => item.status === 'checking').length;
-                const label = group.key === 'other' ? t('Other models') : group.title;
-                return (
-                  <details className={styles.translationModelFamily} key={group.key}
-                    open={openModelFamilies.has(group.key)}
-                    onToggle={(event) => {
-                      const isOpen = event.currentTarget.open;
-                      setOpenModelFamilies((current) => {
-                        const next = new Set(current);
-                        if (isOpen) next.add(group.key);
-                        else next.delete(group.key);
-                        return next;
-                      });
-                    }}>
-                    <summary>
-                      <BrandMark small
-                        id={modelLogoId(group.items[0]?.model ?? '', modelDetails, providerFor(selectedProfile.base_url))}
-                        label={label} />
-                      <span className={styles.translationModelFamilyName}>{label}</span>
-                      <span className={styles.translationModelFamilyStats} aria-hidden="true">
-                        <span>{group.items.length}</span>
-                        {checkingCount > 0 && <span data-status="checking">… {checkingCount}</span>}
-                        {okCount > 0 && <span data-status="ok">✓ {okCount}</span>}
-                        {errorCount > 0 && <span data-status="error">× {errorCount}</span>}
-                      </span>
-                    </summary>
-                    <div className={styles.translationModelFamilyRows} role="list">
-                      {group.items.map((item) => {
-                        const selected = item.model === selectedProfile.model;
-                        return (
-                          <button type="button" className={styles.translationModelHealthRow}
-                            role="listitem" key={item.model} aria-pressed={selected}
-                            data-selected={selected ? 'true' : 'false'}
-                            disabled={updateProfile.isPending || checkingModels}
-                            title={item.error || modelOptionLabel(item.model, modelDetails)}
-                            onClick={() => void selectCatalogModel(item.model)}>
-                            <BrandMark small
-                              id={modelLogoId(item.model, modelDetails, providerFor(selectedProfile.base_url))}
-                              label={item.model} />
-                            <span className={styles.translationModelHealthName}>
-                              <strong>{item.model}</strong>
-                              {modelDetails.find((detail) => detail.id === item.model)?.context_length && (
-                                <small>
-                                  {modelDetails.find((detail) => detail.id === item.model)!.context_length!.toLocaleString()} ctx
-                                </small>
-                              )}
-                            </span>
-                            {selected && (
-                              <span className={styles.translationModelSelected}>
-                                <CheckCircle2 size={13} /> {t('Selected')}
-                              </span>
-                            )}
-                            <span className={styles.translationModelHealthStatus} data-status={item.status}>
-                              {item.status === 'checking'
-                                ? t('Checking…')
-                                : item.status === 'ok'
-                                  ? `${item.latencyMs ?? 0} ms`
-                                  : item.status === 'error'
-                                    ? t('No response')
-                                    : t('Not checked')}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </details>
-                );
-              })}
-            </div>
-          ) : (
-            <p className={styles.translationModelHealthEmpty}>
-              {t('No models loaded. The check will load them first.')}
-            </p>
-          )}
-          </div>
-          </div>
-        </section>
-      )}
 
-      <label>{t('Prompt')}
-        <textarea rows={6} value={promptDraft}
-          placeholder={t('Leave blank to use the built-in literary translation prompt.')}
-          onChange={(event) => setPromptDraft(event.target.value)}
-          onBlur={() => {
-            if (promptDraft !== settings.translationPrompt) update({ translationPrompt: promptDraft });
-          }} />
-      </label>
+            {selectedProfile ? (
+              <>
+                <div className={styles.translationModelHealthHeader}>
+                  <div className={styles.translationModelCatalogIdentity}>
+                    <BrandMark id={selectedProviderLogoId} label={selectedProviderLabel} />
+                    <span>
+                      <strong>{t('Models')} · {selectedProfile.name}</strong>
+                      <small>
+                        {selectedProviderLabel + ' · ' + selectedProfile.model
+                          + (selectedModelOwner ? ' · ' + selectedModelOwner : '')}
+                      </small>
+                    </span>
+                  </div>
+                  <span className={styles.translationModelHealthCount}>
+                    {t('{count} models loaded.', { count: models.length })}
+                  </span>
+                </div>
+                <div className={styles.translationModelToolbar}>
+                  <button type="button" onClick={() => void loadModels()}
+                    disabled={modelsMutation.isPending || checkingModels}>
+                    <RefreshCw size={15} /> {t('Refresh')}
+                  </button>
+                  <button type="button" onClick={() => void checkAllModels()}
+                    disabled={checkingModels || modelsMutation.isPending}>
+                    <RefreshCw size={15} className={checkingModels ? styles.translationModelHealthSpin : undefined} />
+                    {checkingModels ? t('Checking…') : t('Latency')}
+                  </button>
+                  <button type="button" onClick={() => void test()}
+                    disabled={testProfile.isPending || checkingModels}>
+                    <CheckCircle2 size={15} /> {t('Test')}
+                  </button>
+                </div>
+                <p className={styles.translationModelHealthMeta}>
+                  {formattedLastModelCheck
+                    ? t('Last check: {date}', { date: formattedLastModelCheck })
+                    : t('Not checked yet.')}
+                </p>
+                {sortedModelChecks.length > 0 ? (
+                  <div className={styles.translationModelHealthList} aria-live="polite">
+                    {groupedModelChecks.map((group) => {
+                      const okCount = group.items.filter((item) => item.status === 'ok').length;
+                      const errorCount = group.items.filter((item) => item.status === 'error').length;
+                      const checkingCount = group.items.filter((item) => item.status === 'checking').length;
+                      const label = group.key === 'other' ? t('Other models') : group.title;
+                      return (
+                        <details className={styles.translationModelFamily} key={group.key}
+                          open={openModelFamilies.has(group.key)}
+                          onToggle={(event) => {
+                            const isOpen = event.currentTarget.open;
+                            setOpenModelFamilies((current) => {
+                              const next = new Set(current);
+                              if (isOpen) next.add(group.key);
+                              else next.delete(group.key);
+                              return next;
+                            });
+                          }}>
+                          <summary>
+                            <BrandMark small
+                              id={modelLogoId(group.items[0]?.model ?? '', modelDetails, providerFor(selectedProfile.base_url))}
+                              label={label} />
+                            <span className={styles.translationModelFamilyName}>{label}</span>
+                            <span className={styles.translationModelFamilyStats} aria-hidden="true">
+                              <span>{group.items.length}</span>
+                              {checkingCount > 0 && <span data-status="checking">… {checkingCount}</span>}
+                              {okCount > 0 && <span data-status="ok">✓ {okCount}</span>}
+                              {errorCount > 0 && <span data-status="error">× {errorCount}</span>}
+                            </span>
+                          </summary>
+                          <div className={styles.translationModelFamilyRows} role="list">
+                            {group.items.map((item) => {
+                              const selected = item.model === selectedProfile.model;
+                              return (
+                                <button type="button" className={styles.translationModelHealthRow}
+                                  role="listitem" key={item.model} aria-pressed={selected}
+                                  data-selected={selected ? 'true' : 'false'}
+                                  disabled={updateProfile.isPending || checkingModels}
+                                  title={item.error || modelOptionLabel(item.model, modelDetails)}
+                                  onClick={() => void selectCatalogModel(item.model)}>
+                                  <BrandMark small
+                                    id={modelLogoId(item.model, modelDetails, providerFor(selectedProfile.base_url))}
+                                    label={item.model} />
+                                  <span className={styles.translationModelHealthName}>
+                                    <strong>{item.model}</strong>
+                                    {modelDetails.find((detail) => detail.id === item.model)?.context_length && (
+                                      <small>
+                                        {modelDetails.find((detail) => detail.id === item.model)!.context_length!.toLocaleString()} ctx
+                                      </small>
+                                    )}
+                                  </span>
+                                  {selected && (
+                                    <span className={styles.translationModelSelected}>
+                                      <CheckCircle2 size={13} /> {t('Selected')}
+                                    </span>
+                                  )}
+                                  <span className={styles.translationModelHealthStatus} data-status={item.status}>
+                                    {item.status === 'checking'
+                                      ? t('Checking…')
+                                      : item.status === 'ok'
+                                        ? String(item.latencyMs ?? 0) + ' ms'
+                                        : item.status === 'error'
+                                          ? t('No response')
+                                          : t('Not checked')}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className={styles.translationModelHealthEmpty}>
+                    {t('No models loaded. The check will load them first.')}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className={styles.translationModelHealthEmpty}>
+                {t('Add an LLM profile to browse and test its models.')}
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
 
       {formError && <p className={styles.translationError} role="alert">{formError}</p>}
       {notice && <p className={styles.translationNotice}>{notice}</p>}

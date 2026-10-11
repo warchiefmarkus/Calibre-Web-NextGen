@@ -969,6 +969,20 @@
   gap: 12px;
 }
 
+.translationProfilesSection,
+.translationCatalogSection {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--reader-border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--reader-panel) 72%, transparent);
+}
+
+.translationProfilesSection > label {
+  margin-top: 2px;
+}
+
 .translationSettings label {
   display: grid;
   gap: 6px;
@@ -1269,8 +1283,7 @@
    source. Two equal columns make that distinction visible instead of making
    the catalogue look like an undeletable second profile. */
 .translationCatalogSection {
-  display: grid;
-  gap: 9px;
+  gap: 12px;
 }
 
 .translationCatalogHeader h3,
@@ -1334,7 +1347,7 @@
   font-size: 13px;
 }
 
-.translationBrowserHeading span {
+.translationBrowserHeading > span:not(.translationBrowserTitle) {
   min-width: 0;
   overflow: hidden;
   color: var(--reader-muted);
@@ -1343,12 +1356,148 @@
   white-space: nowrap;
 }
 
+.translationBrowserTitle {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.translationBrowserTitle small {
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.translationBrowserAdd {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  background: var(--reader-panel);
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.translationBrowserAdd:hover {
+  border-color: var(--reader-accent);
+  color: var(--reader-accent);
+}
+
 .translationProviderList {
   min-height: 0;
   display: grid;
   align-content: start;
   gap: 6px;
   overflow: auto;
+}
+
+.translationProviderPicker {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--reader-border);
+  border-radius: 8px;
+  background: var(--reader-bg);
+}
+
+.translationProviderPickerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.translationProviderPickerHeader strong {
+  font-size: 12px;
+}
+
+.translationProviderPickerHeader button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.translationProviderPickerHeader button:hover {
+  background: color-mix(in srgb, var(--reader-accent) 10%, transparent);
+}
+
+.translationProviderSearch {
+  position: relative;
+  display: block !important;
+}
+
+.translationProviderSearch > svg {
+  position: absolute;
+  z-index: 1;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--reader-muted);
+  pointer-events: none;
+}
+
+.translationProviderSearch input {
+  padding-left: 30px !important;
+}
+
+.translationProviderPickerList {
+  max-height: 280px;
+  display: grid;
+  gap: 5px;
+  overflow: auto;
+}
+
+.translationProviderPickerRow {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.translationProviderPickerRow:hover {
+  border-color: var(--reader-border);
+  background: color-mix(in srgb, var(--reader-accent) 8%, transparent);
+}
+
+.translationProviderPickerRow > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.translationProviderPickerRow strong,
+.translationProviderPickerRow small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translationProviderPickerRow strong { font-size: 12px; }
+.translationProviderPickerRow small {
+  color: var(--reader-muted);
+  font-size: 10px;
 }
 
 .translationProviderRow {
@@ -1567,6 +1716,9 @@
 }
 
 .translationModelFamilyRows {
+  display: grid;
+  gap: 4px;
+  padding: 6px;
   border-top: 1px solid var(--reader-border);
 }
 
@@ -1577,9 +1729,9 @@
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
-  border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--reader-border) 70%, transparent);
-  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px 9px;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -1598,9 +1750,6 @@
   cursor: default;
 }
 
-.translationModelHealthRow:last-child {
-  border-bottom: 0;
-}
 
 .translationModelSelected {
   display: inline-flex;

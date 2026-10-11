@@ -19259,3 +19259,41 @@ msgstr ""
 #: cps/spa_strings.py
 msgid "Providers"
 msgstr ""
+
+#: cps/spa_strings.py
+msgid "Add an LLM profile to browse and test its models."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Add provider"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not load provider catalog."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Custom provider"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Enter any OpenAI-compatible endpoint"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "No providers configured yet."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid ""
+"Providers are model catalog sources. Saved credentials and defaults live in"
+" LLM profiles above."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Search providers"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "models"
+msgstr ""
