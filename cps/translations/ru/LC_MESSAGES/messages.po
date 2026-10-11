@@ -4327,7 +4327,7 @@ msgstr "{n} выбрано"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{pct}% read"
-msgstr "Прочитано: {pct}%"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "What's new"
@@ -10937,7 +10937,7 @@ msgstr "Получен ответ {ok} из {total} источников"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{percent}% read"
-msgstr "{percent}% прочитано"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format

@@ -1641,7 +1641,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "%(format)s tiedostomuotoa ei löytynyt levyltä"
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format
@@ -1715,12 +1715,12 @@ msgstr "Lähetä Kindleen"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "%(format)s tiedostomuotoa ei löytynyt kirjalle: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "%(format)s tiedostomuotoa ei löytynyt kirjalle: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2561,7 +2561,7 @@ msgstr "Virheellinen hylly valittu"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Kirjojen lisäys hyllyyn: %(sname)s epäonnistui"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12404,7 +12404,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Sarja: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

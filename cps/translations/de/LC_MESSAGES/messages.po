@@ -1784,12 +1784,12 @@ msgstr "An E-Reader senden"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "%(format)s Format für Buch-ID %(book)d nicht gefunden"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "%(format)s Format für Buch-ID %(book)d nicht gefunden"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2658,7 +2658,7 @@ msgstr "Ungültige Reihe angegeben"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Bücher konnten nicht zum Regal %(sname)s hinzugefügt werden"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -4240,7 +4240,7 @@ msgstr "{n} ausgewählt"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{pct}% read"
-msgstr "{pct}% gelesen"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "What's new"
@@ -10636,7 +10636,7 @@ msgstr "{ok} von {total} Quellen haben geantwortet"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{percent}% read"
-msgstr "{percent}% gelesen"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format

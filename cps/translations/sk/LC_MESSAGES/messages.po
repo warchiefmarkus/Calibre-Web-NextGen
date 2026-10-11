@@ -4319,7 +4319,7 @@ msgstr "Vybrané: {n}"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{pct}% read"
-msgstr "Prečítané: {pct}%"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "What's new"
@@ -10914,7 +10914,7 @@ msgstr "Odpovedalo {ok} z {total} zdrojov"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{percent}% read"
-msgstr "Prečítané: {percent}%"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format

@@ -942,7 +942,7 @@ msgstr ""
 #: cps/admin.py
 #, fuzzy, python-format
 msgid "Restore failed: %(err)s"
-msgstr "Ebook-converter បានបរាជ័យ៖ %(error)s"
+msgstr ""
 
 #: cps/admin.py
 msgid "Restore completed but app.db cleanup failed. See logs for details."
@@ -12375,7 +12375,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "ស៊េរី៖ %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

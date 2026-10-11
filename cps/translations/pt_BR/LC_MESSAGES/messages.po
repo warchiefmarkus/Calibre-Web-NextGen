@@ -556,8 +556,6 @@ msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
 msgstr ""
-"E-mail de teste enfileirado para envio para %(email)s, verifique o "
-"resultado em Tarefas"
 
 #: cps/admin.py
 #, python-format
@@ -1657,7 +1655,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "Formato %(format)s não encontrado no disco"
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format
@@ -1730,12 +1728,12 @@ msgstr "Enviar para E-Reader"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "Formato %(format)s não encontrado para o id do livro: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "Formato %(format)s não encontrado para o id do livro: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2581,7 +2579,7 @@ msgstr "Estante inválida especificada"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Não foi possível adicionar livros à estante: %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -4153,7 +4151,7 @@ msgstr "{n} selecionado(s)"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{pct}% read"
-msgstr "{pct}% lido"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "What's new"
@@ -12430,7 +12428,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Série: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

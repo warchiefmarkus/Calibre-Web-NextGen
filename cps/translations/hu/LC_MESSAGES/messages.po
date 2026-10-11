@@ -569,8 +569,6 @@ msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
 msgstr ""
-"A %(email)s címre küldendő teszt e-mail sorba állítva. Kérjük, ellenőrizze "
-"a Feladatok menüpontban az eredményt"
 
 #: cps/admin.py
 #, python-format
@@ -1767,12 +1765,12 @@ msgstr "Küldés e-olvasóra"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "A(z) %(format)s formátum nem található a következő könyvhöz: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "A(z) %(format)s formátum nem található a következő könyvhöz: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2625,7 +2623,7 @@ msgstr "A megadott polc érvénytelen!"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Nem sikerült hozzáadni a könyveket a polchoz: %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12541,7 +12539,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Sorozat: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."
@@ -18533,8 +18531,6 @@ msgstr "Új app jelszó"
 #, fuzzy, python-format
 msgid "App password created for '%(label)s'. Copy it now — you won't see it again."
 msgstr ""
-"Alkalmazásjelszó létrehozva ehhez: „%(label)s”. Másold ki most — később már"
-" nem fogod látni: %(token)s"
 
 #: cps/templates/user_edit.html
 msgid "New app password (cleartext)"

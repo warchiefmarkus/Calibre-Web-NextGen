@@ -575,8 +575,6 @@ msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
 msgstr ""
-"Test E-Mail wordt verzonden naar %(email)s, controleer de taken voor het "
-"resultaat"
 
 #: cps/admin.py
 #, python-format
@@ -1769,12 +1767,12 @@ msgstr "Versturen naar eReader"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "%(format)s formaat niet gevonden voor boek met id: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "%(format)s formaat niet gevonden voor boek met id: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2619,7 +2617,7 @@ msgstr "Ongeldige boekenplank opgegeven"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Kan boeken niet toevoegen aan boekenplank: %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -4291,7 +4289,7 @@ msgstr "{n} geselecteerd"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{pct}% read"
-msgstr "{pct}% gelezen"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "What's new"
@@ -10944,7 +10942,7 @@ msgstr "{ok} van de {total} bronnen hebben geantwoord"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{percent}% read"
-msgstr "{percent}% gelezen"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -12988,7 +12986,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Reeks: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

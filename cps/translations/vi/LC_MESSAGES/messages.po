@@ -1644,7 +1644,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "Định dạng %(format)s không được tìm thấy trên đĩa"
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format

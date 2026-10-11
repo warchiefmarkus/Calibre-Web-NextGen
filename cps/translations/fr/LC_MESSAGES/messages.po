@@ -599,8 +599,6 @@ msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
 msgstr ""
-"Le courriel de test a été mis en file d'attente pour être envoyé à "
-"%(email)s, veuillez vérifier les Tâches pour voir le résultat"
 
 #: cps/admin.py
 #, python-format
@@ -1854,12 +1852,12 @@ msgstr "Envoyer à l'eReader"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "le format %(format)s est introuvable pour le livre : %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "le format %(format)s est introuvable pour le livre : %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2721,7 +2719,7 @@ msgstr "L’étagère indiquée est invalide"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Impossible d’ajouter les livres à l’étagère : %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -4400,7 +4398,7 @@ msgstr "{n} sélectionné(s)"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{pct}% read"
-msgstr "{pct} % lu"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "What's new"
@@ -11108,7 +11106,7 @@ msgstr "{ok} sources sur {total} ont répondu"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{percent}% read"
-msgstr "{percent} % lu"
+msgstr ""
 
 #: cps/spa_strings.py
 #, python-brace-format
@@ -13165,7 +13163,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Séries : %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

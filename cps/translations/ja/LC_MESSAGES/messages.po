@@ -533,7 +533,7 @@ msgstr "%(email)s 宛のテストメールを送信キューに追加しまし�
 msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
-msgstr "%(email)s 宛のテストメールを送信キューに追加しました。結果はタスクを確認してください"
+msgstr ""
 
 #: cps/admin.py
 #, python-format
@@ -1696,12 +1696,12 @@ msgstr "E-Readerに送信"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "ID: %(book)d の本に %(format)s フォーマットはありません"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "ID: %(book)d の本に %(format)s フォーマットはありません"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2527,7 +2527,7 @@ msgstr "指定された本棚は無効です"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "%(sname)s に本を追加できません"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12352,7 +12352,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "シリーズ: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

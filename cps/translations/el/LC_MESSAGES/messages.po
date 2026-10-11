@@ -1676,7 +1676,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "%(format)s μορφή δεν βρέθηκε σε δίσκο"
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format
@@ -1750,12 +1750,12 @@ msgstr "Αποστολή στο Kindle"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "%(format)s η δομή δεν βρέθηκε για την ταυτότητα βιβλίου: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "%(format)s η δομή δεν βρέθηκε για την ταυτότητα βιβλίου: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2606,7 +2606,7 @@ msgstr "Διευκρινίστηκε μη έγκυρο ράφι"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Δεν μπόρεσε να γίνει η προσθήκη βιβλίων στο ράφι: %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12476,7 +12476,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Σειρές: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

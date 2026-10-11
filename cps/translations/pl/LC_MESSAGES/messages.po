@@ -4230,7 +4230,7 @@ msgstr "Wybrano: {n}"
 #: cps/spa_strings.py
 #, python-brace-format, python-format
 msgid "{pct}% read"
-msgstr "Przeczytano {pct}%"
+msgstr ""
 
 #: cps/spa_strings.py
 msgid "What's new"

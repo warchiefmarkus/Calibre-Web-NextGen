@@ -564,8 +564,6 @@ msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
 msgstr ""
-"Email de teste enviado para lista de espera para envio para %(email)s. Por "
-"favor, verifique o resultado em Tarefas"
 
 #: cps/admin.py
 #, python-format
@@ -1689,7 +1687,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "Formato %(format)s não encontrado no disco"
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format
@@ -1762,12 +1760,12 @@ msgstr "Enviar para dispositivo de leitura"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "Formato %(format)s não encontrado para o ID do livro: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "Formato %(format)s não encontrado para o ID do livro: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2619,7 +2617,7 @@ msgstr "Estante inválida especificada"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Não foi possível adicionar livros à estante: %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12480,7 +12478,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Séries: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

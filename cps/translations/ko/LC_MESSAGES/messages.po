@@ -530,7 +530,7 @@ msgstr "%(email)s로 테스트 이메일을 전송했습니다."
 msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
-msgstr "%(email)s로 테스트 이메일을 전송했습니다."
+msgstr ""
 
 #: cps/admin.py
 #, python-format
@@ -1628,7 +1628,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "%(format)s 형식을 찾을 수 없습니다."
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format
@@ -1697,12 +1697,12 @@ msgstr "전자책 리더로 보내기"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "책 ID %(book)d의 %(format)s 형식을 찾을 수 없습니다."
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "책 ID %(book)d의 %(format)s 형식을 찾을 수 없습니다."
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2524,7 +2524,7 @@ msgstr "잘못된 서재가 지정되었습니다."
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "책을 추가할 수 없습니다: %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12349,7 +12349,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "시리즈: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

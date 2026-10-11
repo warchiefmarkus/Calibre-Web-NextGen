@@ -531,7 +531,7 @@ msgstr "发送给 %(email)s 的测试邮件已加入队列。请检查任务结�
 msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
-msgstr "发送给 %(email)s 的测试邮件已加入队列。请检查任务结果"
+msgstr ""
 
 #: cps/admin.py
 #, python-format
@@ -1640,7 +1640,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "硬盘上找不到 %(format)s 格式"
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format
@@ -1709,12 +1709,12 @@ msgstr "发送到电子阅读器"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "找不到 ID 为 %(book)d 的书籍的 %(format)s 格式"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "找不到 ID 为 %(book)d 的书籍的 %(format)s 格式"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2540,7 +2540,7 @@ msgstr "指定的书架无效"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "无法添加书籍到书架：%(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12370,7 +12370,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "丛书：%(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

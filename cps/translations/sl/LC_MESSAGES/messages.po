@@ -562,8 +562,6 @@ msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
 msgstr ""
-"Testno e-poštno sporočilo je v čakalni vrsti za pošiljanje na %(email)s "
-"naslovov, za rezultat preverite opravila"
 
 #: cps/admin.py
 #, python-format
@@ -1702,7 +1700,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "%(format)s vrsta ni najdena na disku"
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format
@@ -1775,12 +1773,12 @@ msgstr "Pošlji v e-bralnik"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "Vrsta %(format)s ni najdena za id knjige: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "Vrsta %(format)s ni najdena za id knjige: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2635,7 +2633,7 @@ msgstr "Navedena nepravilna polica"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Ni bilo mogoče dodati knjig na polico: %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12477,7 +12475,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Serija: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."

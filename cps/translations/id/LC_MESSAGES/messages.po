@@ -555,8 +555,6 @@ msgid ""
 "Announcement email queued for %(num)s recipient(s) — check Tasks for "
 "delivery."
 msgstr ""
-"Uji email diantrean untuk dikirim ke %(email)s, harap periksa Tasks untuk "
-"hasilnya"
 
 #: cps/admin.py
 #, python-format
@@ -1665,7 +1663,7 @@ msgstr ""
 #: cps/editbooks.py
 #, fuzzy, python-format
 msgid "Book file not found on disk: %(path)s"
-msgstr "%(format)s format tidak ditemukan dalam disk"
+msgstr ""
 
 #: cps/editbooks.py
 #, python-format
@@ -1738,12 +1736,12 @@ msgstr "Kirim ke E-Reader"
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion timed out for book id: %(book)d"
-msgstr "%(format)s format tidak ditemukan untuk id buku: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 #, fuzzy, python-format
 msgid "Conversion failed for book id: %(book)d"
-msgstr "%(format)s format tidak ditemukan untuk id buku: %(book)d"
+msgstr ""
 
 #: cps/helper.py
 msgid "Calibre-Web NextGen Test Email"
@@ -2591,7 +2589,7 @@ msgstr "Rak yang ditentukan tidak valid"
 #: cps/shelf.py
 #, fuzzy, python-format
 msgid "Series has no books you can see: %(name)s"
-msgstr "Tidak dapat menambahkan buku ke rak: %(sname)s"
+msgstr ""
 
 #: cps/shelf.py
 #, fuzzy, python-format
@@ -12435,7 +12433,7 @@ msgstr ""
 #: cps/templates/annotations_view.html
 #, fuzzy, python-format
 msgid "Source: %(s)s"
-msgstr "Seri: %(serie)s"
+msgstr ""
 
 #: cps/templates/annotations_view.html cps/templates/read.html
 msgid "No annotations on this book yet."
