@@ -1468,7 +1468,8 @@ msgid "Calibre-Web NextGen Profile Picture Management (WIP)"
 msgstr ""
 
 #: cps/db.py cps/spa_strings.py cps/templates/config_edit.html
-#: cps/templates/config_view_edit.html cps/templates/email_edit.html cps/web.py
+#: cps/templates/config_view_edit.html cps/templates/email_edit.html
+#: cps/templates/tag_tree.html cps/web.py
 msgid "None"
 msgstr "Geen"
 
@@ -2259,7 +2260,8 @@ msgstr "Boeken gesorteerd op uitgever"
 
 #: cps/opds.py cps/render_template.py cps/spa_strings.py
 #: cps/templates/book_edit.html cps/templates/book_table.html
-#: cps/templates/cwa_settings.html cps/templates/search_form.html cps/web.py
+#: cps/templates/cwa_settings.html cps/templates/index.html
+#: cps/templates/search_form.html cps/templates/tag_tree.html cps/web.py
 msgid "Tags"
 msgstr "Labels"
 
@@ -2335,6 +2337,14 @@ msgstr "Boeken op %(name)s"
 #, python-format
 msgid "Books by %(name)s, including every sub-category"
 msgstr ""
+
+#: cps/api/browse.py cps/opds.py cps/web.py
+msgid "Tag hierarchy temporarily unavailable. Please try again."
+msgstr "De labelhiërarchie is tijdelijk niet beschikbaar. Probeer het opnieuw."
+
+#: cps/opds.py
+msgid "All books in this tag group"
+msgstr "Alle boeken in deze labelgroep"
 
 #: cps/opds.py
 #, python-brace-format
@@ -5025,6 +5035,82 @@ msgstr "Aangepaste velden op boekkaarten"
 #, python-brace-format
 msgid "Display name for {name}"
 msgstr "Weergavenaam voor {name}"
+
+# Share my place (Devices page)
+#: cps/spa_strings.py
+msgid "Share my place"
+msgstr "Mijn plek delen"
+
+#: cps/spa_strings.py
+msgid ""
+"Devices with this on open each book where you last stopped on any of them. "
+"Turn it off for a device someone else reads on."
+msgstr ""
+"Apparaten met deze optie aan openen elk boek waar je op een van hen het "
+"laatst gebleven was. Zet het uit voor een apparaat waarop iemand anders "
+"leest."
+
+#: cps/spa_strings.py
+msgid "Could not save Share my place. Try again."
+msgstr "Kan Mijn plek delen niet opslaan. Probeer het opnieuw."
+
+#: cps/spa_strings.py
+msgid ""
+"Always shares its place. Install or update the NextGen Sync plugin on this "
+"device to choose."
+msgstr ""
+"Deelt altijd zijn plek. Installeer de NextGen Sync-plug-in op dit apparaat "
+"of werk deze bij om te kiezen."
+
+#: cps/spa_strings.py
+msgid "Books on this device"
+msgstr "Boeken op dit apparaat"
+
+#: cps/spa_strings.py
+msgid "Same as my account setting"
+msgstr "Hetzelfde als mijn accountinstelling"
+
+#: cps/spa_strings.py
+msgid "Everything in my library"
+msgstr "Alles in mijn bibliotheek"
+
+#: cps/spa_strings.py
+msgid "Only these shelves"
+msgstr "Alleen deze planken"
+
+#: cps/spa_strings.py
+msgid ""
+"Choose which books this device keeps. Books you take off are removed from "
+"the device at its next sync; your place, highlights and notes stay saved."
+msgstr ""
+"Kies welke boeken dit apparaat bewaart. Boeken die u verwijdert, worden bij "
+"de volgende synchronisatie van het apparaat verwijderd; uw leespositie, "
+"markeringen en notities blijven bewaard."
+
+#: cps/spa_strings.py
+msgid ""
+"The shelf chosen for this device was deleted. It uses your account setting "
+"until you choose again."
+msgstr ""
+"De plank die voor dit apparaat is gekozen, is verwijderd. Het gebruikt uw "
+"accountinstelling totdat u opnieuw kiest."
+
+#: cps/spa_strings.py
+msgid ""
+"The shelf chosen for this device is no longer available. It uses your "
+"account setting until you choose again."
+msgstr ""
+"De plank die voor dit apparaat is gekozen, is niet meer beschikbaar. Het "
+"gebruikt uw accountinstelling totdat u opnieuw kiest."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Account setting: {scope}"
+msgstr "Accountinstelling: {scope}"
+
+#: cps/spa_strings.py
+msgid "Could not save the book choice. Try again."
+msgstr "De boekkeuze kon niet worden opgeslagen. Probeer het opnieuw."
 
 #: cps/spa_strings.py
 msgid "(no text captured)"
@@ -11558,6 +11644,14 @@ msgstr ""
 "Deze regel kan hier niet worden bewerkt. Hij blijft behouden tenzij u hem "
 "verwijdert."
 
+#: cps/spa_strings.py cps/templates/tag_tree.html
+msgid "All tags"
+msgstr "Alle labels"
+
+#: cps/spa_strings.py
+msgid "Could not load tags. Please try again."
+msgstr "De labels konden niet worden geladen. Probeer het opnieuw."
+
 #: cps/spa_strings.py
 msgid "Allow completed DRM-free MOBI 6 books"
 msgstr "Voltooide DRM-vrije MOBI 6-boeken toestaan"
@@ -11674,6 +11768,110 @@ msgid "Use {series:|(|) }{title} to omit the series prefix when no series is set
 msgstr ""
 "Gebruik {series:|(|) }{title} om het serievoorvoegsel weg te laten als er "
 "geen serie is ingesteld."
+
+#: cps/spa_strings.py cps/templates/tag_tree.html
+msgid "Choose a tag group to browse books from it and its subtags."
+msgstr ""
+"Kies een labelgroep om boeken uit die groep en de onderliggende labels te "
+"bekijken."
+
+#: cps/spa_strings.py
+msgid "Sleep screen"
+msgstr "Slaapscherm"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Sleep screen for {name}"
+msgstr "Slaapscherm voor {name}"
+
+#: cps/spa_strings.py
+msgid "Set sleep screen"
+msgstr "Slaapscherm instellen"
+
+#: cps/spa_strings.py
+msgid "Replace image"
+msgstr "Afbeelding vervangen"
+
+#: cps/spa_strings.py
+msgid "Remove sleep screen"
+msgstr "Slaapscherm verwijderen"
+
+#: cps/spa_strings.py
+msgid "Choose an image"
+msgstr "Kies een afbeelding"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Sleep screen preview for {name}"
+msgstr "Voorbeeld van het slaapscherm voor {name}"
+
+#: cps/spa_strings.py
+msgid "Shown when this device sleeps in KOReader."
+msgstr "Wordt getoond wanneer dit apparaat in KOReader in slaapstand gaat."
+
+#: cps/spa_strings.py
+msgid "The native Kindle lock screen is unchanged."
+msgstr "Het oorspronkelijke Kindle-vergrendelscherm blijft ongewijzigd."
+
+#: cps/spa_strings.py
+msgid "Waiting for next sync"
+msgstr "Wachten op de volgende synchronisatie"
+
+#: cps/spa_strings.py
+msgid "Applied on device"
+msgstr "Toegepast op het apparaat"
+
+#: cps/spa_strings.py
+msgid "Removal waiting for sync"
+msgstr "Verwijdering wacht op synchronisatie"
+
+#: cps/spa_strings.py
+msgid "Previous settings restored"
+msgstr "Vorige instellingen hersteld"
+
+#: cps/spa_strings.py
+msgid "Waiting for device details"
+msgstr "Wachten op apparaatgegevens"
+
+#: cps/spa_strings.py
+msgid "Update the CWNG plugin"
+msgstr "Werk de CWNG-plugin bij"
+
+#: cps/spa_strings.py
+msgid "Update the CWNG plugin on this device, then sync."
+msgstr "Werk de CWNG-plugin op dit apparaat bij en synchroniseer daarna."
+
+#: cps/spa_strings.py
+msgid "Connect this device and use Sync now in KOReader."
+msgstr "Verbind dit apparaat en gebruik Nu synchroniseren in KOReader."
+
+#: cps/spa_strings.py
+msgid "This device cannot show a custom KOReader sleep screen."
+msgstr "Dit apparaat kan geen aangepast KOReader-slaapscherm tonen."
+
+#: cps/spa_strings.py
+msgid "Use a JPEG or PNG image up to 10 MiB."
+msgstr "Gebruik een JPEG- of PNG-afbeelding van maximaal 10 MiB."
+
+#: cps/spa_strings.py
+msgid "Could not save sleep screen. Try again."
+msgstr "Het slaapscherm kon niet worden opgeslagen. Probeer het opnieuw."
+
+#: cps/spa_strings.py
+msgid "Could not apply sleep screen"
+msgstr "Het slaapscherm kon niet worden toegepast"
+
+#: cps/spa_strings.py
+msgid ""
+"Remove this image? Your previous KOReader sleep-screen settings will return "
+"after the next sync."
+msgstr ""
+"Deze afbeelding verwijderen? Je vorige KOReader-slaapscherminstellingen "
+"worden na de volgende synchronisatie hersteld."
+
+#: cps/tag_hierarchy.py
+msgid "Unnamed tag"
+msgstr "Naamloos label"
 
 #: cps/tasks_status.py
 msgid "Waiting"
@@ -17345,6 +17543,14 @@ msgstr "Terug naar startpagina"
 #: cps/templates/http_error.html
 msgid "Logout User"
 msgstr "Gebruiker uitloggen"
+
+#: cps/templates/index.html
+msgid "Breadcrumb"
+msgstr "Kruimelpad"
+
+#: cps/templates/index.html
+msgid "Subtags"
+msgstr "Onderliggende labels"
 
 #: cps/templates/index.html
 msgid "Subcategories"

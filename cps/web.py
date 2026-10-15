@@ -35,7 +35,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from . import constants, logger, isoLanguages, services, helper, spa, oauth_auto_redirect
 from . import db, ub, config, app, user_library
-from . import calibre_db, kobo_sync_status, hierarchy
+from . import calibre_db, kobo_sync_status, hierarchy, tag_hierarchy
 from .services.ereader_send import (
     ereader_addresses, other_users_with_ereader, record_email_activity,
     send_includes_own_address,
@@ -365,6 +365,7 @@ def set_bookmark(book_id, book_format):
                 percentage,
                 origin_device_id=g.annotation_origin_device_id,
                 cfi=bookmark_key,
+                fmt=book_format.lower(),
             )
         except Exception as e:
             # Position sharing must never cost the user their bookmark.
@@ -2755,6 +2756,16 @@ def language_overview():
 @login_required_if_no_ano
 def category_list():
     if current_user.check_visibility(constants.SIDEBAR_CATEGORY):
+        if request.args.get('view') != 'flat':
+            try:
+                tree = tag_hierarchy.read_tree(calibre_db)
+            except (SQLAlchemyError, ValueError, TypeError):
+                abort(503, description=_("Tag hierarchy temporarily unavailable. Please try again."))
+            if tree.hierarchical:
+                no_tags = calibre_db.session.query(db.Books.id).filter(
+                    ~db.Books.tags.any(), calibre_db.common_filters()).count()
+                return render_title_template('tag_tree.html', entries=tree.items,
+                                             no_tag_count=no_tags, title=_("Tags"), page="catlist")
         if current_user.get_view_property('category', 'dir') == 'desc':
             order = [locale_sort_key(db.Tags.name).desc(), db.Tags.name.desc(), db.Tags.id.desc()]
             order_no = 0
@@ -2777,6 +2788,35 @@ def category_list():
                                      title=_("Tags"), page="catlist", data="category", order=order_no)
     else:
         abort(404)
+
+
+@web.route("/tag_group")
+@login_required_if_no_ano
+def tag_group():
+    if not current_user.check_visibility(constants.SIDEBAR_CATEGORY):
+        abort(404)
+    path = request.args.get('path', '')
+    if not path or len(path) > 4096:
+        abort(404)
+    try:
+        tree = tag_hierarchy.read_tree(calibre_db)
+        predicate = tree.book_filter(path)
+    except LookupError:
+        abort(404)
+    except (SQLAlchemyError, ValueError, TypeError):
+        abort(503, description=_("Tag hierarchy temporarily unavailable. Please try again."))
+    path = '.'.join(hierarchy.split_path(path))
+    node = tree.get_node(path)
+    order = _sort_context(request.args.get('sort_param', 'stored'), 'tag_group')
+    page = request.args.get('page', 1, type=int)
+    entries, random, pagination = calibre_db.fill_indexpage(
+        page, 0, db.Books, predicate, order[0], True, config.config_read_column,
+        db.books_series_link, db.Books.id == db.books_series_link.c.book, db.Series,
+        *_sort_join(order))
+    return render_title_template(
+        'index.html', entries=entries, random=random, pagination=pagination,
+        title=escape(path), page='tag_group', id=path, order=order[1],
+        tag_breadcrumbs=hierarchy.breadcrumb_trail(path), tag_subcategories=node['children'])
 
 
 @web.route("/custom_column/<int:column_id>", defaults={'category_path': ''},
@@ -3068,6 +3108,19 @@ def serve_book(book_id, book_format, anyname):
     if not data:
         return "File not in Database"
     range_header = request.headers.get('Range', None)
+    # The SPA opens its archive through /show rather than the classic /read
+    # handler. Under the rollout switch, route that open's status identically.
+    from .services.share_place import gates_enforced
+    if (request.method == "GET" and not range_header
+            and request.args.get("lookup") != "1"
+            and book_format.upper() in ("EPUB", "KEPUB")
+            and current_user.is_authenticated and gates_enforced(int(current_user.id))):
+        try:
+            reading_position.record_gated_reader_open(current_user, book_id)
+            ub.session_commit()
+        except Exception:
+            log.warning("Could not record Browser archive open for book %s", book_id, exc_info=True)
+            ub.session.rollback()
 
     if config.config_use_google_drive:
         try:
@@ -4239,38 +4292,42 @@ def read_book(book_id, book_format):
     # "recently read" sorting reflects every open.
     if current_user.is_authenticated and not lookup_mode:
         try:
-            read_row = ub.session.query(ub.ReadBook).filter(
-                ub.ReadBook.user_id == int(current_user.id),
-                ub.ReadBook.book_id == book_id,
-            ).first()
-            now = datetime.now(timezone.utc)
-            if read_row is None:
-                read_row = ub.ReadBook(
-                    user_id=int(current_user.id),
-                    book_id=book_id,
-                    read_status=ub.ReadBook.STATUS_IN_PROGRESS,
-                    times_started_reading=1,
-                    last_time_started_reading=now,
-                    read_status_choice_at=now,
-                )
-                ub.session.add(read_row)
+            from .services.share_place import gates_enforced
+            if gates_enforced(int(current_user.id)):
+                reading_position.record_gated_reader_open(current_user, book_id)
             else:
-                prev_status = read_row.read_status or 0
-                can_resume = True
-                if (prev_status in (ub.ReadBook.STATUS_DID_NOT_FINISH,
-                                    ub.ReadBook.STATUS_ON_HOLD)
-                        and config.config_read_column):
-                    # Opening the ordinary reader is an explicit resume. A
-                    # prior shared finished marker must not mask that resume.
-                    can_resume = helper.set_custom_read_column_value(
-                        book_id, False, source="web reader resume")
-                if prev_status != ub.ReadBook.STATUS_IN_PROGRESS \
-                        and prev_status != ub.ReadBook.STATUS_FINISHED and can_resume:
-                    read_row.times_started_reading = (read_row.times_started_reading or 0) + 1
-                    read_row.read_status = ub.ReadBook.STATUS_IN_PROGRESS
-                if can_resume and prev_status != ub.ReadBook.STATUS_FINISHED:
-                    read_row.read_status_choice_at = now
-                read_row.last_time_started_reading = now
+                read_row = ub.session.query(ub.ReadBook).filter(
+                    ub.ReadBook.user_id == int(current_user.id),
+                    ub.ReadBook.book_id == book_id,
+                ).first()
+                now = datetime.now(timezone.utc)
+                if read_row is None:
+                    read_row = ub.ReadBook(
+                        user_id=int(current_user.id),
+                        book_id=book_id,
+                        read_status=ub.ReadBook.STATUS_IN_PROGRESS,
+                        times_started_reading=1,
+                        last_time_started_reading=now,
+                        read_status_choice_at=now,
+                    )
+                    ub.session.add(read_row)
+                else:
+                    prev_status = read_row.read_status or 0
+                    can_resume = True
+                    if (prev_status in (ub.ReadBook.STATUS_DID_NOT_FINISH,
+                                        ub.ReadBook.STATUS_ON_HOLD)
+                            and config.config_read_column):
+                        # Opening the ordinary reader is an explicit resume. A
+                        # prior shared finished marker must not mask that resume.
+                        can_resume = helper.set_custom_read_column_value(
+                            book_id, False, source="web reader resume")
+                    if prev_status != ub.ReadBook.STATUS_IN_PROGRESS \
+                            and prev_status != ub.ReadBook.STATUS_FINISHED and can_resume:
+                        read_row.times_started_reading = (read_row.times_started_reading or 0) + 1
+                        read_row.read_status = ub.ReadBook.STATUS_IN_PROGRESS
+                    if can_resume and prev_status != ub.ReadBook.STATUS_FINISHED:
+                        read_row.read_status_choice_at = now
+                    read_row.last_time_started_reading = now
             ub.session_commit()
         except Exception as e:
             log.debug(f"Failed to record web reader open in book_read_link: {e}")

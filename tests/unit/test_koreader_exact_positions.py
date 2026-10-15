@@ -45,6 +45,14 @@ BOOK_ID = 221
 OTHER_FILE = "0" * 32  # a device holding some other copy of the book
 
 
+@pytest.fixture(autouse=True)
+def _share_place_switch_off(monkeypatch):
+    """These tests pin the shared (pre share-my-place) behaviour, which since
+    PR 5 needs the emergency off switch: unset now means gates on. The gated
+    behaviour is covered by tests/unit/test_share_place_*."""
+    monkeypatch.setenv("CWNG_SHARE_PLACE_GATES", "0")
+
+
 def _page(n):
     """(xpointer, text shown at the top of that page) from the Kindle."""
     sample = json.loads((FIXTURES / "metamorphosis-221.pages.json").read_text())["samples"][n]
@@ -102,6 +110,9 @@ def world(tmp_path, monkeypatch):
 
     web_user = SimpleNamespace(id=user.id, is_authenticated=True, is_anonymous=False)
     monkeypatch.setattr(reader, "current_user", web_user)
+    # This isolated device-sync fixture has no CalibreDB visibility session.
+    # Endpoint authorization is covered separately by test_api_v1_reader.
+    monkeypatch.setattr(reader, "_require_visible_book", lambda _book_id: None)
     app = flask.Flask(__name__)
     app.secret_key = "test"
     app.register_blueprint(kosync.kosync)

@@ -18,14 +18,15 @@ from sqlalchemy.orm.attributes import flag_modified
 from . import api_v1
 from .. import calibre_db, config, deployment_profile, logger, ub
 from ..cw_login import current_user
-from ..services import reading_position, reading_sources, storyteller_source
+from ..services import reading_position, reading_sources, storyteller_source, reader_fonts
+from ..services.browser_source import BROWSER_ALIAS
 from ..services.calibremcp_client import (
     CalibreMCPClientError,
     get_reader_position,
     set_reader_position,
 )
 from ..usermanagement import login_required_if_no_ano
-from ..reader_settings import merged_reader_settings, resolved_reader_settings
+from ..reader_settings import READER_FONTS, merged_reader_settings, resolved_reader_settings
 from ..services.reading_progress import reading_progress_summary_map
 
 
@@ -65,6 +66,22 @@ def _bookmark_filter(book_id, fmt):
         ub.Bookmark.book_id == book_id,
         ub.Bookmark.format == fmt,
     )
+
+
+
+def _reader_font_id_set_for(settings, patch=None, *, required=False):
+    """Read uploaded fonts only when the request references a custom choice."""
+    raw = settings if isinstance(settings, dict) else {}
+    values = [raw.get("font")]
+    if isinstance(patch, dict):
+        values.append(patch.get("font"))
+    if not any(isinstance(v, str) and v.startswith("custom:") for v in values):
+        return set()
+    try:
+        return reader_fonts.custom_font_ids()
+    except Exception:
+        log.warning("Could not read reader font catalog", exc_info=True)
+        return None if required else set()
 
 
 def _cwng_user_name():
@@ -247,6 +264,10 @@ def save_bookmark(book_id):
                     percentage,
                     origin_device_id=g.annotation_origin_device_id,
                     cfi=bookmark_key,
+                    fmt=fmt,
+                    # A named-source preview is a read-only inspection. When
+                    # the reader chooses to continue there, create/update only
+                    # the Browser source rather than rewriting device carriers.
                     share_with_devices=data.get("share_with_devices", True) is not False,
                 )
             except Exception as e:
@@ -546,9 +567,9 @@ def get_reader_settings():
     if guard:
         return guard
     current = (getattr(current_user, "view_settings", None) or {}).get("reader", {})
-    resolved = resolved_reader_settings(current)
-    # These two values are per-book. Force safe legacy defaults here so even a
-    # stale cached frontend cannot inherit auto-translation from another book.
+    custom_ids = _reader_font_id_set_for(current)
+    resolved = resolved_reader_settings(current, custom_ids)
+    # Keep auto-translation strictly book-scoped in the managed fork.
     resolved["translationEnabled"] = False
     resolved["translationView"] = "original"
     return jsonify({"reader": resolved})
@@ -570,11 +591,28 @@ def save_reader_settings():
         key: value for key, value in payload.items()
         if key not in {"translationEnabled", "translationView"}
     }
+    font = payload.get("font")
     view_settings = dict(getattr(current_user, "view_settings", None) or {})
     current_reader = dict(view_settings.get("reader", {}) or {})
     current_reader.pop("translationEnabled", None)
     current_reader.pop("translationView", None)
-    merged = merged_reader_settings(current_reader, payload)
+    if font is not None and (not isinstance(font, str) or
+                             (font not in READER_FONTS and not font.startswith("custom:"))):
+        return _err("invalid_font", "Choose a font that is available on this server", 400)
+    saved_font = current_reader.get("font")
+    custom_font_required = (
+        isinstance(font, str) and font.startswith("custom:")
+    ) or (
+        isinstance(saved_font, str) and saved_font.startswith("custom:")
+        and font not in READER_FONTS
+    )
+    custom_ids = _reader_font_id_set_for(
+        current_reader, payload, required=custom_font_required)
+    if custom_ids is None:
+        return _err("font_catalog_unavailable", "Uploaded fonts are temporarily unavailable", 503)
+    if isinstance(font, str) and font.startswith("custom:") and font not in custom_ids:
+        return _err("invalid_font", "Choose a font that is available on this server", 400)
+    merged = merged_reader_settings(current_reader, payload, custom_ids)
     view_settings["reader"] = merged
     current_user.view_settings = view_settings
     flag_modified(current_user, "view_settings")

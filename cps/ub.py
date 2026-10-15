@@ -34,7 +34,7 @@ except ImportError:
         oauth_support = False
 from sqlalchemy import create_engine, DDL, exc, exists, event, text
 from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, UniqueConstraint
-from sqlalchemy import String, Integer, SmallInteger, Boolean, DateTime, Float, JSON, Text, BLOB
+from sqlalchemy import String, Integer, SmallInteger, Boolean, DateTime, Float, JSON, Text, BLOB, LargeBinary
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql.expression import func
@@ -43,7 +43,7 @@ try:
     from sqlalchemy.orm import declarative_base
 except ImportError:
     from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import backref, relationship, sessionmaker, Session, scoped_session, validates
+from sqlalchemy.orm import backref, relationship, sessionmaker, Session, scoped_session, validates, deferred
 try:
     from greenlet import getcurrent as _current_greenlet
 except ImportError:  # pragma: no cover - greenlet is required by gevent deployments
@@ -1279,6 +1279,9 @@ class KoboDeviceBookDownload(Base):
     )
     restored_at = Column(DateTime, nullable=True)
     restored_count = Column(Integer, nullable=True)
+    # Share-place proof belongs to record_download, never restore arming.
+    completed_at = Column(DateTime, nullable=True)
+    kepub_file_identity = Column(String, nullable=True)
 
     __table_args__ = (
         UniqueConstraint(
@@ -1675,6 +1678,22 @@ class KoboBookmark(Base):
     location_value = Column(String)
     progress_percent = Column(Float)
     content_source_progress_percent = Column(Float)
+    # When the server received the place this row holds (Share my place
+    # arbitration). ``last_modified`` is the reporting device's clock and is
+    # never a receipt; this is stamped by the server on every write.
+    server_modified_at = Column(DateTime, nullable=True,
+                                default=lambda: datetime.now(timezone.utc),
+                                onupdate=lambda: datetime.now(timezone.utc))
+
+    # PR 3b: a KOReader-derived span is usable only for this KEPUB identity.
+    shared_from_koreader = Column(Boolean, nullable=False, default=False, server_default='0')
+    span_kepub_identity = Column(String, nullable=True)
+    # Retain the native fallback before a converted span replaces Location.
+    native_location_value = Column(String)
+    native_location_source = Column(String)
+    native_location_type = Column(String)
+    native_progress_percent = Column(Float)
+    native_content_source_progress_percent = Column(Float)
 
     # The parent FK is how every reader of this table reaches it. Unindexed,
     # SQLite reports "AUTOMATIC PARTIAL COVERING INDEX" — it rebuilds a
@@ -1711,6 +1730,14 @@ class Device(Base):
     last_metadata_at = Column(DateTime, nullable=True)
     active = Column(Boolean, nullable=False, default=True)
     created_by = Column(String(32), nullable=False, default="auto")
+    share_place = Column(Boolean, nullable=False, default=False, server_default='0')
+    share_place_enabled_at = Column(DateTime, nullable=True)
+    cwng_header_seen_at = Column(DateTime, nullable=True)
+    # NULL is the account setting. JSON retains deleted selection ids for the
+    # fallback notice; it holds no foreign keys or reading state.
+    book_scope = Column(Text, nullable=True)
+    # Capability observations exist even before a reader chooses an image.
+    sleep_screen_capability = Column(JSON, nullable=True)
 
     identities = relationship("DeviceIdentity", back_populates="device", cascade="all, delete-orphan")
     __table_args__ = (
@@ -1721,8 +1748,69 @@ class Device(Base):
     )
 
 
+class DeviceSleepScreen(Base):
+    """One device's private image intent and revision-scoped receipt.
+
+    Bounded source/rendition bytes publish and purge in the same transaction.
+    Removal keeps a byte-free tombstone until the device restores its settings.
+    """
+    __tablename__ = 'device_sleep_screen'
+    device_id = Column(Integer, ForeignKey('device.id', ondelete='CASCADE'), primary_key=True)
+    desired_revision = Column(String(36), nullable=False, default=lambda: str(uuid.uuid4()))
+    state = Column(String(24), nullable=False, default='waiting_for_device')
+    source_png = Column(LargeBinary, nullable=True)
+    prepared_png = Column(LargeBinary, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    applied_revision = Column(String(36), nullable=True)
+    applied_status = Column(String(16), nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    last_error = Column(String(64), nullable=True)
+    error_revision = Column(String(36), nullable=True)
+
+
+class KoboPlaceEchoGuard(Base):
+    """An inexact delivery's held place, independent of the mutable journal."""
+    __tablename__ = 'kobo_place_echo_guard'
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey('device.id', ondelete='CASCADE'), nullable=False)
+    book_id = Column(Integer, nullable=False)
+    location_value = Column(String)
+    location_source = Column(String)
+    progress_percent = Column(Float)
+    content_source_progress_percent = Column(Float)
+    shared_received_at = Column(DateTime)
+    armed_at = Column(DateTime, nullable=False)
+    __table_args__ = (UniqueConstraint('device_id', 'book_id'),)
+
+
+class KoboSharePlaceNudge(Base):
+    """Share my place turn-on nudge: send this book's shared reading state to
+    this Kobo once, because the shared place won the arbiter against the
+    device's own row when its box was turned on. Kept apart from the
+    rehydrate latch so neither the confirmation echo nor the latch's PUT
+    rules apply to it. Deleted when the page that carried it is acknowledged.
+    """
+    __tablename__ = 'kobo_share_place_nudge'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(
+        Integer, ForeignKey('device.id', ondelete='CASCADE'), nullable=False,
+    )
+    book_id = Column(Integer, nullable=False)
+    armed_at = Column(DateTime, nullable=False,
+                      default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('device_id', 'book_id',
+                         name='uq_kobo_share_place_nudge_device_book'),
+        # Ids are never reused, so acknowledging an old page cannot delete a
+        # nudge armed after it (the page names the ids it carried).
+        {'sqlite_autoincrement': True},
+    )
+
+
 class DeviceReadingPosition(Base):
-    """One device's last reported position for a Calibre book.
+    """One device's last reported position and read status for a Calibre book.
 
     ``book_id`` deliberately has no foreign key because the book lives in
     metadata.db while this journal lives in app.db. ``KoboReadingState`` stays
@@ -1746,9 +1834,21 @@ class DeviceReadingPosition(Base):
     server_modified_at = Column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
     )
+    reading_status = Column(Integer, nullable=True)
+    # The status observation's ordering key is (status_modified_at, the raw
+    # client clock; status_received_at, its own receipt). The place's is
+    # (client_modified_at, server_modified_at). Every status writer sets
+    # status_received_at; migrate_device_share_place freezes one onto older
+    # status rows (spec section 13a). A status row still without one reads
+    # as main's key, (status_modified_at, status_modified_at).
+    status_modified_at = Column(DateTime, nullable=True)
+    status_received_at = Column(DateTime, nullable=True)
     rehydrate_needed = Column(
         Boolean, nullable=False, default=False, server_default='0',
     )
+
+    # Delivery work has its own clock; it is never a reading observation.
+    rehydrate_armed_at = deferred(Column(DateTime, nullable=True))
 
     __table_args__ = (
         UniqueConstraint(
@@ -1761,6 +1861,34 @@ class DeviceReadingPosition(Base):
             'device_id', 'rehydrate_needed',
         ),
     )
+
+
+class KoboDeviceBookRemoval(Base):
+    """Capture hold and post-download own-place work, separate from observations."""
+    __tablename__ = 'kobo_device_book_removal'
+    device_id = Column(Integer, ForeignKey('device.id', ondelete='CASCADE'), primary_key=True)
+    book_id = Column(Integer, primary_key=True)
+    activity_received_at = Column(DateTime, nullable=True)
+    annotation_uploaded_at = Column(DateTime, nullable=True)
+    hold_syncs = Column(Integer, nullable=False, default=0, server_default='0')
+    own_restore_until = Column(DateTime, nullable=True)
+    legacy_marker_delivery = Column(Boolean, nullable=False, default=False, server_default='0')
+    removal_acknowledged = Column(Boolean, nullable=False, default=False, server_default='0')
+
+
+class KoboDeviceDeletionCapture(Base):
+    """Minimal UUID-bound hold evidence surviving a permanent book purge.
+
+    No retained reading content and no live book-id ownership: an unrelated
+    book reusing the numeric id cannot inherit this deletion work.
+    """
+    __tablename__ = 'kobo_device_deletion_capture'
+    device_id = Column(Integer, ForeignKey('device.id', ondelete='CASCADE'), primary_key=True)
+    book_uuid = Column(String, primary_key=True)
+    book_id = Column(Integer, nullable=False)  # diagnostic only
+    activity_received_at = Column(DateTime, nullable=True)
+    annotation_uploaded_at = Column(DateTime, nullable=True)
+    hold_syncs = Column(Integer, nullable=False, default=0, server_default='0')
 
 
 class DeviceIdentity(Base):
@@ -2137,6 +2265,10 @@ class KoboAnnotationBookState(Base):
     # treat an empty/error annotations GET as authoritative deletion, so this
     # is the durable fallback when both live render queries fail after Kobo's
     # cloud copy has become stale.
+    # Snapshot scope is durable provenance, not a live Device relation: a
+    # deleted device must not turn its private snapshot into an account set.
+    # NULL identifies pre-upgrade/unresolved all-origin snapshot bytes.
+    last_served_device_id = Column(Integer, nullable=True)
     last_served_body_gzip = Column(BLOB, nullable=True)
     last_served_body_sha256 = Column(String(64), nullable=True)
     last_served_etag = Column(Text, nullable=True)
@@ -4472,7 +4604,7 @@ def migrate_annotation_polymorphic_position(engine, _session):
     Runs AFTER the decouple migration. We query the live SQLite catalog
     via `PRAGMA table_info` (NOT SQLAlchemy's inspector) because the
     inspector's reflection cache can be stale after the preceding
-    decouple migration's RENAME — observed on v4.0.130 teenyverse deploy
+    decouple migration's RENAME — observed on v4.0.130 household host deployment
     where the inspector still saw the dropped `annotation` placeholder
     columns and incorrectly reported `position_type` as already present
     OR (more likely) reported the old kobo_annotation_sync columns
@@ -4745,6 +4877,122 @@ def migrate_device_reading_position_slice(engine, _session):
         ))
 
 
+def migrate_kobo_device_removal(engine, _session):
+    from .migrations.versions.kobo_device_removal import upgrade
+    with engine.begin() as connection:
+        upgrade(connection)
+
+
+def migrate_device_sleep_screen(engine, _session):
+    """Add a capability observation without changing existing devices."""
+    _add_column_if_missing(engine, "device", "sleep_screen_capability",
+                           "sleep_screen_capability JSON")
+    DeviceSleepScreen.__table__.create(engine, checkfirst=True)
+
+
+def migrate_device_share_place(engine, _session):
+    """Add opt-in sharing and nullable device status without rewriting rows.
+
+    SQLite's column default makes every existing device (and future raw SQL
+    insert) start off. Only missing columns are added, so repeated or partial
+    upgrades preserve subsequent sharing choices and recorded status.
+    """
+    # Keep this legacy device-upgrade entry point compatible with the current
+    # Device model, including callers upgrading an old schema directly.
+    if _table_columns(engine, "device"):
+        from .migrations.versions.device_book_scope import upgrade as upgrade_device_scope
+        with engine.begin() as connection:
+            upgrade_device_scope(connection)
+    for table, name, ddl in (
+        ("device", "share_place", "share_place BOOLEAN NOT NULL DEFAULT 0"),
+        ("device", "share_place_enabled_at", "share_place_enabled_at DATETIME"),
+        ("device", "cwng_header_seen_at", "cwng_header_seen_at DATETIME"),
+        ("device_reading_position", "reading_status", "reading_status INTEGER"),
+        ("device_reading_position", "status_modified_at", "status_modified_at DATETIME"),
+        # Spec section 13: the status observation's own receipt (PR 3a).
+        ("device_reading_position", "status_received_at", "status_received_at DATETIME"),
+    ):
+        _add_column_if_missing(engine, table, name, ddl)
+    # Spec section 13a: freeze a receipt onto status rows written before
+    # status_received_at existed (PR 2, unreleased main). Their own clock keeps
+    # main's key exactly; a clockless status takes the row's receipt once, so a
+    # later place write cannot re-time it. Idempotent: only NULL receipts move.
+    columns = _table_columns(engine, "device_reading_position")
+    if columns and {"reading_status", "status_modified_at",
+                    "status_received_at"} <= columns:
+        _run_ddl_with_retry(engine, (
+            "UPDATE device_reading_position SET status_received_at = "
+            "COALESCE(status_modified_at, server_modified_at) "
+            "WHERE reading_status IS NOT NULL AND status_received_at IS NULL"))
+
+
+def migrate_kosync_web_place(engine, _session):
+    """Bind web exactness additively, without guessing a historical shared CFI."""
+    _add_column_if_missing(engine, "kosync_progress", "web_cfi", "web_cfi TEXT")
+
+
+def migrate_kobo_place_delivery(engine, _session):
+    """PR 3b additive, idempotent provenance and inexact-delivery guard."""
+    for name, ddl in (
+        ("shared_from_koreader", "shared_from_koreader BOOLEAN NOT NULL DEFAULT 0"),
+        ("span_kepub_identity", "span_kepub_identity TEXT"),
+        ("native_location_value", "native_location_value TEXT"),
+        ("native_location_source", "native_location_source TEXT"),
+        ("native_location_type", "native_location_type TEXT"),
+        ("native_progress_percent", "native_progress_percent FLOAT"),
+        ("native_content_source_progress_percent", "native_content_source_progress_percent FLOAT"),
+    ):
+        _add_column_if_missing(engine, "kobo_bookmark", name, ddl)
+    for name, ddl in (
+        ("completed_at", "completed_at DATETIME"),
+        ("kepub_file_identity", "kepub_file_identity TEXT"),
+    ):
+        _add_column_if_missing(engine, "kobo_device_book_download", name, ddl)
+    _run_ddl_with_retry(engine, (
+        "CREATE TABLE IF NOT EXISTS kobo_place_echo_guard ("
+        "id INTEGER NOT NULL PRIMARY KEY, "
+        "device_id INTEGER NOT NULL REFERENCES device (id) ON DELETE CASCADE, "
+        "book_id INTEGER NOT NULL, location_value TEXT, location_source TEXT, "
+        "progress_percent FLOAT, content_source_progress_percent FLOAT, "
+        "shared_received_at DATETIME, armed_at DATETIME NOT NULL, "
+        "UNIQUE (device_id, book_id))"))
+
+
+def migrate_kobo_bookmark_receipt(engine, _session):
+    """Add the shared Kobo bookmark's receipt clock and the turn-on nudges.
+
+    Additive, idempotent and resumable. Every writer stamps a receipt, so a
+    NULL receipt only ever means a row from before the column existed; each
+    startup gives those rows their stored clock capped at that startup's
+    instant (no report can have been received later), and leaves every
+    receipt already written alone. A startup interrupted after ADD COLUMN is
+    therefore completed by the next one. The nudge table is created with
+    IF NOT EXISTS so two workers migrating at once both succeed.
+    """
+    _add_column_if_missing(
+        engine, "kobo_bookmark", "server_modified_at",
+        "server_modified_at DATETIME")
+    _run_ddl_with_retry(engine, (
+        "CREATE TABLE IF NOT EXISTS kobo_share_place_nudge ("
+        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
+        "device_id INTEGER NOT NULL REFERENCES device (id) ON DELETE CASCADE, "
+        "book_id INTEGER NOT NULL, "
+        "armed_at DATETIME NOT NULL, "
+        "CONSTRAINT uq_kobo_share_place_nudge_device_book "
+        "UNIQUE (device_id, book_id))"))
+    columns = _table_columns(engine, "kobo_bookmark")
+    if not columns or "server_modified_at" not in columns:
+        return
+    startup_at = datetime.now(timezone.utc).replace(tzinfo=None).strftime(
+        "%Y-%m-%d %H:%M:%S.%f")
+    # ``startup_at`` is formatted here from the clock, never from input.
+    _run_ddl_with_retry(engine, (
+        "UPDATE kobo_bookmark SET server_modified_at = CASE "
+        f"WHEN last_modified IS NULL OR last_modified > '{startup_at}' "
+        f"THEN '{startup_at}' ELSE last_modified END "
+        "WHERE server_modified_at IS NULL"))
+
+
 def migrate_kobo_annotation_seed_pipeline(engine, _session):
     """Install M2's sticky-authority and capture-kind columns before ORM use."""
     Base.metadata.create_all(
@@ -4769,6 +5017,11 @@ def migrate_kobo_annotation_seed_pipeline(engine, _session):
                 "kobo_annotation_book_state",
                 "ever_authoritative",
                 "ever_authoritative BOOLEAN NOT NULL DEFAULT 0",
+            ),
+            (
+                "kobo_annotation_book_state",
+                "last_served_device_id",
+                "last_served_device_id INTEGER",
             ),
             (
                 "kobo_annotation_book_state",
@@ -5697,6 +5950,12 @@ def migrate_Database(_session):
     migrate_device_management_slice(engine, _session)
     migrate_webreader_device_identity_slice(engine, _session)
     migrate_device_reading_position_slice(engine, _session)
+    migrate_kobo_device_removal(engine, _session)
+    migrate_device_share_place(engine, _session)
+    migrate_device_sleep_screen(engine, _session)
+    migrate_kobo_bookmark_receipt(engine, _session)
+    migrate_kobo_place_delivery(engine, _session)
+    migrate_kosync_web_place(engine, _session)
     migrate_kobo_annotation_seed_pipeline(engine, _session)
     migrate_kobo_two_way_annotation_sync(engine, _session)
     migrate_annotation_text_quote(engine, _session)
@@ -5806,6 +6065,18 @@ def clean_database(_session):
     except exc.OperationalError:  # Database is not writeable
         print('Settings database is not writeable. Exiting...')
         sys.exit(2)
+
+
+def purge_orphaned_accounts(_session):
+    # Accounts deleted before #2314 left their devices, KOReader positions,
+    # magic shelves and more behind, with no user row (#2563).
+    from . import user_account_data
+    try:
+        user_account_data.purge_orphaned_accounts(_session)
+        _session.commit()
+    except Exception as e:  # leftover rows are inert; never block startup
+        _session.rollback()
+        log.error("Could not remove data left by deleted accounts: %s", e)
 
 
 # Save downloaded books per user in calibre-web's own database
@@ -6062,6 +6333,7 @@ def init_db(app_db_path):
         Base.metadata.create_all(engine)
         migrate_Database(session)
         clean_database(session)
+        purge_orphaned_accounts(session)
     else:
         Base.metadata.create_all(engine)
         migrate_hardcover_match_queue_dedup(engine, session)

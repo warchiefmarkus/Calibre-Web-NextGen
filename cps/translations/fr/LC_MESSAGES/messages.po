@@ -1535,7 +1535,8 @@ msgid "Calibre-Web NextGen Profile Picture Management (WIP)"
 msgstr ""
 
 #: cps/db.py cps/spa_strings.py cps/templates/config_edit.html
-#: cps/templates/config_view_edit.html cps/templates/email_edit.html cps/web.py
+#: cps/templates/config_view_edit.html cps/templates/email_edit.html
+#: cps/templates/tag_tree.html cps/web.py
 msgid "None"
 msgstr "Aucun"
 
@@ -2371,7 +2372,8 @@ msgstr "Livres classés par éditeur"
 
 #: cps/opds.py cps/render_template.py cps/spa_strings.py
 #: cps/templates/book_edit.html cps/templates/book_table.html
-#: cps/templates/cwa_settings.html cps/templates/search_form.html cps/web.py
+#: cps/templates/cwa_settings.html cps/templates/index.html
+#: cps/templates/search_form.html cps/templates/tag_tree.html cps/web.py
 msgid "Tags"
 msgstr "Étiquettes"
 
@@ -2447,6 +2449,16 @@ msgstr "Livres par %(name)s"
 #, python-format
 msgid "Books by %(name)s, including every sub-category"
 msgstr ""
+
+#: cps/api/browse.py cps/opds.py cps/web.py
+msgid "Tag hierarchy temporarily unavailable. Please try again."
+msgstr ""
+"La hiérarchie des étiquettes est temporairement indisponible. Veuillez "
+"réessayer."
+
+#: cps/opds.py
+msgid "All books in this tag group"
+msgstr "Tous les livres de ce groupe d’étiquettes"
 
 #: cps/opds.py
 #, python-brace-format
@@ -5144,6 +5156,82 @@ msgstr "Champs personnalisés sur les fiches de livres"
 #, python-brace-format
 msgid "Display name for {name}"
 msgstr "Nom d’affichage pour {name}"
+
+# Share my place (Devices page)
+#: cps/spa_strings.py
+msgid "Share my place"
+msgstr "Partager ma position"
+
+#: cps/spa_strings.py
+msgid ""
+"Devices with this on open each book where you last stopped on any of them. "
+"Turn it off for a device someone else reads on."
+msgstr ""
+"Les appareils où cette option est activée ouvrent chaque livre là où vous "
+"vous êtes arrêté sur l’un d’eux. Désactivez-la pour un appareil sur lequel "
+"lit quelqu’un d’autre."
+
+#: cps/spa_strings.py
+msgid "Could not save Share my place. Try again."
+msgstr "Impossible d’enregistrer Partager ma position. Réessayez."
+
+#: cps/spa_strings.py
+msgid ""
+"Always shares its place. Install or update the NextGen Sync plugin on this "
+"device to choose."
+msgstr ""
+"Partage toujours sa position. Installez ou mettez à jour le module "
+"d’extension NextGen Sync sur cet appareil pour choisir."
+
+#: cps/spa_strings.py
+msgid "Books on this device"
+msgstr "Livres sur cet appareil"
+
+#: cps/spa_strings.py
+msgid "Same as my account setting"
+msgstr "Comme dans les paramètres de mon compte"
+
+#: cps/spa_strings.py
+msgid "Everything in my library"
+msgstr "Tous les livres de ma bibliothèque"
+
+#: cps/spa_strings.py
+msgid "Only these shelves"
+msgstr "Uniquement ces étagères"
+
+#: cps/spa_strings.py
+msgid ""
+"Choose which books this device keeps. Books you take off are removed from "
+"the device at its next sync; your place, highlights and notes stay saved."
+msgstr ""
+"Choisissez les livres conservés sur cet appareil. Les livres retirés seront "
+"supprimés de l’appareil à sa prochaine synchronisation ; votre position de "
+"lecture, vos surlignages et vos notes restent enregistrés."
+
+#: cps/spa_strings.py
+msgid ""
+"The shelf chosen for this device was deleted. It uses your account setting "
+"until you choose again."
+msgstr ""
+"L’étagère choisie pour cet appareil a été supprimée. Il utilise les "
+"paramètres de votre compte jusqu’à ce que vous fassiez un nouveau choix."
+
+#: cps/spa_strings.py
+msgid ""
+"The shelf chosen for this device is no longer available. It uses your "
+"account setting until you choose again."
+msgstr ""
+"L’étagère choisie pour cet appareil n’est plus disponible. Il utilise les "
+"paramètres de votre compte jusqu’à ce que vous fassiez un nouveau choix."
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Account setting: {scope}"
+msgstr "Paramètre du compte : {scope}"
+
+#: cps/spa_strings.py
+msgid "Could not save the book choice. Try again."
+msgstr "Impossible d’enregistrer le choix des livres. Réessayez."
 
 #: cps/spa_strings.py
 msgid "(no text captured)"
@@ -11735,6 +11823,14 @@ msgstr ""
 "Cette règle ne peut pas être modifiée ici. Elle sera conservée sauf si vous"
 " la supprimez."
 
+#: cps/spa_strings.py cps/templates/tag_tree.html
+msgid "All tags"
+msgstr "Toutes les étiquettes"
+
+#: cps/spa_strings.py
+msgid "Could not load tags. Please try again."
+msgstr "Impossible de charger les étiquettes. Veuillez réessayer."
+
 #: cps/spa_strings.py
 msgid "Allow completed DRM-free MOBI 6 books"
 msgstr "Autoriser les livres MOBI 6 terminés sans DRM"
@@ -11851,6 +11947,112 @@ msgid "Use {series:|(|) }{title} to omit the series prefix when no series is set
 msgstr ""
 "Utilisez {series:|(|) }{title} pour omettre le préfixe lorsqu’aucune série "
 "n’est définie."
+
+#: cps/spa_strings.py cps/templates/tag_tree.html
+msgid "Choose a tag group to browse books from it and its subtags."
+msgstr ""
+"Choisissez un groupe d’étiquettes pour parcourir les livres de ce groupe et "
+"de ses sous-étiquettes."
+
+#: cps/spa_strings.py
+msgid "Sleep screen"
+msgstr "Écran de veille"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Sleep screen for {name}"
+msgstr "Écran de veille de {name}"
+
+#: cps/spa_strings.py
+msgid "Set sleep screen"
+msgstr "Définir l’écran de veille"
+
+#: cps/spa_strings.py
+msgid "Replace image"
+msgstr "Remplacer l’image"
+
+#: cps/spa_strings.py
+msgid "Remove sleep screen"
+msgstr "Supprimer l’écran de veille"
+
+#: cps/spa_strings.py
+msgid "Choose an image"
+msgstr "Choisir une image"
+
+#: cps/spa_strings.py
+#, python-brace-format
+msgid "Sleep screen preview for {name}"
+msgstr "Aperçu de l’écran de veille de {name}"
+
+#: cps/spa_strings.py
+msgid "Shown when this device sleeps in KOReader."
+msgstr "Affiché lorsque cet appareil se met en veille dans KOReader."
+
+#: cps/spa_strings.py
+msgid "The native Kindle lock screen is unchanged."
+msgstr "L’écran de verrouillage natif du Kindle reste inchangé."
+
+#: cps/spa_strings.py
+msgid "Waiting for next sync"
+msgstr "En attente de la prochaine synchronisation"
+
+#: cps/spa_strings.py
+msgid "Applied on device"
+msgstr "Appliqué sur l’appareil"
+
+#: cps/spa_strings.py
+msgid "Removal waiting for sync"
+msgstr "Suppression en attente de synchronisation"
+
+#: cps/spa_strings.py
+msgid "Previous settings restored"
+msgstr "Réglages précédents restaurés"
+
+#: cps/spa_strings.py
+msgid "Waiting for device details"
+msgstr "En attente des informations de l’appareil"
+
+#: cps/spa_strings.py
+msgid "Update the CWNG plugin"
+msgstr "Mettre à jour le plugin CWNG"
+
+#: cps/spa_strings.py
+msgid "Update the CWNG plugin on this device, then sync."
+msgstr "Mettez à jour le plugin CWNG sur cet appareil, puis synchronisez."
+
+#: cps/spa_strings.py
+msgid "Connect this device and use Sync now in KOReader."
+msgstr ""
+"Connectez cet appareil, puis utilisez Synchroniser maintenant dans KOReader."
+
+#: cps/spa_strings.py
+msgid "This device cannot show a custom KOReader sleep screen."
+msgstr ""
+"Cet appareil ne peut pas afficher d’écran de veille KOReader personnalisé."
+
+#: cps/spa_strings.py
+msgid "Use a JPEG or PNG image up to 10 MiB."
+msgstr "Utilisez une image JPEG ou PNG de 10 Mio maximum."
+
+#: cps/spa_strings.py
+msgid "Could not save sleep screen. Try again."
+msgstr "Impossible d’enregistrer l’écran de veille. Réessayez."
+
+#: cps/spa_strings.py
+msgid "Could not apply sleep screen"
+msgstr "Impossible d’appliquer l’écran de veille"
+
+#: cps/spa_strings.py
+msgid ""
+"Remove this image? Your previous KOReader sleep-screen settings will return "
+"after the next sync."
+msgstr ""
+"Supprimer cette image ? Vos réglages précédents d’écran de veille KOReader "
+"seront restaurés après la prochaine synchronisation."
+
+#: cps/tag_hierarchy.py
+msgid "Unnamed tag"
+msgstr "Étiquette sans nom"
 
 #: cps/tasks_status.py
 msgid "Waiting"
@@ -17703,6 +17905,14 @@ msgstr "Retour à l’accueil"
 #: cps/templates/http_error.html
 msgid "Logout User"
 msgstr "Déconnecter l’utilisateur"
+
+#: cps/templates/index.html
+msgid "Breadcrumb"
+msgstr "Fil d’Ariane"
+
+#: cps/templates/index.html
+msgid "Subtags"
+msgstr "Sous-étiquettes"
 
 #: cps/templates/index.html
 msgid "Subcategories"
